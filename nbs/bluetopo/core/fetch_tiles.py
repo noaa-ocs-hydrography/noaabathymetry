@@ -538,24 +538,28 @@ def download_tiles(
                     "subregion": fields["subregion"],
                     "utm": fields["utm"],
                 }
-                for object_name in objs["Contents"]:
-                    source_name = object_name["Key"]
-                    relative = os.path.join(data_source, f"UTM{fields['utm']}", os.path.basename(source_name))
-                    destination_name = os.path.join(project_dir, relative)
-                    if not os.path.exists(os.path.dirname(destination_name)):
-                        os.makedirs(os.path.dirname(destination_name))
-                    if ".aux" in source_name.lower():
-                        download_dict[tilename]["rat"] = source_name
-                        download_dict[tilename]["rat_dest"] = destination_name
-                        download_dict[tilename]["rat_verified"] = fields["rat_verified"]
-                        download_dict[tilename]["rat_disk"] = relative
-                        download_dict[tilename]["rat_sha256_checksum"] = fields["rat_sha256_checksum"]
-                    else:
-                        download_dict[tilename]["geotiff"] = source_name
-                        download_dict[tilename]["geotiff_dest"] = destination_name
-                        download_dict[tilename]["geotiff_verified"] = fields["geotiff_verified"]
-                        download_dict[tilename]["geotiff_disk"] = relative
-                        download_dict[tilename]["geotiff_sha256_checksum"] = fields["geotiff_sha256_checksum"]
+                try:
+                    for object_name in objs["Contents"]:
+                        source_name = object_name["Key"]
+                        relative = os.path.join(data_source, f"UTM{fields['utm']}", os.path.basename(source_name))
+                        destination_name = os.path.join(project_dir, relative)
+                        if not os.path.exists(os.path.dirname(destination_name)):
+                            os.makedirs(os.path.dirname(destination_name))
+                        if ".aux" in source_name.lower():
+                            download_dict[tilename]["rat"] = source_name
+                            download_dict[tilename]["rat_dest"] = destination_name
+                            download_dict[tilename]["rat_verified"] = fields["rat_verified"]
+                            download_dict[tilename]["rat_disk"] = relative
+                            download_dict[tilename]["rat_sha256_checksum"] = fields["rat_sha256_checksum"]
+                        else:
+                            download_dict[tilename]["geotiff"] = source_name
+                            download_dict[tilename]["geotiff_dest"] = destination_name
+                            download_dict[tilename]["geotiff_verified"] = fields["geotiff_verified"]
+                            download_dict[tilename]["geotiff_disk"] = relative
+                            download_dict[tilename]["geotiff_sha256_checksum"] = fields["geotiff_sha256_checksum"]
+                except KeyError:
+                    missing_tiles.append(tilename)
+                    continue
                 tiles_found.append(tilename)
             else:
                 tiles_not_found.append(tilename)
@@ -1092,7 +1096,7 @@ def insert_new(conn: sqlite3.Connection, tiles: list) -> int:
         amount of delivered tiles from input tiles.
     """
     cursor = conn.cursor()
-    tile_list = [(tile["tile"],) for tile in tiles if tile["Delivered_Date"] and tile["GeoTIFF_Link"] and tile["RAT_Link"]]
+    tile_list = [(tile["input_tile"],) for tile in tiles if tile["Delivered_Date"] and tile["GeoTIFF_Link"] and tile["method_RAT_Link"]]
     cursor.executemany(
         """INSERT INTO tiles(tilename)
                           VALUES(?) ON CONFLICT DO NOTHING""",

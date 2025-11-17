@@ -43,7 +43,7 @@ Install conda (If you have not already): [conda installation](https://docs.conda
 In the command line, create an environment with the required packages:
 
 ```
-conda create -n bluetopo_env -c conda-forge 'gdal>=3.4'
+conda create -n bluetopo_env -c conda-forge 'gdal>=3.4,<3.11'
 ```
 
 ```
