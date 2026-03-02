@@ -1,3 +1,29 @@
+# Build / distribution
 dist
-*.pyc
+build
+*.egg
 *.egg-info
+*.whl
+
+# Python
+__pycache__
+*.pyc
+*.so
+
+# Testing
+pytest_temporary_data
+.pytest_cache
+.coverage
+htmlcov
+
+# Virtual environments
+.venv
+venv
+env
+
+# IDE
+.idea
+.vscode
+
+# OS
+.DS_Store

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "BlueTopo"
-version = "0.7.0"
+version = "0.8.0"
 authors = [
   { name = "Glen Rice", email = "ocs.nbs@noaa.gov" },
   { name = "Tashi Geleg", email = "ocs.nbs@noaa.gov" },
@@ -15,6 +15,9 @@ license = { file = "LICENSE" }
 keywords = ["BlueTopo", "National Bathymetric Source", "Bathymetry"]
 dependencies = ["numpy", "boto3", "tqdm"]
 
+[project.optional-dependencies]
+test = ["pytest", "pytest-cov", "moto[s3]", "h5py"]
+
 [project.scripts]
 fetch_tiles = "nbs.bluetopo.cli.cli:fetch_tiles_command"
 build_vrt = "nbs.bluetopo.cli.cli:build_vrt_command"
@@ -22,3 +25,14 @@ build_vrt = "nbs.bluetopo.cli.cli:build_vrt_command"
 [project.urls]
 homepage = "https://www.nauticalcharts.noaa.gov/data/bluetopo.html"
 source = "https://github.com/noaa-ocs-hydrography/BlueTopo"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "network: marks tests that require network access (deselect with '-m \"not network\"')",
+    "slow: marks long-running tests (deselect with '-m \"not slow\"')",
+]
+addopts = "-m 'not network' --tb=short --basetemp=pytest_temporary_data"
+
+[tool.setuptools.packages.find]
+include = ["nbs*"]

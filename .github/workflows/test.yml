@@ -1,0 +1,34 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        shell: bash -el {0}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up conda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          python-version: "3.12"
+          channels: conda-forge
+          channel-priority: strict
+
+      - name: Install GDAL and HDF5
+        run: conda install -y 'gdal>=3.4' libgdal-hdf5
+
+      - name: Install package and test deps
+        run: pip install -e ".[test]"
+
+      - name: Run tests
+        run: make test

@@ -79,7 +79,16 @@ def fetch_tiles_command():
         "-g",
         "--geom",
         "--geometry",
-        help=("The geometry file to use to find intersecting available tiles. " "The returned tile ids at the time of intersection will be added to " "tracking. fetch_tiles will stay up to date with the latest data " "available from the NBS for all tracked tiles. This argument is " "not necessary if you do not want to add new tile ids to tracking."),
+        help=("Geometry input to find intersecting available tiles. "
+              "Accepts: bounding box (xmin,ymin,xmax,ymax), "
+              "WKT string (e.g. POLYGON((...))) , "
+              "GeoJSON string (e.g. {\"type\":\"Polygon\",...}), "
+              "or a file path (shapefile, geopackage, geojson file, etc.). "
+              "String inputs assume EPSG:4326. "
+              "The returned tile ids at the time of intersection will be added to "
+              "tracking. fetch_tiles will stay up to date with the latest data "
+              "available from the NBS for all tracked tiles. This argument is "
+              "not necessary if you do not want to add new tile ids to tracking."),
         type=str,
         dest="geom",
         nargs="?",
