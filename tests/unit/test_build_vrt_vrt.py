@@ -1,6 +1,7 @@
 """Tests for VRT creation functions in build_vrt.py (requires GDAL)."""
 
 import os
+import re
 
 import pytest
 from osgeo import gdal
@@ -329,3 +330,133 @@ class TestCreateVrtEdge:
         assert ds.RasterCount == 2
         assert ds.GetRasterBand(1).GetDescription() == "Elevation"
         ds = None
+
+
+# ---------------------------------------------------------------------------
+# target_resolution
+# ---------------------------------------------------------------------------
+
+
+class TestCreateVrtTargetResolution:
+    def test_target_resolution_sets_pixel_size(self, make_geotiff, tmp_path):
+        """VRT with target_resolution should have the requested pixel size."""
+        t1 = make_geotiff("tile1.tif", bands=3)
+        vrt_path = str(tmp_path / "output.vrt")
+        create_vrt([t1], vrt_path, None, False, target_resolution=8.0)
+        ds = gdal.Open(vrt_path)
+        gt = ds.GetGeoTransform()
+        assert gt[1] == 8.0
+        assert abs(gt[5]) == 8.0
+        ds = None
+
+    def test_no_target_resolution_uses_highest(self, make_geotiff, tmp_path):
+        """VRT without target_resolution should use highest (source) resolution."""
+        t1 = make_geotiff("tile1.tif", bands=3)  # source pixel size is 2m
+        vrt_path = str(tmp_path / "output.vrt")
+        create_vrt([t1], vrt_path, None, False)
+        ds = gdal.Open(vrt_path)
+        gt = ds.GetGeoTransform()
+        assert gt[1] == 2.0
+        ds = None
+
+    def test_negative_target_resolution_raises(self, make_geotiff, tmp_path):
+        t1 = make_geotiff("tile1.tif", bands=3)
+        vrt_path = str(tmp_path / "output.vrt")
+        with pytest.raises(ValueError, match="must be positive"):
+            create_vrt([t1], vrt_path, None, False, target_resolution=-8.0)
+
+    def test_zero_target_resolution_raises(self, make_geotiff, tmp_path):
+        t1 = make_geotiff("tile1.tif", bands=3)
+        vrt_path = str(tmp_path / "output.vrt")
+        with pytest.raises(ValueError, match="must be positive"):
+            create_vrt([t1], vrt_path, None, False, target_resolution=0.0)
+
+
+class TestBuildSubVrtsTargetResolution:
+    def test_target_resolution_applied_to_complete_vrt(self, make_geotiff, tmp_path):
+        """Complete VRT should use target_resolution; per-res VRT should not."""
+        cfg = get_config("bluetopo")
+        project_dir = str(tmp_path)
+        tif = make_geotiff("tile.tif", bands=3, width=16, height=16)
+        rel_tif = os.path.relpath(tif, project_dir)
+        subregion = {"region": "R1", "utm": "19"}
+        tiles = [{"resolution": "2m", "geotiff_disk": rel_tif}]
+
+        fields = build_sub_vrts(subregion, tiles, project_dir, cfg, True,
+                                target_resolution=8.0)
+
+        # Complete VRT should have 8m pixel size
+        complete_ds = gdal.Open(os.path.join(project_dir, fields["complete_vrt"]))
+        complete_gt = complete_ds.GetGeoTransform()
+        assert complete_gt[1] == 8.0
+        assert abs(complete_gt[5]) == 8.0
+        complete_ds = None
+
+        # Per-resolution VRT should still have original 2m pixel size
+        res2_ds = gdal.Open(os.path.join(project_dir, fields["res_2_vrt"]))
+        res2_gt = res2_ds.GetGeoTransform()
+        assert res2_gt[1] == 2.0
+        res2_ds = None
+
+    def test_no_target_resolution_complete_vrt_uses_highest(self, make_geotiff, tmp_path):
+        """Without target_resolution, complete VRT uses highest resolution."""
+        cfg = get_config("bluetopo")
+        project_dir = str(tmp_path)
+        tif = make_geotiff("tile.tif", bands=3, width=16, height=16)
+        rel_tif = os.path.relpath(tif, project_dir)
+        subregion = {"region": "R1", "utm": "19"}
+        tiles = [{"resolution": "2m", "geotiff_disk": rel_tif}]
+
+        fields = build_sub_vrts(subregion, tiles, project_dir, cfg, True)
+
+        complete_ds = gdal.Open(os.path.join(project_dir, fields["complete_vrt"]))
+        complete_gt = complete_ds.GetGeoTransform()
+        assert complete_gt[1] == 2.0
+        complete_ds = None
+
+
+class TestBuildSubVrtsFileOrdering:
+    def test_complete_vrt_ordered_coarse_to_fine(self, make_geotiff, tmp_path):
+        """Complete VRT inputs should be ordered coarse-to-fine (16m, 8m, 4m, 2m)."""
+        cfg = get_config("bluetopo")
+        project_dir = str(tmp_path)
+        subregion = {"region": "R1", "utm": "19"}
+        tiles = []
+        for res in ["2m", "4m", "8m", "16m"]:
+            tif = make_geotiff(f"tile_{res}.tif", bands=3, width=16, height=16)
+            rel_tif = os.path.relpath(tif, project_dir)
+            tiles.append({"resolution": res, "geotiff_disk": rel_tif})
+
+        fields = build_sub_vrts(subregion, tiles, project_dir, cfg, True)
+
+        complete_vrt_path = os.path.join(project_dir, fields["complete_vrt"])
+        with open(complete_vrt_path) as f:
+            content = f.read()
+
+        # Extract SourceFilename entries from the VRT XML
+        sources = re.findall(r'<SourceFilename[^>]*>([^<]+)</SourceFilename>', content)
+        assert len(sources) > 0
+
+        # 16m tiles go directly (as tifs), others go as per-res VRTs.
+        # The 16m tif should appear before per-res VRTs, and among VRTs
+        # the ordering should be 8m, 4m, 2m (coarse-to-fine).
+        # Deduplicate since multi-band VRTs repeat each source per band.
+        seen = set()
+        unique_sources = []
+        for src in sources:
+            if src not in seen:
+                seen.add(src)
+                unique_sources.append(src)
+
+        res_order = []
+        for src in unique_sources:
+            if "16m" in src:
+                res_order.append(16)
+            elif "_8m" in src:
+                res_order.append(8)
+            elif "_4m" in src:
+                res_order.append(4)
+            elif "_2m" in src:
+                res_order.append(2)
+        # Should be descending (coarse first, fine last)
+        assert res_order == sorted(res_order, reverse=True)

@@ -142,7 +142,8 @@ def connect_to_survey_registry(project_dir: str, cfg: dict) -> sqlite3.Connectio
 
 
 def create_vrt(files: list, vrt_path: str, levels: list, relative_to_vrt: bool,
-               band_descriptions: list = None, separate: bool = False) -> None:
+               band_descriptions: list = None, separate: bool = False,
+               target_resolution: float = None) -> None:
     """
     Build a single GDAL VRT file with optional overviews.
 
@@ -168,6 +169,11 @@ def create_vrt(files: list, vrt_path: str, levels: list, relative_to_vrt: bool,
         If True, uses ``-separate`` to stack inputs as separate bands rather
         than mosaicking them spatially.  Used for combining subdataset VRTs
         into a single multi-band UTM VRT.
+    target_resolution : float | None
+        When set, forces the output pixel size to this value (in meters)
+        using ``resolution="user"`` instead of ``resolution="highest"``.
+        Per-resolution VRTs are unaffected; this is intended for complete
+        and UTM VRTs.
     """
     # not efficient but insignificant
     files = copy.deepcopy(files)
@@ -180,7 +186,13 @@ def create_vrt(files: list, vrt_path: str, levels: list, relative_to_vrt: bool,
         raise OSError(f"Failed to remove older vrt files for {vrt_path}\n"
                       "Please close all files and attempt again") from e
     opts_str = '-separate -allow_projection_difference' if separate else '-allow_projection_difference'
-    vrt_options = gdal.BuildVRTOptions(options=opts_str, resampleAlg="near", resolution="highest")
+    if target_resolution is not None:
+        if target_resolution <= 0:
+            raise ValueError(f"target_resolution must be positive, got {target_resolution}")
+        opts_str += f' -resolution user -tr {target_resolution} {target_resolution}'
+    else:
+        opts_str += ' -resolution highest'
+    vrt_options = gdal.BuildVRTOptions(options=opts_str, resampleAlg="near")
     cwd = os.getcwd()
     try:
         os.chdir(os.path.dirname(vrt_path))
@@ -207,13 +219,18 @@ def create_vrt(files: list, vrt_path: str, levels: list, relative_to_vrt: bool,
 
 
 def build_sub_vrts(subregion: dict, subregion_tiles: list, project_dir: str,
-                   cfg: dict, relative_to_vrt: bool) -> dict:
+                   cfg: dict, relative_to_vrt: bool,
+                   target_resolution: float = None) -> dict:
     """
     Build all per-resolution and complete VRTs for a single subregion.
 
     Tiles are grouped by resolution.  For each resolution a VRT with
     overviews is created.  A "complete" VRT then combines all resolution
     VRTs plus any raw 16m tiles.
+
+    Resolution keys are sorted coarse-to-fine (16m → 8m → 4m → 2m) so that
+    higher-resolution data takes priority in GDAL BuildVRT overlap areas
+    (GDAL gives priority to later files).
 
     For multi-subdataset sources (e.g. S102V22, S102V30), this process runs
     once per subdataset, producing separate VRT files named with the
@@ -235,6 +252,9 @@ def build_sub_vrts(subregion: dict, subregion_tiles: list, project_dir: str,
         Data source configuration from ``datasource.get_config()``.
     relative_to_vrt : bool
         If True, file paths inside VRTs are stored relative to VRT location.
+    target_resolution : float | None
+        When set, forces the output pixel size for the complete VRT.
+        Per-resolution VRTs are unaffected.
 
     Returns
     -------
@@ -268,10 +288,20 @@ def build_sub_vrts(subregion: dict, subregion_tiles: list, project_dir: str,
     for tile in subregion_tiles:
         resolution_tiles[tile["resolution"]].append(tile)
 
+    def _res_sort_key(res_str):
+        """Extract numeric value from resolution string for sorting."""
+        return int(''.join(c for c in res_str if c.isdigit()))
+
+    # Sort coarse-to-fine (descending numeric) so higher-res data is added
+    # last and takes priority in GDAL BuildVRT overlap areas.
+    sorted_resolutions = sorted(resolution_tiles.keys(),
+                                key=_res_sort_key, reverse=True)
+
     if subdatasets:
         # Multiple subdatasets (e.g. S102V22/V30 BathymetryCoverage + quality coverage)
         vrt_lists = {i: [] for i in range(len(subdatasets))}
-        for res, tiles in resolution_tiles.items():
+        for res in sorted_resolutions:
+            tiles = resolution_tiles[res]
             print(f"Building {subregion['region']} band {res}...")
             for sd_idx, sd in enumerate(subdatasets):
                 suffix_label = f"_subdataset{sd_idx + 1}"
@@ -314,7 +344,8 @@ def build_sub_vrts(subregion: dict, subregion_tiles: list, project_dir: str,
             suffix_label = f"_subdataset{sd_idx + 1}"
             rel_path = os.path.join(rel_dir, subregion["region"] + f"_complete{sd['suffix']}.vrt")
             complete_vrt = os.path.join(project_dir, rel_path)
-            create_vrt(vrt_lists[sd_idx], complete_vrt, [16], relative_to_vrt, sd["band_descriptions"])
+            create_vrt(vrt_lists[sd_idx], complete_vrt, [16], relative_to_vrt, sd["band_descriptions"],
+                       target_resolution=target_resolution)
             fields[f"complete{suffix_label}_vrt"] = rel_path
             if os.path.isfile(os.path.join(project_dir, rel_path + ".ovr")):
                 fields[f"complete{suffix_label}_ovr"] = rel_path + ".ovr"
@@ -322,7 +353,8 @@ def build_sub_vrts(subregion: dict, subregion_tiles: list, project_dir: str,
         # Single dataset (BlueTopo, Modeling, BAG, S102V21)
         band_descs = cfg["band_descriptions"]
         vrt_list = []
-        for res, tiles in resolution_tiles.items():
+        for res in sorted_resolutions:
+            tiles = resolution_tiles[res]
             print(f"Building {subregion['region']} band {res}...")
             rel_path = os.path.join(rel_dir, subregion["region"] + f"_{res}.vrt")
             res_vrt = os.path.join(project_dir, rel_path)
@@ -349,7 +381,8 @@ def build_sub_vrts(subregion: dict, subregion_tiles: list, project_dir: str,
                 vrt_list.extend(tiffs)
         rel_path = os.path.join(rel_dir, subregion["region"] + "_complete.vrt")
         complete_vrt = os.path.join(project_dir, rel_path)
-        create_vrt(vrt_list, complete_vrt, [16], relative_to_vrt, band_descs)
+        create_vrt(vrt_list, complete_vrt, [16], relative_to_vrt, band_descs,
+                   target_resolution=target_resolution)
         fields["complete_vrt"] = rel_path
         if os.path.isfile(os.path.join(project_dir, rel_path + ".ovr")):
             fields["complete_ovr"] = rel_path + ".ovr"
@@ -872,7 +905,8 @@ def missing_utms(project_dir: str, conn: sqlite3.Connection, cfg: dict) -> int:
     return missing_utm_count
 
 
-def main(project_dir: str, data_source: str = None, relative_to_vrt: bool = True) -> None:
+def main(project_dir: str, data_source: str = None, relative_to_vrt: bool = True,
+         target_resolution: float = None) -> None:
     """
     Build a gdal VRT for all available tiles.
     This VRT is a collection of smaller areas described as VRTs.
@@ -891,6 +925,10 @@ def main(project_dir: str, data_source: str = None, relative_to_vrt: bool = True
         Use this argument to identify which product you want. BlueTopo is the default.
     relative_to_vrt : bool
         Use this argument to set paths of referenced files inside the VRT as relative or absolute paths.
+    target_resolution : float | None
+        When set, forces the output pixel size (in meters) for complete and
+        UTM VRTs instead of using the highest resolution from inputs.
+        Per-resolution VRTs are unaffected.
 
     """
     project_dir = os.path.expanduser(project_dir)
@@ -980,7 +1018,8 @@ def main(project_dir: str, data_source: str = None, relative_to_vrt: bool = True
             sr_tiles = select_tiles_by_subregion(project_dir, conn, ub_sr["region"], cfg)
             if len(sr_tiles) < 1:
                 continue
-            fields = build_sub_vrts(ub_sr, sr_tiles, project_dir, cfg, relative_to_vrt)
+            fields = build_sub_vrts(ub_sr, sr_tiles, project_dir, cfg, relative_to_vrt,
+                                    target_resolution=target_resolution)
             update_subregion(conn, fields, cfg)
     else:
         print("Subregion vrt(s) appear up to date with the most recently fetched tiles.")
@@ -1013,7 +1052,8 @@ def main(project_dir: str, data_source: str = None, relative_to_vrt: bool = True
                                             f"{data_source}_Fetched_UTM{ub_utm['utm']}{sd['suffix']}.vrt")
                     utm_sd_vrt = os.path.join(project_dir, rel_path)
                     print(f"Building utm{ub_utm['utm']}...")
-                    create_vrt(vrt_list, utm_sd_vrt, [32, 64], relative_to_vrt, sd["band_descriptions"])
+                    create_vrt(vrt_list, utm_sd_vrt, [32, 64], relative_to_vrt, sd["band_descriptions"],
+                              target_resolution=target_resolution)
                     sd_vrt_paths.append(utm_sd_vrt)
                     sd_rel_paths.append(rel_path)
                     fields[f"utm{suffix_label}_vrt"] = rel_path
@@ -1050,7 +1090,8 @@ def main(project_dir: str, data_source: str = None, relative_to_vrt: bool = True
                                         f"{data_source}_Fetched_UTM{ub_utm['utm']}.vrt")
                 utm_vrt = os.path.join(project_dir, rel_path)
                 print(f"Building utm{ub_utm['utm']}...")
-                create_vrt(vrt_list, utm_vrt, [32, 64], relative_to_vrt, cfg["band_descriptions"])
+                create_vrt(vrt_list, utm_vrt, [32, 64], relative_to_vrt, cfg["band_descriptions"],
+                          target_resolution=target_resolution)
 
                 if cfg["has_rat"]:
                     add_vrt_rat(conn, ub_utm["utm"], project_dir, utm_vrt, cfg)

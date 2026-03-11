@@ -53,6 +53,7 @@ class TestBuildVrtCommand:
                     project_dir="/tmp/test",
                     data_source="bluetopo",
                     relative_to_vrt=True,
+                    target_resolution=None,
                 )
 
     def test_default_source(self):
