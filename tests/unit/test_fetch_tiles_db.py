@@ -7,9 +7,7 @@ import pytest
 from nbs.bluetopo.core.datasource import (
     get_config,
     get_disk_fields,
-    get_vrt_file_columns,
     get_utm_file_columns,
-    get_vrt_subregion_fields,
     get_vrt_utm_fields,
 )
 from nbs.bluetopo.core.fetch_tiles import (
@@ -175,51 +173,6 @@ class TestUpdateRecords:
         assert tiles[0]["file_disk"] == "BAG/Data/T1.bag"
         assert tiles[0]["file_verified"] == "True"
 
-    def test_subregion_upserted_with_built_zero(self, registry_db):
-        cfg = get_config("bluetopo")
-        conn, _ = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1", "resolution": "2m"},
-        ])
-        download_dict = {
-            "T1": {
-                "tile": "T1",
-                "geotiff_disk": "path.tif",
-                "rat_disk": "path.aux",
-                "subregion": "R1",
-                "utm": "19",
-            },
-        }
-        update_records(conn, download_dict, ["T1"], cfg)
-
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM vrt_subregion WHERE region = 'R1'")
-        row = dict(cursor.fetchone())
-        assert row["built"] == 0
-
-    def test_subregion_resets_built_on_conflict(self, registry_db):
-        cfg = get_config("bluetopo")
-        conn, _ = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1", "resolution": "2m"},
-        ], subregions=[
-            {"region": "R1", "utm": "19", "built": 1,
-             "complete_vrt": "old.vrt", "complete_ovr": None},
-        ])
-        download_dict = {
-            "T1": {
-                "tile": "T1",
-                "geotiff_disk": "new.tif",
-                "rat_disk": "new.aux",
-                "subregion": "R1",
-                "utm": "19",
-            },
-        }
-        update_records(conn, download_dict, ["T1"], cfg)
-
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM vrt_subregion WHERE region = 'R1'")
-        row = dict(cursor.fetchone())
-        assert row["built"] == 0
-
     def test_utm_upserted(self, registry_db):
         cfg = get_config("bluetopo")
         conn, _ = registry_db(cfg, tiles=[
@@ -250,7 +203,7 @@ class TestUpdateRecords:
                                 "subregion": "R1", "utm": "19"}}
         update_records(conn, download_dict, [], cfg)
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM vrt_subregion")
+        cursor.execute("SELECT * FROM vrt_utm")
         assert cursor.fetchone() is None
 
 
@@ -289,7 +242,7 @@ class TestSweepFiles:
             {"tilename": "T1", "utm": "19", "subregion": "R1",
              "resolution": "2m", "geotiff_disk": "missing.tif", "rat_disk": "missing.aux"},
         ])
-        ut, us, uu = sweep_files(conn, project_dir, cfg)
+        ut, uu = sweep_files(conn, project_dir, cfg)
         assert ut == 1
         assert all_db_tiles(conn) == []
 
@@ -303,23 +256,9 @@ class TestSweepFiles:
             {"tilename": "T1", "utm": "19", "subregion": "R1",
              "resolution": "2m", "geotiff_disk": rel_tif, "rat_disk": rel_rat},
         ])
-        ut, us, uu = sweep_files(conn, project_dir, cfg)
+        ut, uu = sweep_files(conn, project_dir, cfg)
         assert ut == 0
         assert len(all_db_tiles(conn)) == 1
-
-    def test_cascades_to_subregion_deletion(self, registry_db):
-        cfg = get_config("bluetopo")
-        conn, project_dir = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1",
-             "resolution": "2m", "geotiff_disk": "missing.tif", "rat_disk": "missing.aux"},
-        ], subregions=[
-            {"region": "R1", "utm": "19", "built": 0},
-        ])
-        ut, us, uu = sweep_files(conn, project_dir, cfg)
-        assert us >= 1
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM vrt_subregion WHERE region = 'R1'")
-        assert cursor.fetchone() is None
 
     def test_cascades_to_utm_deletion(self, registry_db):
         cfg = get_config("bluetopo")
@@ -329,28 +268,11 @@ class TestSweepFiles:
         ], utms=[
             {"utm": "19", "built": 0},
         ])
-        ut, us, uu = sweep_files(conn, project_dir, cfg)
+        ut, uu = sweep_files(conn, project_dir, cfg)
         assert uu >= 1
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM vrt_utm WHERE utm = '19'")
         assert cursor.fetchone() is None
-
-    def test_cleans_up_vrt_files(self, registry_db, tmp_path):
-        cfg = get_config("bluetopo")
-        # Create a VRT file that should be cleaned up
-        vrt_file = os.path.join(str(tmp_path), "R1_complete.vrt")
-        with open(vrt_file, "w") as f:
-            f.write("<VRT/>")
-        rel_vrt = os.path.relpath(vrt_file, str(tmp_path))
-
-        conn, project_dir = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1",
-             "resolution": "2m", "geotiff_disk": "missing.tif", "rat_disk": "missing.aux"},
-        ], subregions=[
-            {"region": "R1", "utm": "19", "built": 1, "complete_vrt": rel_vrt},
-        ])
-        sweep_files(conn, project_dir, cfg)
-        assert not os.path.isfile(vrt_file)
 
     def test_single_file_schema(self, registry_db):
         cfg = get_config("bag")
@@ -358,7 +280,7 @@ class TestSweepFiles:
             {"tilename": "T1", "utm": "19", "subregion": "R1",
              "resolution": "2m", "file_disk": "missing.bag"},
         ])
-        ut, us, uu = sweep_files(conn, project_dir, cfg)
+        ut, uu = sweep_files(conn, project_dir, cfg)
         assert ut == 1
 
 
@@ -472,27 +394,6 @@ class TestInsertNewEdge:
 
 
 class TestUpdateRecordsEdge:
-    def test_s102v30_multi_subdataset_subregion(self, registry_db):
-        """S102V30 update_records creates subregion with two built flags."""
-        cfg = get_config("s102v30")
-        conn, _ = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1", "resolution": "2m"},
-        ])
-        download_dict = {
-            "T1": {
-                "tile": "T1",
-                "file_disk": "S102V30/Data/T1.h5",
-                "subregion": "R1",
-                "utm": "19",
-            },
-        }
-        update_records(conn, download_dict, ["T1"], cfg)
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM vrt_subregion WHERE region = 'R1'")
-        row = dict(cursor.fetchone())
-        assert row["built_subdataset1"] == 0
-        assert row["built_subdataset2"] == 0
-
     def test_s102v30_multi_subdataset_utm(self, registry_db):
         """S102V30 update_records creates UTM with combined built flag."""
         cfg = get_config("s102v30")
@@ -515,27 +416,6 @@ class TestUpdateRecordsEdge:
         assert row["built_subdataset2"] == 0
         assert row["built_combined"] == 0
 
-    def test_multi_subdataset_subregion(self, registry_db):
-        """S102V22 update_records creates subregion with two built flags."""
-        cfg = get_config("s102v22")
-        conn, _ = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1", "resolution": "2m"},
-        ])
-        download_dict = {
-            "T1": {
-                "tile": "T1",
-                "file_disk": "S102V22/Data/T1.h5",
-                "subregion": "R1",
-                "utm": "19",
-            },
-        }
-        update_records(conn, download_dict, ["T1"], cfg)
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM vrt_subregion WHERE region = 'R1'")
-        row = dict(cursor.fetchone())
-        assert row["built_subdataset1"] == 0
-        assert row["built_subdataset2"] == 0
-
     def test_multi_subdataset_utm(self, registry_db):
         """S102V22 update_records creates UTM with combined built flag."""
         cfg = get_config("s102v22")
@@ -557,24 +437,6 @@ class TestUpdateRecordsEdge:
         assert row["built_subdataset1"] == 0
         assert row["built_subdataset2"] == 0
         assert row["built_combined"] == 0
-
-    def test_multiple_tiles_same_subregion(self, registry_db):
-        """Multiple tiles in same subregion -> single subregion record."""
-        cfg = get_config("bluetopo")
-        conn, _ = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1", "resolution": "2m"},
-            {"tilename": "T2", "utm": "19", "subregion": "R1", "resolution": "4m"},
-        ])
-        download_dict = {
-            "T1": {"tile": "T1", "geotiff_disk": "a.tif", "rat_disk": "a.aux",
-                    "subregion": "R1", "utm": "19"},
-            "T2": {"tile": "T2", "geotiff_disk": "b.tif", "rat_disk": "b.aux",
-                    "subregion": "R1", "utm": "19"},
-        }
-        update_records(conn, download_dict, ["T1", "T2"], cfg)
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM vrt_subregion WHERE region = 'R1'")
-        assert cursor.fetchone()[0] == 1
 
     def test_multiple_tiles_different_utms(self, registry_db):
         """Tiles in different UTMs -> separate UTM records."""
@@ -608,7 +470,7 @@ class TestSweepFilesEdge:
             {"tilename": "T1", "utm": "19", "subregion": "R1",
              "resolution": "2m", "geotiff_disk": None, "rat_disk": None},
         ])
-        ut, us, uu = sweep_files(conn, project_dir, cfg)
+        ut, uu = sweep_files(conn, project_dir, cfg)
         assert ut == 0
         assert len(all_db_tiles(conn)) == 1
 
@@ -621,7 +483,7 @@ class TestSweepFilesEdge:
             {"tilename": "T1", "utm": "19", "subregion": "R1",
              "resolution": "2m", "geotiff_disk": rel_tif, "rat_disk": "missing.aux"},
         ])
-        ut, us, uu = sweep_files(conn, project_dir, cfg)
+        ut, uu = sweep_files(conn, project_dir, cfg)
         assert ut == 1
         # The existing geotiff should be cleaned up
         assert not os.path.isfile(tif)
@@ -639,7 +501,7 @@ class TestSweepFilesEdge:
             {"tilename": "T2", "utm": "19", "subregion": "R1",
              "resolution": "4m", "geotiff_disk": "gone.tif", "rat_disk": "gone.aux"},
         ])
-        ut, us, uu = sweep_files(conn, project_dir, cfg)
+        ut, uu = sweep_files(conn, project_dir, cfg)
         assert ut == 1
         remaining = all_db_tiles(conn)
         assert len(remaining) == 1
@@ -664,7 +526,6 @@ class TestSweepFilesEdge:
     def test_no_tiles_returns_zeros(self, registry_db):
         cfg = get_config("bluetopo")
         conn, project_dir = registry_db(cfg)
-        ut, us, uu = sweep_files(conn, project_dir, cfg)
+        ut, uu = sweep_files(conn, project_dir, cfg)
         assert ut == 0
-        assert us == 0
         assert uu == 0

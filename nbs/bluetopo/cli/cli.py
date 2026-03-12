@@ -54,9 +54,9 @@ def build_vrt_command():
     parser.add_argument(
         "-t",
         "--target-resolution",
-        help="Target resolution in meters for complete and UTM VRTs (e.g., 8). "
+        help="Target resolution in meters for UTM VRTs (e.g., 8). "
              "When set, forces the output pixel size instead of using the highest "
-             "resolution from inputs. Per-resolution VRTs are unaffected.",
+             "resolution from inputs.",
         type=float,
         dest="target_resolution",
         default=None,

@@ -12,16 +12,13 @@ from nbs.bluetopo.core.datasource import (
     get_config,
     get_local_config,
     get_catalog_fields,
-    get_vrt_subregion_fields,
     get_vrt_utm_fields,
     get_tiles_fields,
     get_built_flags,
-    get_vrt_file_columns,
     get_utm_file_columns,
     get_disk_field,
     get_disk_fields,
     get_verified_fields,
-    _subdataset_suffixes,
 )
 
 # ---------------------------------------------------------------------------
@@ -99,44 +96,6 @@ class TestGetCatalogFields:
             fields = get_catalog_fields(cfg)
             assert "location" in fields
             assert "downloaded" in fields
-
-
-# ---------------------------------------------------------------------------
-# get_vrt_subregion_fields
-# ---------------------------------------------------------------------------
-
-
-class TestGetVrtSubregionFields:
-    def test_single_dataset_has_built(self):
-        cfg = get_config("bluetopo")
-        fields = get_vrt_subregion_fields(cfg)
-        assert "built" in fields
-        assert "res_2_vrt" in fields
-        assert "complete_vrt" in fields
-
-    @pytest.mark.parametrize("source", ["s102v22", "s102v30"])
-    def test_multi_subdataset_has_suffixed_built(self, source):
-        cfg = get_config(source)
-        fields = get_vrt_subregion_fields(cfg)
-        assert "built_subdataset1" in fields
-        assert "built_subdataset2" in fields
-        assert "built" not in fields
-        assert "res_2_subdataset1_vrt" in fields
-        assert "complete_subdataset2_vrt" in fields
-
-    def test_always_has_region_utm(self):
-        for src in ["bluetopo", "s102v22", "s102v30"]:
-            cfg = get_config(src)
-            fields = get_vrt_subregion_fields(cfg)
-            assert "region" in fields
-            assert "utm" in fields
-
-    def test_resolution_levels(self):
-        cfg = get_config("bluetopo")
-        fields = get_vrt_subregion_fields(cfg)
-        for res in ["res_2", "res_4", "res_8", "complete"]:
-            assert f"{res}_vrt" in fields
-            assert f"{res}_ovr" in fields
 
 
 # ---------------------------------------------------------------------------
@@ -219,25 +178,11 @@ class TestGetBuiltFlags:
 
 
 # ---------------------------------------------------------------------------
-# get_vrt_file_columns / get_utm_file_columns
+# get_utm_file_columns
 # ---------------------------------------------------------------------------
 
 
-class TestVrtFileColumns:
-    def test_excludes_region_utm_built(self):
-        cfg = get_config("bluetopo")
-        cols = get_vrt_file_columns(cfg)
-        assert "region" not in cols
-        assert "utm" not in cols
-        assert "built" not in cols
-
-    def test_contains_vrt_ovr(self):
-        cfg = get_config("bluetopo")
-        cols = get_vrt_file_columns(cfg)
-        assert "res_2_vrt" in cols
-        assert "res_2_ovr" in cols
-        assert "complete_vrt" in cols
-
+class TestUtmFileColumns:
     def test_utm_excludes_utm_built(self):
         cfg = get_config("bluetopo")
         cols = get_utm_file_columns(cfg)
@@ -334,32 +279,6 @@ class TestConfigCompleteness:
         assert "decay_score" in cfg["rat_fields"]
         assert "unqualified" in cfg["rat_fields"]
         assert "sensitive" in cfg["rat_fields"]
-
-
-# ---------------------------------------------------------------------------
-# _subdataset_suffixes
-# ---------------------------------------------------------------------------
-
-
-class TestSubdatasetSuffixes:
-    def test_none_for_single_dataset(self):
-        cfg = get_config("bluetopo")
-        assert _subdataset_suffixes(cfg) == [None]
-
-    @pytest.mark.parametrize("source", ["s102v22", "s102v30"])
-    def test_indexed_for_multi(self, source):
-        cfg = get_config(source)
-        assert _subdataset_suffixes(cfg) == ["_subdataset1", "_subdataset2"]
-
-    def test_s102v22_subdataset_names(self):
-        cfg = get_config("s102v22")
-        assert cfg["subdatasets"][0]["name"] == "BathymetryCoverage"
-        assert cfg["subdatasets"][1]["name"] == "QualityOfSurvey"
-
-    def test_s102v30_subdataset_names(self):
-        cfg = get_config("s102v30")
-        assert cfg["subdatasets"][0]["name"] == "BathymetryCoverage"
-        assert cfg["subdatasets"][1]["name"] == "QualityOfBathymetryCoverage"
 
 
 # ---------------------------------------------------------------------------

@@ -363,8 +363,6 @@ class TestBuildVrtLocalResolution:
         project_dir = self._setup_project(tmp_path, "HSD", cfg)
 
         with mock.patch.object(build_vrt_mod, "connect_to_survey_registry") as mock_conn, \
-             mock.patch.object(build_vrt_mod, "missing_subregions", return_value=0), \
-             mock.patch.object(build_vrt_mod, "select_unbuilt_subregions", return_value=[]), \
              mock.patch.object(build_vrt_mod, "missing_utms", return_value=0), \
              mock.patch.object(build_vrt_mod, "select_unbuilt_utms", return_value=[]):
             mock_conn.return_value = mock.MagicMock()
@@ -458,8 +456,6 @@ class TestBuildVrtLocalResolution:
         os.makedirs(os.path.join(project_dir, "Weird"), exist_ok=True)
 
         with mock.patch.object(build_vrt_mod, "connect_to_survey_registry") as mock_conn, \
-             mock.patch.object(build_vrt_mod, "missing_subregions", return_value=0), \
-             mock.patch.object(build_vrt_mod, "select_unbuilt_subregions", return_value=[]), \
              mock.patch.object(build_vrt_mod, "missing_utms", return_value=0), \
              mock.patch.object(build_vrt_mod, "select_unbuilt_utms", return_value=[]):
             mock_conn.return_value = mock.MagicMock()

@@ -40,7 +40,6 @@ from nbs.bluetopo.core.datasource import (
     get_disk_fields,
     get_built_flags,
     get_utm_file_columns,
-    get_vrt_file_columns,
 )
 from nbs.bluetopo.core.fetch_tiles import main as fetch_main
 from nbs.bluetopo.core.build_vrt import (
@@ -734,25 +733,6 @@ class TestDeleteVRTRebuild:
         ovr_path = vrt_path + ".ovr"
         if os.path.isfile(ovr_path):
             os.remove(ovr_path)
-
-        # Also delete a subregion VRT to force full rebuild
-        # (missing_subregions resets both subregion and utm built flags)
-        db_path = _registry_db_path(project_dir, cfg)
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM vrt_subregion WHERE utm = ?", (target_zone,))
-        subregions = [dict(row) for row in cursor.fetchall()]
-        conn.close()
-
-        if subregions:
-            vrt_cols = get_vrt_file_columns(cfg)
-            for col in vrt_cols:
-                if subregions[0].get(col) and "complete" in col:
-                    sr_vrt = os.path.join(project_dir, subregions[0][col])
-                    if os.path.isfile(sr_vrt):
-                        os.remove(sr_vrt)
-                    break
 
         # Re-run build
         build_main(

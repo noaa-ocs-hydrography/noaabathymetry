@@ -523,40 +523,6 @@ def get_catalog_fields(cfg):
         return {"file": "text", "location": "text", "downloaded": "text"}
 
 
-def _subdataset_suffixes(cfg):
-    """Return DB column suffixes for subdatasets (e.g. ``["_subdataset1", "_subdataset2"]``).
-
-    Returns ``[None]`` for single-dataset sources so callers can iterate
-    uniformly without branching.
-    """
-    if cfg["subdatasets"]:
-        return [f"_subdataset{i+1}" for i in range(len(cfg["subdatasets"]))]
-    return [None]
-
-
-def get_vrt_subregion_fields(cfg):
-    """Return ``{column_name: sql_type}`` for the ``vrt_subregion`` table.
-
-    Columns include ``region``, ``utm``, per-resolution VRT/OVR path pairs
-    (e.g. ``res_2_vrt``, ``res_2_ovr``, ..., ``complete_vrt``), and built
-    flags.  For multi-subdataset sources, column names include a subdataset
-    suffix (e.g. ``res_2_subdataset1_vrt``).
-    """
-    fields = {"region": "text", "utm": "text"}
-    suffixes = _subdataset_suffixes(cfg)
-    for res in ["res_2", "res_4", "res_8", "complete"]:
-        for suffix in suffixes:
-            tag = f"{res}{suffix}" if suffix else res
-            fields[f"{tag}_vrt"] = "text"
-            fields[f"{tag}_ovr"] = "text"
-    if cfg["subdatasets"]:
-        for i in range(len(cfg["subdatasets"])):
-            fields[f"built_subdataset{i+1}"] = "integer"
-    else:
-        fields["built"] = "integer"
-    return fields
-
-
 def get_vrt_utm_fields(cfg):
     """Return ``{column_name: sql_type}`` for the ``vrt_utm`` table.
 
@@ -621,12 +587,6 @@ def get_built_flags(cfg):
     if cfg["subdatasets"]:
         return [f"built_subdataset{i+1}" for i in range(len(cfg["subdatasets"]))]
     return ["built"]
-
-
-def get_vrt_file_columns(cfg):
-    """Return VRT/OVR path column names from ``vrt_subregion`` (excludes PK and built flags)."""
-    fields = get_vrt_subregion_fields(cfg)
-    return [k for k in fields if k not in ("region", "utm") and "built" not in k]
 
 
 def get_utm_file_columns(cfg):

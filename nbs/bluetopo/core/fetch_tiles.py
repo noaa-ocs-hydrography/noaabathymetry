@@ -12,8 +12,7 @@ S102V30) as well as local directory sources (HSD).  The workflow is:
 5. Download tile files from S3 (or copy from local dir) with SHA-256
    verification, using a thread pool for parallelism.
 6. Update the registry DB with disk paths and verification status, and
-   insert/reset ``vrt_subregion`` and ``vrt_utm`` records so ``build_vrt``
-   knows which VRTs to rebuild.
+   reset ``vrt_utm`` records so ``build_vrt`` knows which VRTs to rebuild.
 
 State is persisted in the same ``<source>_registry.db`` SQLite database used
 by ``build_vrt``.
@@ -42,12 +41,10 @@ from nbs.bluetopo.core.datasource import (
     _timestamp,
     get_config,
     get_local_config,
-    get_vrt_subregion_fields,
     get_vrt_utm_fields,
     get_disk_field,
     get_disk_fields,
     get_verified_fields,
-    get_vrt_file_columns,
     get_utm_file_columns,
 )
 
@@ -302,7 +299,7 @@ def download_tiles(
     3. **Fetch** -- a thread pool downloads all resolved tiles in parallel
        with a tqdm progress bar, verifying SHA-256 checksums on completion.
 
-    Successfully downloaded tiles have their ``tiles``, ``vrt_subregion``,
+    Successfully downloaded tiles have their ``tiles`` and
     and ``vrt_utm`` records updated via :func:`update_records`.
 
     Parameters
@@ -792,12 +789,11 @@ def update_records(conn: sqlite3.Connection, download_dict: dict,
     Within a single transaction:
 
     1. Updates the ``tiles`` table with disk paths and sets verified flags.
-    2. Upserts ``vrt_subregion`` records with built flags set to 0 (forcing
+    2. Upserts ``vrt_utm`` records with built flags set to 0 (forcing
        ``build_vrt`` to rebuild).
-    3. Upserts ``vrt_utm`` records with built flags set to 0.
 
-    The upserts use ``ON CONFLICT ... DO UPDATE`` so that existing subregion
-    and UTM records have their built flags reset when new tile data arrives.
+    The upserts use ``ON CONFLICT ... DO UPDATE`` so that existing UTM
+    records have their built flags reset when new tile data arrives.
 
     Parameters
     ----------
@@ -812,15 +808,10 @@ def update_records(conn: sqlite3.Connection, download_dict: dict,
         Data source configuration.
     """
     file_layout = cfg["file_layout"]
-    vrt_subregion_fields = get_vrt_subregion_fields(cfg)
     vrt_utm_fields = get_vrt_utm_fields(cfg)
-
-    # Build column lists (excluding PKs)
-    sr_cols = [k for k in vrt_subregion_fields.keys()]
     utm_cols = [k for k in vrt_utm_fields.keys()]
 
     tiles_records = []
-    subregion_records = []
     utm_records = []
 
     for tilename in download_dict:
@@ -836,17 +827,6 @@ def update_records(conn: sqlite3.Connection, download_dict: dict,
                     download_dict[tilename]["file_disk"],
                     "True", tilename
                 ))
-
-            # Build subregion record: region, utm, then Nones for all vrt columns, then 0 for built flags
-            sr_values = [download_dict[tilename]["subregion"], download_dict[tilename]["utm"]]
-            for col in sr_cols:
-                if col in ("region", "utm"):
-                    continue
-                if "built" in col:
-                    sr_values.append(0)
-                else:
-                    sr_values.append(None)
-            subregion_records.append(tuple(sr_values))
 
             # Build utm record: utm, then Nones for vrt columns, then 0 for built flags
             utm_values = [download_dict[tilename]["utm"]]
@@ -882,20 +862,6 @@ def update_records(conn: sqlite3.Connection, download_dict: dict,
                WHERE tilename = ?""",
             tiles_records,
         )
-
-    # Upsert subregion records
-    sr_col_names = ", ".join(sr_cols)
-    sr_placeholders = ", ".join(["?"] * len(sr_cols))
-    sr_update_parts = ", ".join(
-        f"{col} = EXCLUDED.{col}" for col in sr_cols if col != "region"
-    )
-    cursor.executemany(
-        f"""INSERT INTO vrt_subregion({sr_col_names})
-            VALUES({sr_placeholders})
-            ON CONFLICT(region) DO UPDATE
-            SET {sr_update_parts}""",
-        subregion_records,
-    )
 
     # Upsert utm records
     utm_col_names = ", ".join(utm_cols)
@@ -1276,8 +1242,8 @@ def sweep_files(conn: sqlite3.Connection, project_dir: str, cfg: dict) -> tuple:
 
     1. The tile is deleted from ``tiles``.
     2. Any remaining file for that tile is also removed.
-    3. Subregion and UTM records that no longer have any downloaded tiles
-       are deleted, along with their associated VRT/OVR files.
+    3. UTM records that no longer have any downloaded tiles are deleted,
+       along with their associated VRT/OVR files.
 
     This is triggered by the ``--untrack`` CLI flag and is useful for
     cleaning up after manually deleting tile files.
@@ -1293,17 +1259,15 @@ def sweep_files(conn: sqlite3.Connection, project_dir: str, cfg: dict) -> tuple:
 
     Returns
     -------
-    tuple[int, int, int]
-        ``(untracked_tiles, untracked_subregions, untracked_utms)``
+    tuple[int, int]
+        ``(untracked_tiles, untracked_utms)``
     """
     disk_fields_list = get_disk_fields(cfg)
-    vrt_cols = get_vrt_file_columns(cfg)
     utm_cols = get_utm_file_columns(cfg)
 
     db_tiles = all_db_tiles(conn)
     cursor = conn.cursor()
     untracked_tiles = 0
-    untracked_subregions = 0
     untracked_utms = 0
 
     for fields in db_tiles:
@@ -1330,24 +1294,7 @@ def sweep_files(conn: sqlite3.Connection, project_dir: str, cfg: dict) -> tuple:
                 except (OSError, PermissionError):
                     continue
 
-            # Build WHERE clause for subregion deletion based on schema
             disk_not_null = " AND ".join(f"{df} is not null" for df in disk_fields_list)
-            cursor.execute(
-                f"""DELETE FROM vrt_subregion
-                    WHERE region NOT IN
-                    (SELECT subregion FROM tiles WHERE {disk_not_null})
-                    RETURNING *;"""
-            )
-            del_subregions = cursor.fetchall()
-            untracked_subregions += len(del_subregions)
-            for del_subregion in del_subregions:
-                for col in vrt_cols:
-                    try:
-                        if del_subregion[col] and os.path.isfile(os.path.join(project_dir, del_subregion[col])):
-                            os.remove(os.path.join(project_dir, del_subregion[col]))
-                    except (OSError, PermissionError):
-                        continue
-
             cursor.execute(
                 f"""DELETE FROM vrt_utm
                     WHERE utm NOT IN
@@ -1364,7 +1311,7 @@ def sweep_files(conn: sqlite3.Connection, project_dir: str, cfg: dict) -> tuple:
                     except (OSError, PermissionError):
                         continue
             conn.commit()
-    return untracked_tiles, untracked_subregions, untracked_utms
+    return untracked_tiles, untracked_utms
 
 
 def main(
@@ -1481,9 +1428,8 @@ def main(
                                  local_dir=local_dir)
 
     if untrack_missing:
-        untracked_tiles, untracked_sr, untracked_utms = sweep_files(conn, project_dir, cfg)
+        untracked_tiles, untracked_utms = sweep_files(conn, project_dir, cfg)
         print(f"Untracked {untracked_tiles} tile(s), "
-              f"{untracked_sr} subregion vrt(s), "
               f"{untracked_utms} utm vrt(s)")
 
     if desired_area_filename:

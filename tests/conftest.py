@@ -52,7 +52,8 @@ def make_geotiff(tmp_path):
     """Create a minimal GeoTIFF with configurable bands, size, and optional RAT."""
 
     def _make(name="tile.tif", bands=3, width=4, height=4, utm_zone=19,
-              rat_entries=None, rat_fields=None, rat_band=None):
+              rat_entries=None, rat_fields=None, rat_band=None,
+              pixel_size=2):
         """
         Parameters
         ----------
@@ -70,6 +71,8 @@ def make_geotiff(tmp_path):
             {field_name: [python_type, gdal_usage]} for RAT columns.
         rat_band : int | None
             1-based band index on which to write the RAT.
+        pixel_size : int | float
+            Pixel size in meters for the GeoTransform.
 
         Returns
         -------
@@ -84,7 +87,7 @@ def make_geotiff(tmp_path):
         srs = osr.SpatialReference()
         srs.ImportFromEPSG(32600 + utm_zone)  # UTM North
         ds.SetProjection(srs.ExportToWkt())
-        ds.SetGeoTransform([500000, 2, 0, 4400000, 0, -2])
+        ds.SetGeoTransform([500000, pixel_size, 0, 4400000, 0, -pixel_size])
 
         # Write data to each band
         for b in range(1, bands + 1):
@@ -790,7 +793,7 @@ def make_tile_scheme(tmp_path):
 def registry_db(tmp_path):
     """Create a registry DB with tables matching a given config."""
 
-    def _make(cfg, tiles=None, subregions=None, utms=None):
+    def _make(cfg, tiles=None, utms=None):
         """
         Parameters
         ----------
@@ -798,8 +801,6 @@ def registry_db(tmp_path):
             Data source config.
         tiles : list[dict] | None
             Tile records to insert.
-        subregions : list[dict] | None
-            Subregion records to insert.
         utms : list[dict] | None
             UTM records to insert.
 
@@ -819,16 +820,6 @@ def registry_db(tmp_path):
                 vals = list(tile.values())
                 cursor.execute(
                     f"INSERT OR REPLACE INTO tiles({cols}) VALUES({placeholders})",
-                    vals,
-                )
-
-        if subregions:
-            for sr in subregions:
-                cols = ", ".join(sr.keys())
-                placeholders = ", ".join(["?"] * len(sr))
-                vals = list(sr.values())
-                cursor.execute(
-                    f"INSERT OR REPLACE INTO vrt_subregion({cols}) VALUES({placeholders})",
                     vals,
                 )
 

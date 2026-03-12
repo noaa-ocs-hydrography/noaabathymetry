@@ -15,7 +15,6 @@ pytest_temporary_data
 .pytest_cache
 .coverage
 htmlcov
-
 # Virtual environments
 .venv
 venv
