@@ -71,6 +71,15 @@ def convert_datetime(val):
 sqlite3.register_converter("datetime", convert_datetime)
 
 
+def _stream_hash(path):
+    """Compute SHA-256 of a file by streaming in 64 KB chunks."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def _get_s3_client():
     """Create an anonymous (unsigned) boto3 S3 client for public bucket access."""
     cred = {
@@ -143,8 +152,7 @@ def get_tessellation(
         if len(gpkg_files) > 1:
             print(f"[{_timestamp()}] {data_source}: More than one geometry found in {prefix}, using {gpkg_files[0]}")
         destination_name = os.path.join(project_dir, data_source, "Tessellation", gpkg_files[0])
-        if not os.path.exists(os.path.dirname(destination_name)):
-            os.makedirs(os.path.dirname(destination_name))
+        os.makedirs(os.path.dirname(destination_name), exist_ok=True)
         try:
             shutil.copy(os.path.join(prefix, gpkg_files[0]), destination_name)
             relative = os.path.join(data_source, "Tessellation", gpkg_files[0])
@@ -168,8 +176,7 @@ def get_tessellation(
         if len(tileschemes) > 1:
             print(f"[{_timestamp()}] {data_source}: More than one geometry found in {prefix}, using {filename}")
         destination_name = os.path.join(project_dir, relative)
-        if not os.path.exists(os.path.dirname(destination_name)):
-            os.makedirs(os.path.dirname(destination_name))
+        os.makedirs(os.path.dirname(destination_name), exist_ok=True)
         try:
             client.download_file(bucket, source_name, destination_name)
         except (OSError, PermissionError) as e:
@@ -250,8 +257,7 @@ def get_xml(
     filename_renamed = 'CATALOG.XML'
     relative_renamed = os.path.join(data_source, "Data", filename_renamed)
     destination_name_renamed = os.path.join(project_dir, relative_renamed)
-    if not os.path.exists(os.path.dirname(destination_name)):
-        os.makedirs(os.path.dirname(destination_name))
+    os.makedirs(os.path.dirname(destination_name), exist_ok=True)
     try:
         client.download_file(bucket, source_name, destination_name)
     except (OSError, PermissionError) as e:
@@ -397,8 +403,7 @@ def download_tiles(
                     source_name = object_name["Key"]
                     relative = os.path.join(data_source, f"UTM{fields['utm']}", os.path.basename(source_name))
                     destination_name = os.path.join(project_dir, relative)
-                    if not os.path.exists(os.path.dirname(destination_name)):
-                        os.makedirs(os.path.dirname(destination_name))
+                    os.makedirs(os.path.dirname(destination_name), exist_ok=True)
                     if ".aux" in source_name.lower():
                         download_dict[tilename]["rat"] = source_name
                         download_dict[tilename]["rat_dest"] = destination_name
@@ -440,8 +445,7 @@ def download_tiles(
                     download_dict[tilename]["geotiff_dest"] = os.path.join(project_dir, download_dict[tilename]["geotiff_disk"])
                     download_dict[tilename]["geotiff_verified"] = fields["geotiff_verified"]
                     download_dict[tilename]["geotiff_sha256_checksum"] = fields["geotiff_sha256_checksum"]
-                    if not os.path.exists(os.path.dirname(download_dict[tilename]["geotiff_dest"])):
-                        os.makedirs(os.path.dirname(download_dict[tilename]["geotiff_dest"]))
+                    os.makedirs(os.path.dirname(download_dict[tilename]["geotiff_dest"]), exist_ok=True)
                     tiles_found.append(tilename)
                 else:
                     tiles_not_found.append(tilename)
@@ -460,8 +464,7 @@ def download_tiles(
                         download_dict[tilename]["file_dest"] = os.path.join(project_dir, download_dict[tilename]["file_disk"])
                         download_dict[tilename]["file_verified"] = fields["file_verified"]
                         download_dict[tilename]["file_sha256_checksum"] = fields["file_sha256_checksum"]
-                        if not os.path.exists(os.path.dirname(download_dict[tilename]["file_dest"])):
-                            os.makedirs(os.path.dirname(download_dict[tilename]["file_dest"]))
+                        os.makedirs(os.path.dirname(download_dict[tilename]["file_dest"]), exist_ok=True)
                         tiles_found.append(tilename)
                     else:
                         found = False
@@ -481,8 +484,7 @@ def download_tiles(
                                 download_dict[tilename]["file_dest"] = os.path.join(project_dir, download_dict[tilename]["file_disk"])
                                 download_dict[tilename]["file_verified"] = fields["file_verified"]
                                 download_dict[tilename]["file_sha256_checksum"] = fields["file_sha256_checksum"]
-                                if not os.path.exists(os.path.dirname(download_dict[tilename]["file_dest"])):
-                                    os.makedirs(os.path.dirname(download_dict[tilename]["file_dest"]))
+                                os.makedirs(os.path.dirname(download_dict[tilename]["file_dest"]), exist_ok=True)
                                 found = True
                                 tiles_found.append(tilename)
                                 break
@@ -513,12 +515,13 @@ def download_tiles(
                     shutil.copy(downloads["rat"], downloads["rat_dest"])
                 if not os.path.isfile(downloads["geotiff_dest"]) or not os.path.isfile(downloads["rat_dest"]):
                     return {"Tile": downloads["tile"], "Result": False, "Reason": "missing download"}
-                with open(downloads["geotiff_dest"], "rb") as f:
-                    geotiff_hash = hashlib.sha256(f.read()).hexdigest()
-                with open(downloads["rat_dest"], "rb") as f:
-                    rat_hash = hashlib.sha256(f.read()).hexdigest()
+                geotiff_hash = _stream_hash(downloads["geotiff_dest"])
+                rat_hash = _stream_hash(downloads["rat_dest"])
                 if downloads["geotiff_sha256_checksum"] != geotiff_hash or downloads["rat_sha256_checksum"] != rat_hash:
-                    return {"Tile": downloads["tile"], "Result": False, "Reason": "incorrect hash"}
+                    return {"Tile": downloads["tile"], "Result": False,
+                            "Reason": f"incorrect hash (expected geotiff={downloads['geotiff_sha256_checksum'][:12]}... "
+                                       f"got={geotiff_hash[:12]}..., expected rat={downloads['rat_sha256_checksum'][:12]}... "
+                                       f"got={rat_hash[:12]}...)"}
             else:
                 if downloads["transport"] == "s3":
                     downloads["client"].download_file(downloads["bucket"], downloads["file"], downloads["file_dest"])
@@ -526,12 +529,13 @@ def download_tiles(
                     shutil.copy(downloads["file"], downloads["file_dest"])
                 if not os.path.isfile(downloads["file_dest"]):
                     return {"Tile": downloads["tile"], "Result": False, "Reason": "missing download"}
-                with open(downloads["file_dest"], "rb") as f:
-                    file_hash = hashlib.sha256(f.read()).hexdigest()
+                file_hash = _stream_hash(downloads["file_dest"])
                 if downloads["file_sha256_checksum"] != file_hash:
-                    return {"Tile": downloads["tile"], "Result": False, "Reason": "incorrect hash"}
+                    return {"Tile": downloads["tile"], "Result": False,
+                            "Reason": f"incorrect hash (expected={downloads['file_sha256_checksum'][:12]}... "
+                                       f"got={file_hash[:12]}...)"}
         except Exception as e:
-            return {"Tile": downloads["tile"], "Result": False, "Reason": "exception"}
+            return {"Tile": downloads["tile"], "Result": False, "Reason": f"exception: {e}"}
         return {"Tile": downloads["tile"], "Result": True, "Reason": "success"}
 
     print(f"{len(new_tile_list)} tile(s) with new data")
@@ -1413,8 +1417,7 @@ def main(
 
     start = datetime.datetime.now()
     print(f"[{_timestamp()}] {data_source}: Beginning work in project folder: {project_dir}")
-    if not os.path.exists(project_dir):
-        os.makedirs(project_dir)
+    os.makedirs(project_dir, exist_ok=True)
 
     conn = connect_to_survey_registry(project_dir, cfg)
 

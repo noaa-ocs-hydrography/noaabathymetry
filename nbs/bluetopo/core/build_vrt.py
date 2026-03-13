@@ -290,7 +290,13 @@ def select_tiles_by_utm(project_dir: str, conn: sqlite3.Connection,
               "or correct the directory path if incorrect.")
 
     def _res_sort_key(tile):
-        return int(''.join(c for c in tile["resolution"] if c.isdigit()))
+        raw = tile.get("resolution") or ""
+        digits = ''.join(c for c in raw if c.isdigit())
+        if not digits:
+            raise ValueError(
+                f"Tile '{tile.get('tilename', '?')}' has non-numeric or empty "
+                f"resolution '{raw}'.")
+        return int(digits)
 
     # Sort coarse-to-fine (descending numeric) so higher-res data is added
     # last and takes priority in GDAL BuildVRT overlap areas.
@@ -511,6 +517,8 @@ def add_vrt_rat(conn: sqlite3.Connection, utm: str, project_dir: str,
     vrt_ds = gdal.Open(vrt_path, 1)
     contributor_band = vrt_ds.GetRasterBand(rat_band)
     contributor_band.SetDefaultRAT(rat)
+    contributor_band = None
+    vrt_ds = None
 
 
 def select_unbuilt_utms(conn: sqlite3.Connection, cfg: dict) -> list:
@@ -738,8 +746,7 @@ def main(project_dir: str, data_source: str = None, relative_to_vrt: bool = True
 
     # Ensure VRT output directory exists
     vrt_dir = os.path.join(project_dir, f"{data_source}_VRT")
-    if not os.path.exists(vrt_dir):
-        os.makedirs(vrt_dir)
+    os.makedirs(vrt_dir, exist_ok=True)
 
     # Build UTM VRTs directly from source tiles
     unbuilt_utms = select_unbuilt_utms(conn, cfg)

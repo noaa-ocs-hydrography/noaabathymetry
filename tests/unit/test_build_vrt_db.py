@@ -147,6 +147,20 @@ class TestSelectTilesByUtm:
         resolutions = [r["resolution"] for r in result]
         assert resolutions == ["16m", "8m", "2m"]
 
+    def test_nonnumeric_resolution_raises(self, registry_db, tmp_path):
+        """Tiles with missing or non-numeric resolution raise ValueError."""
+        cfg = get_config("bluetopo")
+        for name in ["t1.tif", "t1.tif.aux.xml", "t2.tif", "t2.tif.aux.xml"]:
+            open(os.path.join(str(tmp_path), name), "w").close()
+        conn, project_dir = registry_db(cfg, tiles=[
+            {"tilename": "T1", "subregion": "R1", "utm": "19",
+             "resolution": "2m", "geotiff_disk": "t1.tif", "rat_disk": "t1.tif.aux.xml"},
+            {"tilename": "T2", "subregion": "R1", "utm": "19",
+             "resolution": "", "geotiff_disk": "t2.tif", "rat_disk": "t2.tif.aux.xml"},
+        ])
+        with pytest.raises(ValueError, match="T2"):
+            select_tiles_by_utm(project_dir, conn, "19", cfg)
+
     def test_empty_utm(self, registry_db):
         cfg = get_config("bluetopo")
         conn, project_dir = registry_db(cfg)
