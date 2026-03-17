@@ -11,10 +11,15 @@ import os
 
 from osgeo import ogr, osr
 
+# "Memory" was merged into "MEM" in GDAL 3.11; older versions only know "Memory".
+_ogr_mem_driver = ogr.GetDriverByName("MEM")
+if _ogr_mem_driver is None:
+    _ogr_mem_driver = ogr.GetDriverByName("Memory")
+
 
 def _geometry_to_datasource(geom):
     """Wrap an OGR Geometry in an in-memory DataSource with EPSG:4326."""
-    driver = ogr.GetDriverByName("MEMORY")
+    driver = _ogr_mem_driver
     ds = driver.CreateDataSource("geom_input")
     srs = osr.SpatialReference()
     srs.ImportFromEPSG(4326)
@@ -153,7 +158,7 @@ def get_tile_list(desired_area, tile_scheme_filename):
     if source is None:
         print("Unable to open tile scheme file")
         return None
-    driver = ogr.GetDriverByName("MEMORY")
+    driver = _ogr_mem_driver
     source_layer = source.GetLayer(0)
     source_crs = source_layer.GetSpatialRef()
     num_target_layers = data_source.GetLayerCount()
@@ -201,7 +206,7 @@ def transform_layer(input_layer, desired_crs):
     """
     target_crs = input_layer.GetSpatialRef()
     coord_trans = osr.CoordinateTransformation(target_crs, desired_crs)
-    driver = ogr.GetDriverByName("MEMORY")
+    driver = _ogr_mem_driver
     out_ds = driver.CreateDataSource("memData")
     out_lyr = out_ds.CreateLayer("out_lyr", geom_type=input_layer.GetGeomType())
     out_defn = out_lyr.GetLayerDefn()

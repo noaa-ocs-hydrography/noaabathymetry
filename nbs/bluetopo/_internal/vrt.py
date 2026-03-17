@@ -148,6 +148,11 @@ def build_tile_paths(tiles, project_dir, cfg, subdataset=None):
         fpath = os.path.join(project_dir, tile[disk_field])
         if subdataset and subdataset.get("s102_protocol"):
             fpath = fpath.replace("\\", "/")
+            # On Unix, absolute paths get an extra "/" producing S102:"//path".
+            # POSIX normalizes "//" to "/" so this works fine. Note that
+            # _read_rat_data (line ~232) constructs the URI without the extra
+            # "/" — both forms are equivalent on POSIX, but the extra "/" here
+            # ensures Windows paths (no leading /) remain correct too.
             if fpath.startswith('/') and not fpath.startswith('//'):
                 paths.append(f'S102:"/{fpath}":{subdataset["name"]}')
             else:

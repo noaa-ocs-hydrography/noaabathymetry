@@ -423,7 +423,7 @@ def pull(download):
 
             if f["checksum"]:
                 actual_hash = _stream_hash(f["dest"])
-                if f["checksum"] != actual_hash:
+                if f["checksum"].lower() != actual_hash.lower():
                     return {"Tile": download["tile"], "Result": False,
                             "Reason": f"incorrect hash for {f['name']} "
                                       f"(expected={f['checksum'][:12]}... "
