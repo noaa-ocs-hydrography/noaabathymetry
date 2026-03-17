@@ -68,24 +68,24 @@ result = build_vrt('/path/to/project')
 
 ### Geometry formats
 
-The `geometry` parameter accepts four formats. File-based inputs use the CRS defined in the file. All other formats assume **EPSG:4326 (WGS 84)**.
+The `geometry` parameter accepts four formats. File inputs use the CRS defined in the file. All other formats assume EPSG:4326 (WGS 84).
 
-**File path** — any GDAL-compatible vector file (shapefile, geopackage, GeoJSON file, etc.):
+**File** — any GDAL-compatible vector file (shapefile, geopackage, GeoJSON file, etc.):
 ```python
 result = fetch_tiles('/path/to/project', geometry='/path/to/area_of_interest.gpkg')
 ```
 
-**Bounding box** — `xmin,ymin,xmax,ymax` in EPSG:4326 (longitude/latitude):
+**Bounding box** — `xmin,ymin,xmax,ymax` as longitude/latitude:
 ```python
 result = fetch_tiles('/path/to/project', geometry='-76.1,36.9,-75.9,37.1')
 ```
 
-**WKT** — Well-Known Text geometry in EPSG:4326:
+**WKT** — Well-Known Text geometry:
 ```python
 result = fetch_tiles('/path/to/project', geometry='POLYGON((-76.1 36.9, -75.9 36.9, -75.9 37.1, -76.1 37.1, -76.1 36.9))')
 ```
 
-**GeoJSON** — GeoJSON geometry or Feature object in EPSG:4326:
+**GeoJSON** — geometry or Feature object:
 ```python
 result = fetch_tiles('/path/to/project', geometry='{"type":"Polygon","coordinates":[[[-76.1,36.9],[-75.9,36.9],[-75.9,37.1],[-76.1,37.1],[-76.1,36.9]]]}')
 ```
