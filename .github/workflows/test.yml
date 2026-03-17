@@ -2,13 +2,16 @@ name: Tests
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.12"]
 
     defaults:
       run:
@@ -20,12 +23,12 @@ jobs:
       - name: Set up conda
         uses: conda-incubator/setup-miniconda@v3
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
           channels: conda-forge
           channel-priority: strict
 
       - name: Install GDAL and HDF5
-        run: conda install -y 'gdal>=3.4' libgdal-hdf5
+        run: conda install -y 'gdal>=3.4,<4' libgdal-hdf5
 
       - name: Install package and test deps
         run: pip install -e ".[test]"

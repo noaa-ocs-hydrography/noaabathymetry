@@ -11,15 +11,15 @@ import pytest
 from moto import mock_aws
 from osgeo import gdal
 
-from nbs.bluetopo.core.datasource import get_config, DATA_SOURCES
-from nbs.bluetopo.core.build_vrt import connect_to_survey_registry
-from nbs.bluetopo.core.fetch_tiles import (
+from nbs.bluetopo._internal.config import get_config, DATA_SOURCES
+from nbs.bluetopo._internal.db import connect as connect_to_survey_registry
+from nbs.bluetopo._internal.download import (
     get_tessellation,
     get_xml,
     _get_s3_client,
     all_db_tiles,
 )
-import nbs.bluetopo.core.fetch_tiles as fetch_tiles_module
+import nbs.bluetopo._internal.download as fetch_tiles_module
 
 BUCKET = "noaa-ocs-nationalbathymetry-pds"
 
@@ -97,7 +97,7 @@ class TestGetTessellation:
         assert os.path.isfile(result)
 
     @mock_aws
-    def test_not_found_returns_none(self, tmp_path, monkeypatch):
+    def test_not_found_raises_runtime_error(self, tmp_path, monkeypatch):
         monkeypatch.setattr(fetch_tiles_module, "_get_s3_client", _mock_s3_client)
         cfg = get_config("bluetopo")
         project_dir = str(tmp_path)
@@ -106,12 +106,13 @@ class TestGetTessellation:
         client = boto3.client("s3", region_name="us-east-1")
         client.create_bucket(Bucket=BUCKET)
 
-        result = get_tessellation(
-            conn, project_dir,
-            "NonExistent/Prefix",
-            "BlueTopo", cfg,
-        )
-        assert result is None
+        with mock.patch("nbs.bluetopo._internal.download.time.sleep"):
+            with pytest.raises(RuntimeError):
+                get_tessellation(
+                    conn, project_dir,
+                    "NonExistent/Prefix",
+                    "BlueTopo", cfg,
+                )
 
     @mock_aws
     def test_replaces_old_tessellation(self, tmp_path, monkeypatch):
@@ -204,8 +205,8 @@ class TestGetXml:
 
 
 class TestGetTessellationLocal:
-    def test_local_source_no_gpkg_returns_none(self, tmp_path):
-        """Local dir with no gpkg files returns None."""
+    def test_local_source_no_gpkg_raises_runtime_error(self, tmp_path):
+        """Local dir with no gpkg files raises RuntimeError."""
         cfg = get_config("bluetopo")
         project_dir = str(tmp_path / "project")
         os.makedirs(project_dir, exist_ok=True)
@@ -214,12 +215,12 @@ class TestGetTessellationLocal:
         local_dir = str(tmp_path / "empty_local")
         os.makedirs(local_dir)
 
-        result = get_tessellation(
-            conn, project_dir, local_dir,
-            "CustomUnknown", cfg,
-            local_dir=local_dir,
-        )
-        assert result is None
+        with pytest.raises(RuntimeError):
+            get_tessellation(
+                conn, project_dir, local_dir,
+                "CustomUnknown", cfg,
+                local_dir=local_dir,
+            )
 
     def test_local_source_multiple_gpkgs(self, tmp_path):
         """Local dir with multiple gpkgs picks most recent (sorted reverse)."""
@@ -413,8 +414,8 @@ class TestGetTessellationS3AllSources:
                 conn.close()
 
     @mock_aws
-    def test_each_s3_source_empty_prefix_returns_none(self, tmp_path, monkeypatch):
-        """Each S3-backed source returns None when prefix has no objects."""
+    def test_each_s3_source_empty_prefix_raises_runtime_error(self, tmp_path, monkeypatch):
+        """Each S3-backed source raises RuntimeError when prefix has no objects."""
         monkeypatch.setattr(fetch_tiles_module, "_get_s3_client", _mock_s3_client)
         client = boto3.client("s3", region_name="us-east-1")
         client.create_bucket(Bucket=BUCKET)
@@ -424,11 +425,12 @@ class TestGetTessellationS3AllSources:
             os.makedirs(project_dir, exist_ok=True)
             conn = connect_to_survey_registry(project_dir, cfg)
 
-            result = get_tessellation(
-                conn, project_dir, cfg["geom_prefix"],
-                cfg["canonical_name"], cfg,
-            )
-            assert result is None, f"{name}: expected None for empty prefix"
+            with mock.patch("nbs.bluetopo._internal.download.time.sleep"):
+                with pytest.raises(RuntimeError):
+                    get_tessellation(
+                        conn, project_dir, cfg["geom_prefix"],
+                        cfg["canonical_name"], cfg,
+                    )
             conn.close()
 
 

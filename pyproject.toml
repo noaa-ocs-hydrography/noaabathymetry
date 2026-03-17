@@ -1,10 +1,11 @@
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "BlueTopo"
 version = "0.8.0"
+requires-python = ">=3.9"
 authors = [
   { name = "Glen Rice", email = "ocs.nbs@noaa.gov" },
   { name = "Tashi Geleg", email = "ocs.nbs@noaa.gov" },
@@ -13,14 +14,14 @@ description = "National Bathymetric Source Project BlueTopo"
 readme = "README.md"
 license = { file = "LICENSE" }
 keywords = ["BlueTopo", "National Bathymetric Source", "Bathymetry"]
-dependencies = ["numpy", "boto3", "tqdm"]
+dependencies = ["boto3", "tqdm"]
 
 [project.optional-dependencies]
-test = ["pytest", "pytest-cov", "moto[s3]", "h5py"]
+test = ["pytest", "pytest-cov", "moto[s3]", "h5py", "numpy"]
 
 [project.scripts]
-fetch_tiles = "nbs.bluetopo.cli.cli:fetch_tiles_command"
-build_vrt = "nbs.bluetopo.cli.cli:build_vrt_command"
+fetch_tiles = "nbs.bluetopo.cli:fetch_tiles_command"
+build_vrt = "nbs.bluetopo.cli:build_vrt_command"
 
 [project.urls]
 homepage = "https://www.nauticalcharts.noaa.gov/data/bluetopo.html"

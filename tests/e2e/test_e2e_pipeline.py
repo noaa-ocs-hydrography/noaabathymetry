@@ -34,18 +34,16 @@ import sqlite3
 import pytest
 from osgeo import gdal, ogr
 
-from nbs.bluetopo.core.datasource import (
+from nbs.bluetopo._internal.config import (
     get_config,
     get_disk_field,
     get_disk_fields,
     get_built_flags,
     get_utm_file_columns,
 )
-from nbs.bluetopo.core.fetch_tiles import main as fetch_main
-from nbs.bluetopo.core.build_vrt import (
-    connect_to_survey_registry,
-    main as build_main,
-)
+from nbs.bluetopo._internal.fetcher import fetch_tiles as fetch_main
+from nbs.bluetopo._internal.db import connect as connect_to_survey_registry
+from nbs.bluetopo._internal.builder import build_vrt as build_main
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -252,13 +250,13 @@ def setup_local_from_download(project_dir_1, cfg, tmp_path):
     """Create a local_dir from a completed remote download.
 
     Copies the tile scheme gpkg from project_dir_1 into a new local_dir,
-    then modifies link columns via sqlite3 to point to downloaded files'
+    then modifies link columns via OGR to point to downloaded files'
     absolute paths.
 
     Returns (local_dir, project_dir_2).
     """
     data_source = cfg["canonical_name"]
-    field_map = cfg["tilescheme_field_map"]
+    gpkg_fields = cfg["gpkg_fields"]
 
     # Locate the downloaded gpkg
     tess_dir = os.path.join(project_dir_1, data_source, "Tessellation")
@@ -273,44 +271,36 @@ def setup_local_from_download(project_dir_1, cfg, tmp_path):
     local_gpkg = os.path.join(local_dir, f"{data_source}_Tile_Scheme.gpkg")
     shutil.copy(os.path.join(tess_dir, gpkg_file), local_gpkg)
 
-    # Build lookup: tilename -> absolute paths of downloaded files
+    # Build lookup: tilename -> absolute paths of downloaded files per slot
     tiles = _get_all_tiles(project_dir_1, cfg)
     tile_paths = {}
     for tile in tiles:
-        if cfg["file_layout"] == "dual_file":
-            if tile["geotiff_disk"] is None:
-                continue
-            tile_paths[tile["tilename"]] = {
-                "geotiff": os.path.join(project_dir_1, tile["geotiff_disk"]),
-                "rat": os.path.join(project_dir_1, tile["rat_disk"]),
-            }
-        else:
-            if tile["file_disk"] is None:
-                continue
-            tile_paths[tile["tilename"]] = {
-                "file": os.path.join(project_dir_1, tile["file_disk"]),
-            }
+        primary_disk = f"{cfg['file_slots'][0]['name']}_disk"
+        if tile[primary_disk] is None:
+            continue
+        paths = {}
+        for slot in cfg["file_slots"]:
+            name = slot["name"]
+            disk_col = f"{name}_disk"
+            if tile[disk_col]:
+                paths[name] = os.path.join(project_dir_1, tile[disk_col])
+        tile_paths[tile["tilename"]] = paths
 
     # Modify gpkg link columns using OGR (avoids SpatiaLite trigger issues
     # that occur when updating a real gpkg via raw sqlite3)
     ds = ogr.Open(local_gpkg, 1)
     lyr = ds.GetLayer(0)
 
-    if cfg["file_layout"] == "dual_file":
-        for feat in lyr:
-            name = feat.GetField("tile")
-            if name in tile_paths:
-                feat.SetField("GeoTIFF_Link", tile_paths[name]["geotiff"])
-                feat.SetField("RAT_Link", tile_paths[name]["rat"])
-                lyr.SetFeature(feat)
-    else:
-        tile_field = field_map["tile"]
-        link_field = field_map["file_link"]
-        for feat in lyr:
-            name = feat.GetField(tile_field)
-            if name in tile_paths:
-                feat.SetField(link_field, tile_paths[name]["file"])
-                lyr.SetFeature(feat)
+    tile_field = gpkg_fields["tile"]
+    for feat in lyr:
+        name = feat.GetField(tile_field)
+        if name in tile_paths:
+            for slot in cfg["file_slots"]:
+                gpkg_link = slot["gpkg_link"]
+                slot_name = slot["name"]
+                if slot_name in tile_paths[name]:
+                    feat.SetField(gpkg_link, tile_paths[name][slot_name])
+            lyr.SetFeature(feat)
 
     ds = None
 
@@ -344,11 +334,15 @@ def setup_synthetic_local(cfg, tmp_path, make_geotiff, make_tile_scheme,
     Returns (local_dir, project_dir).
     """
     data_source = cfg["canonical_name"]
-    file_layout = cfg["file_layout"]
+    gpkg_fields = cfg["gpkg_fields"]
+    file_slots = cfg["file_slots"]
     source_lower = data_source.lower()
     make_tile = _select_tile_maker(
         source_lower, make_geotiff, make_bag, make_s102v21, make_s102v22,
         make_s102v30)
+
+    # Determine if this source has multiple file slots (e.g. geotiff + rat)
+    has_secondary_slots = len(file_slots) > 1
 
     local_dir = str(tmp_path / "synth_local")
     os.makedirs(local_dir, exist_ok=True)
@@ -357,11 +351,11 @@ def setup_synthetic_local(cfg, tmp_path, make_geotiff, make_tile_scheme,
     tile_infos = []
     for i, res in enumerate(["4m", "8m"]):
         if source_lower in ("bag", "s102v21", "s102v22", "s102v30"):
-            # Native HDF5 format — fixture handles structure
+            # Native HDF5 format -- fixture handles structure
             ext = ".bag" if source_lower == "bag" else ".h5"
             tile_name = f"tile_{res}_{i}{ext}"
             tile_path = make_tile(tile_name, width=16, height=16, utm_zone=19)
-            rat_path = None
+            secondary_path = None
         else:
             tif_name = f"tile_{res}_{i}.tif"
 
@@ -390,82 +384,73 @@ def setup_synthetic_local(cfg, tmp_path, make_geotiff, make_tile_scheme,
                 rat_band=rat_band_val,
             )
 
-            # Also create RAT aux file for dual_file sources
-            if file_layout == "dual_file":
-                rat_name = f"tile_{res}_{i}.tif.aux.xml"
-                rat_path = make_geotiff(
-                    rat_name, bands=bands, width=16, height=16, utm_zone=19,
+            # Also create secondary file for multi-slot sources (e.g. RAT aux)
+            if has_secondary_slots:
+                secondary_name = f"tile_{res}_{i}.tif.aux.xml"
+                secondary_path = make_geotiff(
+                    secondary_name, bands=bands, width=16, height=16, utm_zone=19,
                     rat_entries=rat_entries, rat_fields=rat_fields,
                     rat_band=rat_band_val,
                 )
             else:
-                rat_path = None
+                secondary_path = None
 
-        # Compute SHA-256 checksums
+        # Compute SHA-256 checksums per slot
+        slot_paths = [tile_path]
+        slot_shas = []
         with open(tile_path, "rb") as f:
-            tile_sha = hashlib.sha256(f.read()).hexdigest()
-        rat_sha = None
-        if rat_path:
-            with open(rat_path, "rb") as f:
-                rat_sha = hashlib.sha256(f.read()).hexdigest()
+            slot_shas.append(hashlib.sha256(f.read()).hexdigest())
+        if has_secondary_slots and secondary_path:
+            slot_paths.append(secondary_path)
+            with open(secondary_path, "rb") as f:
+                slot_shas.append(hashlib.sha256(f.read()).hexdigest())
+        elif has_secondary_slots:
+            slot_paths.append(None)
+            slot_shas.append(None)
 
         tile_infos.append({
-            "tif_path": tile_path,
-            "rat_path": rat_path,
-            "tif_sha": tile_sha,
-            "rat_sha": rat_sha,
+            "slot_paths": slot_paths,
+            "slot_shas": slot_shas,
             "tile_id": f"SYNTH_{i:04d}",
             "resolution": res,
             "utm": "19",
         })
 
-    # Build tile scheme gpkg
-    if file_layout == "dual_file":
-        tiles_for_gpkg = []
-        for info in tile_infos:
-            tiles_for_gpkg.append({
-                "tile": info["tile_id"],
-                "GeoTIFF_Link": info["tif_path"],
-                "RAT_Link": info["rat_path"],
-                "Delivered_Date": "2025-01-01",
-                "Resolution": info["resolution"],
-                "UTM": info["utm"],
-                "GeoTIFF_SHA256_Checksum": info["tif_sha"],
-                "RAT_SHA256_Checksum": info["rat_sha"],
-                "lon": -76.0 + 0.01 * tile_infos.index(info),
-                "lat": 37.0,
-            })
-        gpkg_path = make_tile_scheme(
-            tiles_for_gpkg,
-            name=f"{data_source}_Tile_Scheme.gpkg",
-            schema="dual_file",
-        )
-    else:
-        # Navigation schema
-        field_map = cfg["tilescheme_field_map"]
-        tiles_for_gpkg = []
-        for info in tile_infos:
-            tile_dict = {
-                "TILE_ID": info["tile_id"],
-                "REGION": "US",
-                "SUBREGION": "TEST",
-                "ISSUANCE": "2025-01-01",
-                "Resolution": info["resolution"],
-                "UTM": info["utm"],
-                "lon": -76.0 + 0.01 * tile_infos.index(info),
-                "lat": 37.0,
-            }
-            # Set the source-specific link and checksum columns
-            link_col = field_map["file_link"].upper()
-            sha_col = field_map["file_sha256_checksum"].upper()
-            tile_dict[link_col] = info["tif_path"]
-            tile_dict[sha_col] = info["tif_sha"]
-            tiles_for_gpkg.append(tile_dict)
-        gpkg_path = make_tile_scheme(
-            tiles_for_gpkg,
-            name=f"{data_source}_Tile_Scheme.gpkg",
-            schema="navigation",
-        )
+    # Build tile scheme gpkg -- use gpkg_fields and file_slots for all sources
+    # Determine schema type for the make_tile_scheme fixture
+    is_navigation = gpkg_fields["tile"] == "TILE_ID"
+    schema = "navigation" if is_navigation else "dual_file"
+
+    tiles_for_gpkg = []
+    for info in tile_infos:
+        tile_dict = {
+            gpkg_fields["tile"]: info["tile_id"],
+            gpkg_fields["delivered_date"]: "2025-01-01",
+            gpkg_fields["resolution"]: info["resolution"],
+            gpkg_fields["utm"]: info["utm"],
+            "lon": -76.0 + 0.01 * tile_infos.index(info),
+            "lat": 37.0,
+        }
+        # Navigation schema needs extra fields
+        if is_navigation:
+            tile_dict["REGION"] = "US"
+            tile_dict["SUBREGION"] = "TEST"
+
+        # Set link and checksum columns from file_slots
+        for j, slot in enumerate(file_slots):
+            gpkg_link = slot["gpkg_link"]
+            gpkg_checksum = slot.get("gpkg_checksum")
+            if j < len(info["slot_paths"]):
+                tile_dict[gpkg_link] = info["slot_paths"][j]
+            if gpkg_checksum and j < len(info["slot_shas"]):
+                tile_dict[gpkg_checksum] = info["slot_shas"][j]
+        tiles_for_gpkg.append(tile_dict)
+
+    gpkg_path = make_tile_scheme(
+        tiles_for_gpkg,
+        name=f"{data_source}_Tile_Scheme.gpkg",
+        schema=schema,
+    )
 
     # Copy gpkg to local_dir
     shutil.copy(gpkg_path, os.path.join(local_dir, f"{data_source}_Tile_Scheme.gpkg"))
@@ -500,12 +485,12 @@ class TestRemotePipeline:
         os.makedirs(project_dir, exist_ok=True)
 
         # Fetch
-        successful, failed = fetch_main(
+        fetch_result = fetch_main(
             project_dir=project_dir,
             desired_area_filename=polygon,
             data_source=source,
         )
-        assert_fetch_results(project_dir, cfg, successful, failed)
+        assert_fetch_results(project_dir, cfg, fetch_result.downloaded, fetch_result.not_found + [f["tile"] for f in fetch_result.failed])
 
         # Build (requires GDAL drivers for BAG/S102 formats)
         _skip_if_gdal_missing_drivers(cfg)
@@ -539,12 +524,12 @@ class TestDownloadThenLocal:
         os.makedirs(project_dir_1, exist_ok=True)
 
         # Remote fetch
-        successful, failed = fetch_main(
+        fetch_result = fetch_main(
             project_dir=project_dir_1,
             desired_area_filename=polygon,
             data_source=source,
         )
-        if len(successful) == 0:
+        if len(fetch_result.downloaded) == 0:
             pytest.skip("No tiles downloaded from S3")
 
         # Setup local source from download
@@ -553,7 +538,7 @@ class TestDownloadThenLocal:
         )
 
         # Local fetch — polygon needed to discover tiles via insert_new()
-        successful_local, failed_local = fetch_main(
+        fetch_result_local = fetch_main(
             project_dir=project_dir_2,
             desired_area_filename=polygon,
             data_source=local_dir,
@@ -568,8 +553,6 @@ class TestDownloadThenLocal:
 
         # Verify tiles were copied
         local_cfg = cfg.copy()
-        local_cfg["download_strategy"] = "direct_link"
-        local_cfg["tile_prefix"] = None
         local_cfg["geom_prefix"] = None
         count = _count_tiles_with_disk(project_dir_2, local_cfg)
         assert count >= 1, "Expected at least 1 tile with disk path in local project"
@@ -603,14 +586,14 @@ class TestSyntheticLocal:
         polygon = make_polygon(lon=-76.01, lat=37.01, width=0.04, height=0.04)
 
         # Local fetch — polygon needed to discover tiles via insert_new()
-        successful, failed = fetch_main(
+        fetch_result = fetch_main(
             project_dir=project_dir,
             desired_area_filename=polygon,
             data_source=local_dir,
         )
 
         # Verify tiles were fetched
-        from nbs.bluetopo.core.datasource import get_local_config
+        from nbs.bluetopo._internal.config import get_local_config
         local_cfg = get_local_config(cfg["canonical_name"])
         count = _count_tiles_with_disk(project_dir, local_cfg)
         assert count >= 1, "Expected at least 1 tile with disk path after synthetic local"
@@ -644,12 +627,12 @@ class TestDeleteTileRefetch:
         os.makedirs(project_dir, exist_ok=True)
 
         # Initial fetch
-        successful, failed = fetch_main(
+        fetch_result = fetch_main(
             project_dir=project_dir,
             desired_area_filename=polygon,
             data_source=source,
         )
-        if len(successful) == 0:
+        if len(fetch_result.downloaded) == 0:
             pytest.skip("No tiles downloaded from S3")
 
         # Find a tile with files on disk
@@ -670,7 +653,7 @@ class TestDeleteTileRefetch:
         assert not os.path.isfile(deleted_path)
 
         # Re-run fetch (no polygon — just re-download missing tiles)
-        successful_2, failed_2 = fetch_main(
+        fetch_result_2 = fetch_main(
             project_dir=project_dir,
             data_source=source,
         )
@@ -704,12 +687,12 @@ class TestDeleteVRTRebuild:
         os.makedirs(project_dir, exist_ok=True)
 
         # Initial fetch + build
-        successful, failed = fetch_main(
+        fetch_result = fetch_main(
             project_dir=project_dir,
             desired_area_filename=polygon,
             data_source=source,
         )
-        if len(successful) == 0:
+        if len(fetch_result.downloaded) == 0:
             pytest.skip("No tiles downloaded from S3")
 
         build_main(

@@ -5,7 +5,7 @@ import sqlite3
 
 import pytest
 
-from nbs.bluetopo.core.datasource import (
+from nbs.bluetopo._internal.config import (
     get_config,
     get_catalog_fields,
     get_vrt_utm_fields,
@@ -13,8 +13,8 @@ from nbs.bluetopo.core.datasource import (
     get_built_flags,
     get_utm_file_columns,
 )
-from nbs.bluetopo.core.build_vrt import (
-    connect_to_survey_registry,
+from nbs.bluetopo._internal.db import connect as connect_to_survey_registry
+from nbs.bluetopo._internal.vrt import (
     select_tiles_by_utm,
     select_unbuilt_utms,
     update_utm,
@@ -104,7 +104,7 @@ class TestSelectTilesByUtm:
         rel_tif = os.path.relpath(tif, str(tmp_path))
         rel_rat = os.path.relpath(rat, str(tmp_path))
         conn, project_dir = registry_db(cfg, tiles=[
-            {"tilename": "T1", "subregion": "R1", "utm": "19",
+            {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel_tif, "rat_disk": rel_rat},
         ])
         result = select_tiles_by_utm(project_dir, conn, "19", cfg)
@@ -118,9 +118,9 @@ class TestSelectTilesByUtm:
         rel_tif = os.path.relpath(tif, str(tmp_path))
         rel_rat = os.path.relpath(rat, str(tmp_path))
         conn, project_dir = registry_db(cfg, tiles=[
-            {"tilename": "T1", "subregion": "R1", "utm": "19",
+            {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel_tif, "rat_disk": rel_rat},
-            {"tilename": "T2", "subregion": "R1", "utm": "19",
+            {"tilename": "T2", "utm": "19",
              "resolution": "4m", "geotiff_disk": "missing.tif", "rat_disk": "missing.aux"},
         ])
         result = select_tiles_by_utm(project_dir, conn, "19", cfg)
@@ -135,11 +135,11 @@ class TestSelectTilesByUtm:
                       "t16m.tif", "t16m.tif.aux.xml"]:
             open(os.path.join(str(tmp_path), name), "w").close()
         conn, project_dir = registry_db(cfg, tiles=[
-            {"tilename": "T2", "subregion": "R1", "utm": "19",
+            {"tilename": "T2", "utm": "19",
              "resolution": "2m", "geotiff_disk": "t2m.tif", "rat_disk": "t2m.tif.aux.xml"},
-            {"tilename": "T8", "subregion": "R1", "utm": "19",
+            {"tilename": "T8", "utm": "19",
              "resolution": "8m", "geotiff_disk": "t8m.tif", "rat_disk": "t8m.tif.aux.xml"},
-            {"tilename": "T16", "subregion": "R1", "utm": "19",
+            {"tilename": "T16", "utm": "19",
              "resolution": "16m", "geotiff_disk": "t16m.tif", "rat_disk": "t16m.tif.aux.xml"},
         ])
         result = select_tiles_by_utm(project_dir, conn, "19", cfg)
@@ -153,9 +153,9 @@ class TestSelectTilesByUtm:
         for name in ["t1.tif", "t1.tif.aux.xml", "t2.tif", "t2.tif.aux.xml"]:
             open(os.path.join(str(tmp_path), name), "w").close()
         conn, project_dir = registry_db(cfg, tiles=[
-            {"tilename": "T1", "subregion": "R1", "utm": "19",
+            {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": "t1.tif", "rat_disk": "t1.tif.aux.xml"},
-            {"tilename": "T2", "subregion": "R1", "utm": "19",
+            {"tilename": "T2", "utm": "19",
              "resolution": "", "geotiff_disk": "t2.tif", "rat_disk": "t2.tif.aux.xml"},
         ])
         with pytest.raises(ValueError, match="T2"):

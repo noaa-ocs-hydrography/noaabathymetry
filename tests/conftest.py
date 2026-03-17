@@ -8,8 +8,8 @@ import numpy as np
 import pytest
 from osgeo import gdal, ogr, osr
 
-from nbs.bluetopo.core.datasource import get_config
-from nbs.bluetopo.core.build_vrt import connect_to_survey_registry
+from nbs.bluetopo._internal.config import get_config
+from nbs.bluetopo._internal.db import connect as connect_to_survey_registry
 
 
 # ---------------------------------------------------------------------------

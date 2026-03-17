@@ -5,97 +5,14 @@ import os
 import pytest
 from osgeo import gdal, ogr, osr
 
-from nbs.bluetopo.core.datasource import get_config
-from nbs.bluetopo.core.build_vrt import connect_to_survey_registry
-from nbs.bluetopo.core.fetch_tiles import (
+from nbs.bluetopo._internal.config import get_config
+from nbs.bluetopo._internal.db import connect as connect_to_survey_registry
+from nbs.bluetopo._internal.geometry import (
     get_tile_list,
     parse_geometry_input,
     transform_layer,
-    global_region_tileset,
-    convert_base,
-    upsert_tiles,
-    all_db_tiles,
 )
-
-
-# ---------------------------------------------------------------------------
-# convert_base
-# ---------------------------------------------------------------------------
-
-
-class TestConvertBase:
-    def test_zero(self):
-        charset = "BCDFGHJKLMNPQRSTVWXZ"
-        assert convert_base(charset, 0, 2) == "BB"
-
-    def test_one(self):
-        charset = "BCDFGHJKLMNPQRSTVWXZ"
-        assert convert_base(charset, 1, 2) == "BC"
-
-    def test_twenty(self):
-        charset = "BCDFGHJKLMNPQRSTVWXZ"
-        assert convert_base(charset, 20, 2) == "CB"
-
-    def test_minimum_padding(self):
-        charset = "BCDFGHJKLMNPQRSTVWXZ"
-        result = convert_base(charset, 0, 3)
-        assert len(result) == 3
-        assert result == "BBB"
-
-    def test_larger_value(self):
-        charset = "BCDFGHJKLMNPQRSTVWXZ"
-        result = convert_base(charset, 400, 2)
-        assert len(result) >= 2
-
-
-# ---------------------------------------------------------------------------
-# global_region_tileset
-# ---------------------------------------------------------------------------
-
-
-class TestGlobalRegionTileset:
-    def test_creates_tileset(self):
-        from osgeo import gdal
-        location = global_region_tileset(1, "1.2")
-        ds = ogr.Open(location)
-        assert ds is not None
-        lyr = ds.GetLayer()
-        assert lyr.GetFeatureCount() > 0
-        gdal.Unlink(location)
-
-    def test_tile_count(self):
-        from osgeo import gdal
-        location = global_region_tileset(1, "1.2")
-        ds = ogr.Open(location)
-        lyr = ds.GetLayer()
-        # 360/1.2 = 300 columns, 150 rows (y from -88.8 to 90 in 1.2 steps)
-        count = lyr.GetFeatureCount()
-        assert count == 300 * 150  # 45000
-        gdal.Unlink(location)
-
-    def test_tile_has_fields(self):
-        from osgeo import gdal
-        location = global_region_tileset(1, "1.2")
-        ds = ogr.Open(location)
-        lyr = ds.GetLayer()
-        defn = lyr.GetLayerDefn()
-        field_names = [defn.GetFieldDefn(i).name for i in range(defn.GetFieldCount())]
-        assert "Region" in field_names
-        assert "UTM_Zone" in field_names
-        assert "Hemisphere" in field_names
-        gdal.Unlink(location)
-
-    def test_hemisphere_values(self):
-        from osgeo import gdal
-        location = global_region_tileset(1, "1.2")
-        ds = ogr.Open(location)
-        lyr = ds.GetLayer()
-        hemispheres = set()
-        for feat in lyr:
-            hemispheres.add(feat.GetField("Hemisphere"))
-        assert "N" in hemispheres
-        assert "S" in hemispheres
-        gdal.Unlink(location)
+from nbs.bluetopo._internal.download import upsert_tiles, all_db_tiles
 
 
 # ---------------------------------------------------------------------------
@@ -257,85 +174,6 @@ class TestTransformLayer:
         result_lyr = result.GetLayer(0)
         count = result_lyr.GetFeatureCount()
         assert count == 2
-
-
-# ---------------------------------------------------------------------------
-# convert_base edge cases
-# ---------------------------------------------------------------------------
-
-
-class TestConvertBaseEdge:
-    def test_max_charset(self):
-        charset = "BCDFGHJKLMNPQRSTVWXZ"
-        result = convert_base(charset, 19, 2)
-        assert len(result) >= 2
-
-    def test_large_value_exceeds_minimum(self):
-        charset = "BCDFGHJKLMNPQRSTVWXZ"
-        result = convert_base(charset, 8000, 2)
-        assert len(result) >= 2
-
-    def test_different_charset(self):
-        charset = "2456789BCDFGHJKLMNPQRSTVWXZ"
-        result = convert_base(charset, 0, 3)
-        assert result == "222"
-        result2 = convert_base(charset, 1, 3)
-        assert result2 == "224"
-
-
-# ---------------------------------------------------------------------------
-# global_region_tileset edge cases
-# ---------------------------------------------------------------------------
-
-
-class TestGlobalRegionTilesetEdge:
-    def test_utm_zones_range(self):
-        from osgeo import gdal
-        location = global_region_tileset(1, "1.2")
-        ds = ogr.Open(location)
-        lyr = ds.GetLayer()
-        utm_zones = set()
-        for feat in lyr:
-            utm_zones.add(feat.GetField("UTM_Zone"))
-        # Should cover all UTM zones 1-60
-        assert "01" in utm_zones or 1 in utm_zones
-        assert "60" in utm_zones or 60 in utm_zones
-        gdal.Unlink(location)
-
-    def test_region_naming_format(self):
-        from osgeo import gdal
-        location = global_region_tileset(1, "1.2")
-        ds = ogr.Open(location)
-        lyr = ds.GetLayer()
-        feat = lyr.GetNextFeature()
-        region = feat.GetField("Region")
-        # Region should start with the index-derived name (2 chars)
-        # followed by x/y identifiers
-        assert len(region) >= 2
-        gdal.Unlink(location)
-
-    def test_different_index(self):
-        from osgeo import gdal
-        # global_region_tileset always writes to the same /vsimem/ path,
-        # so we must read and clean up loc1 before creating loc2.
-        loc1 = global_region_tileset(1, "1.2")
-        ds1 = ogr.Open(loc1)
-        lyr1 = ds1.GetLayer()
-        feat1 = lyr1.GetNextFeature()
-        region1 = feat1.GetField("Region")
-        ds1 = None
-        gdal.Unlink(loc1)
-
-        loc2 = global_region_tileset(2, "1.2")
-        ds2 = ogr.Open(loc2)
-        lyr2 = ds2.GetLayer()
-        feat2 = lyr2.GetNextFeature()
-        region2 = feat2.GetField("Region")
-        ds2 = None
-        gdal.Unlink(loc2)
-
-        # Different index should produce different region prefix
-        assert region1[:2] != region2[:2]
 
 
 # ---------------------------------------------------------------------------

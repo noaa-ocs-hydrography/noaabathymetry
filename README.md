@@ -32,7 +32,6 @@ This codebase is written for Python 3 and relies on the following python
 packages:
 
 - gdal / ogr
-- numpy
 - boto3
 - tqdm
 
@@ -63,7 +62,7 @@ from nbs.bluetopo import fetch_tiles
 ```
 
 ```python
-fetch_tiles(r'C:\download_path', 'area_of_interest.gpkg')
+result = fetch_tiles(r'C:\download_path', desired_area_filename='area_of_interest.gpkg')
 ```
 
 To build a GDAL VRT of the downloaded tiles:
@@ -73,7 +72,7 @@ from nbs.bluetopo import build_vrt
 ```
 
 ```python
-build_vrt(r'C:\download_path')
+result = build_vrt(r'C:\download_path')
 ```
 
 ## CLI

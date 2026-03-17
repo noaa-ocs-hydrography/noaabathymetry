@@ -4,19 +4,18 @@ import os
 
 import pytest
 
-from nbs.bluetopo.core.datasource import (
+from nbs.bluetopo._internal.config import (
     get_config,
     get_disk_fields,
     get_utm_file_columns,
     get_vrt_utm_fields,
 )
-from nbs.bluetopo.core.fetch_tiles import (
+from nbs.bluetopo._internal.download import (
     insert_new,
     update_records,
     all_db_tiles,
-    sweep_files,
 )
-from nbs.bluetopo.core.build_vrt import connect_to_survey_registry
+from nbs.bluetopo._internal.db import connect as connect_to_survey_registry
 
 
 # ---------------------------------------------------------------------------
@@ -137,54 +136,62 @@ class TestUpdateRecords:
     def test_dual_file_updates(self, registry_db):
         cfg = get_config("bluetopo")
         conn, _ = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1", "resolution": "2m"},
+            {"tilename": "T1", "utm": "19", "resolution": "2m"},
         ])
         download_dict = {
             "T1": {
                 "tile": "T1",
-                "geotiff_disk": "BlueTopo/UTM19/T1.tif",
-                "rat_disk": "BlueTopo/UTM19/T1.tif.aux.xml",
-                "subregion": "R1",
                 "utm": "19",
+                "files": [
+                    {"name": "geotiff", "disk": "BlueTopo/UTM19/T1.tif",
+                     "source": "s3://bucket/T1.tif", "dest": "T1.tif", "checksum": "abc"},
+                    {"name": "rat", "disk": "BlueTopo/UTM19/T1.tif.aux.xml",
+                     "source": "s3://bucket/T1.aux", "dest": "T1.aux", "checksum": "def"},
+                ],
             },
         }
         update_records(conn, download_dict, ["T1"], cfg)
 
         tiles = all_db_tiles(conn)
         assert tiles[0]["geotiff_disk"] == "BlueTopo/UTM19/T1.tif"
-        assert tiles[0]["geotiff_verified"] == "True"
+        assert tiles[0]["geotiff_verified"] == 1
 
     def test_single_file_updates(self, registry_db):
         cfg = get_config("bag")
         conn, _ = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1", "resolution": "2m"},
+            {"tilename": "T1", "utm": "19", "resolution": "2m"},
         ])
         download_dict = {
             "T1": {
                 "tile": "T1",
-                "file_disk": "BAG/Data/T1.bag",
-                "subregion": "R1",
                 "utm": "19",
+                "files": [
+                    {"name": "file", "disk": "BAG/Data/T1.bag",
+                     "source": "s3://bucket/T1.bag", "dest": "T1.bag", "checksum": "abc"},
+                ],
             },
         }
         update_records(conn, download_dict, ["T1"], cfg)
 
         tiles = all_db_tiles(conn)
         assert tiles[0]["file_disk"] == "BAG/Data/T1.bag"
-        assert tiles[0]["file_verified"] == "True"
+        assert tiles[0]["file_verified"] == 1
 
     def test_utm_upserted(self, registry_db):
         cfg = get_config("bluetopo")
         conn, _ = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1", "resolution": "2m"},
+            {"tilename": "T1", "utm": "19", "resolution": "2m"},
         ])
         download_dict = {
             "T1": {
                 "tile": "T1",
-                "geotiff_disk": "path.tif",
-                "rat_disk": "path.aux",
-                "subregion": "R1",
                 "utm": "19",
+                "files": [
+                    {"name": "geotiff", "disk": "path.tif",
+                     "source": "s3://bucket/T1.tif", "dest": "T1.tif", "checksum": "abc"},
+                    {"name": "rat", "disk": "path.aux",
+                     "source": "s3://bucket/T1.aux", "dest": "T1.aux", "checksum": "def"},
+                ],
             },
         }
         update_records(conn, download_dict, ["T1"], cfg)
@@ -197,10 +204,14 @@ class TestUpdateRecords:
     def test_no_records_when_no_successes(self, registry_db):
         cfg = get_config("bluetopo")
         conn, _ = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1", "resolution": "2m"},
+            {"tilename": "T1", "utm": "19", "resolution": "2m"},
         ])
-        download_dict = {"T1": {"tile": "T1", "geotiff_disk": "x", "rat_disk": "x",
-                                "subregion": "R1", "utm": "19"}}
+        download_dict = {"T1": {"tile": "T1", "utm": "19", "files": [
+            {"name": "geotiff", "disk": "x",
+             "source": "s3://bucket/x", "dest": "x", "checksum": "x"},
+            {"name": "rat", "disk": "x",
+             "source": "s3://bucket/x", "dest": "x", "checksum": "x"},
+        ]}}
         update_records(conn, download_dict, [], cfg)
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM vrt_utm")
@@ -228,60 +239,6 @@ class TestAllDbTiles:
         conn, _ = registry_db(cfg)
         result = all_db_tiles(conn)
         assert result == []
-
-
-# ---------------------------------------------------------------------------
-# sweep_files
-# ---------------------------------------------------------------------------
-
-
-class TestSweepFiles:
-    def test_deletes_tile_with_missing_file(self, registry_db):
-        cfg = get_config("bluetopo")
-        conn, project_dir = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1",
-             "resolution": "2m", "geotiff_disk": "missing.tif", "rat_disk": "missing.aux"},
-        ])
-        ut, uu = sweep_files(conn, project_dir, cfg)
-        assert ut == 1
-        assert all_db_tiles(conn) == []
-
-    def test_leaves_existing_tiles(self, registry_db, make_geotiff, tmp_path):
-        cfg = get_config("bluetopo")
-        tif = make_geotiff("tile1.tif")
-        rat = make_geotiff("tile1.tif.aux.xml")
-        rel_tif = os.path.relpath(tif, str(tmp_path))
-        rel_rat = os.path.relpath(rat, str(tmp_path))
-        conn, project_dir = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1",
-             "resolution": "2m", "geotiff_disk": rel_tif, "rat_disk": rel_rat},
-        ])
-        ut, uu = sweep_files(conn, project_dir, cfg)
-        assert ut == 0
-        assert len(all_db_tiles(conn)) == 1
-
-    def test_cascades_to_utm_deletion(self, registry_db):
-        cfg = get_config("bluetopo")
-        conn, project_dir = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1",
-             "resolution": "2m", "geotiff_disk": "missing.tif", "rat_disk": "missing.aux"},
-        ], utms=[
-            {"utm": "19", "built": 0},
-        ])
-        ut, uu = sweep_files(conn, project_dir, cfg)
-        assert uu >= 1
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM vrt_utm WHERE utm = '19'")
-        assert cursor.fetchone() is None
-
-    def test_single_file_schema(self, registry_db):
-        cfg = get_config("bag")
-        conn, project_dir = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1",
-             "resolution": "2m", "file_disk": "missing.bag"},
-        ])
-        ut, uu = sweep_files(conn, project_dir, cfg)
-        assert ut == 1
 
 
 # ---------------------------------------------------------------------------
@@ -398,14 +355,16 @@ class TestUpdateRecordsEdge:
         """S102V30 update_records creates UTM with combined built flag."""
         cfg = get_config("s102v30")
         conn, _ = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1", "resolution": "2m"},
+            {"tilename": "T1", "utm": "19", "resolution": "2m"},
         ])
         download_dict = {
             "T1": {
                 "tile": "T1",
-                "file_disk": "S102V30/Data/T1.h5",
-                "subregion": "R1",
                 "utm": "19",
+                "files": [
+                    {"name": "file", "disk": "S102V30/Data/T1.h5",
+                     "source": "s3://bucket/T1.h5", "dest": "T1.h5", "checksum": "abc"},
+                ],
             },
         }
         update_records(conn, download_dict, ["T1"], cfg)
@@ -420,14 +379,16 @@ class TestUpdateRecordsEdge:
         """S102V22 update_records creates UTM with combined built flag."""
         cfg = get_config("s102v22")
         conn, _ = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1", "resolution": "2m"},
+            {"tilename": "T1", "utm": "19", "resolution": "2m"},
         ])
         download_dict = {
             "T1": {
                 "tile": "T1",
-                "file_disk": "S102V22/Data/T1.h5",
-                "subregion": "R1",
                 "utm": "19",
+                "files": [
+                    {"name": "file", "disk": "S102V22/Data/T1.h5",
+                     "source": "s3://bucket/T1.h5", "dest": "T1.h5", "checksum": "abc"},
+                ],
             },
         }
         update_records(conn, download_dict, ["T1"], cfg)
@@ -442,14 +403,22 @@ class TestUpdateRecordsEdge:
         """Tiles in different UTMs -> separate UTM records."""
         cfg = get_config("bluetopo")
         conn, _ = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1", "resolution": "2m"},
-            {"tilename": "T2", "utm": "20", "subregion": "R2", "resolution": "2m"},
+            {"tilename": "T1", "utm": "19", "resolution": "2m"},
+            {"tilename": "T2", "utm": "20", "resolution": "2m"},
         ])
         download_dict = {
-            "T1": {"tile": "T1", "geotiff_disk": "a.tif", "rat_disk": "a.aux",
-                    "subregion": "R1", "utm": "19"},
-            "T2": {"tile": "T2", "geotiff_disk": "b.tif", "rat_disk": "b.aux",
-                    "subregion": "R2", "utm": "20"},
+            "T1": {"tile": "T1", "utm": "19", "files": [
+                {"name": "geotiff", "disk": "a.tif",
+                 "source": "s3://bucket/a.tif", "dest": "a.tif", "checksum": "abc"},
+                {"name": "rat", "disk": "a.aux",
+                 "source": "s3://bucket/a.aux", "dest": "a.aux", "checksum": "def"},
+            ]},
+            "T2": {"tile": "T2", "utm": "20", "files": [
+                {"name": "geotiff", "disk": "b.tif",
+                 "source": "s3://bucket/b.tif", "dest": "b.tif", "checksum": "ghi"},
+                {"name": "rat", "disk": "b.aux",
+                 "source": "s3://bucket/b.aux", "dest": "b.aux", "checksum": "jkl"},
+            ]},
         }
         update_records(conn, download_dict, ["T1", "T2"], cfg)
         cursor = conn.cursor()
@@ -457,75 +426,3 @@ class TestUpdateRecordsEdge:
         assert cursor.fetchone()[0] == 2
 
 
-# ---------------------------------------------------------------------------
-# sweep_files edge cases
-# ---------------------------------------------------------------------------
-
-
-class TestSweepFilesEdge:
-    def test_null_disk_fields_skipped(self, registry_db):
-        """Tiles with None disk fields are skipped (no missing file check)."""
-        cfg = get_config("bluetopo")
-        conn, project_dir = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1",
-             "resolution": "2m", "geotiff_disk": None, "rat_disk": None},
-        ])
-        ut, uu = sweep_files(conn, project_dir, cfg)
-        assert ut == 0
-        assert len(all_db_tiles(conn)) == 1
-
-    def test_dual_file_partial_missing(self, registry_db, make_geotiff, tmp_path):
-        """One file exists, other is missing -> tile deleted, existing file removed."""
-        cfg = get_config("bluetopo")
-        tif = make_geotiff("tile1.tif")
-        rel_tif = os.path.relpath(tif, str(tmp_path))
-        conn, project_dir = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1",
-             "resolution": "2m", "geotiff_disk": rel_tif, "rat_disk": "missing.aux"},
-        ])
-        ut, uu = sweep_files(conn, project_dir, cfg)
-        assert ut == 1
-        # The existing geotiff should be cleaned up
-        assert not os.path.isfile(tif)
-
-    def test_multiple_tiles_some_missing(self, registry_db, make_geotiff, tmp_path):
-        """Multiple tiles -- only missing ones swept."""
-        cfg = get_config("bluetopo")
-        tif = make_geotiff("good.tif")
-        rat = make_geotiff("good.aux.xml")
-        rel_tif = os.path.relpath(tif, str(tmp_path))
-        rel_rat = os.path.relpath(rat, str(tmp_path))
-        conn, project_dir = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1",
-             "resolution": "2m", "geotiff_disk": rel_tif, "rat_disk": rel_rat},
-            {"tilename": "T2", "utm": "19", "subregion": "R1",
-             "resolution": "4m", "geotiff_disk": "gone.tif", "rat_disk": "gone.aux"},
-        ])
-        ut, uu = sweep_files(conn, project_dir, cfg)
-        assert ut == 1
-        remaining = all_db_tiles(conn)
-        assert len(remaining) == 1
-        assert remaining[0]["tilename"] == "T1"
-
-    def test_utm_vrt_files_cleaned(self, registry_db, tmp_path):
-        """UTM VRT files removed when UTM is deleted."""
-        cfg = get_config("bluetopo")
-        utm_vrt = os.path.join(str(tmp_path), "utm19.vrt")
-        with open(utm_vrt, "w") as f:
-            f.write("<VRT/>")
-        rel_utm_vrt = os.path.relpath(utm_vrt, str(tmp_path))
-        conn, project_dir = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1",
-             "resolution": "2m", "geotiff_disk": "missing.tif", "rat_disk": "missing.aux"},
-        ], utms=[
-            {"utm": "19", "built": 1, "utm_vrt": rel_utm_vrt},
-        ])
-        sweep_files(conn, project_dir, cfg)
-        assert not os.path.isfile(utm_vrt)
-
-    def test_no_tiles_returns_zeros(self, registry_db):
-        cfg = get_config("bluetopo")
-        conn, project_dir = registry_db(cfg)
-        ut, uu = sweep_files(conn, project_dir, cfg)
-        assert ut == 0
-        assert uu == 0

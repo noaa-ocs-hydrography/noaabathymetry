@@ -3,7 +3,7 @@
 Creates synthetic GeoTIFFs, populates a registry DB, and runs the
 build_vrt pipeline to verify end-to-end VRT creation.
 
-Tests the flat pipeline: tiles -> UTM VRT directly (no subregion phase).
+Tests the flat pipeline: tiles -> UTM VRT directly.
 """
 
 import os
@@ -11,20 +11,20 @@ import os
 import pytest
 from osgeo import gdal
 
-from nbs.bluetopo.core.datasource import (
+from nbs.bluetopo._internal.config import (
     get_config,
     get_built_flags,
     get_utm_file_columns,
 )
-from nbs.bluetopo.core.build_vrt import (
-    connect_to_survey_registry,
+from nbs.bluetopo._internal.db import connect as connect_to_survey_registry
+from nbs.bluetopo._internal.vrt import (
     create_vrt,
     add_vrt_rat,
     update_utm,
     select_unbuilt_utms,
     select_tiles_by_utm,
     compute_overview_factors,
-    _build_tile_paths,
+    build_tile_paths,
 )
 
 # Minimal RAT fields for pipeline testing
@@ -72,7 +72,6 @@ class TestBluetopoPipeline:
             rel = os.path.relpath(dest, project_dir)
             tiles_info.append({
                 "tilename": f"T{i}",
-                "subregion": "R1",
                 "utm": "19",
                 "resolution": res,
                 "geotiff_disk": rel,
@@ -103,11 +102,11 @@ class TestBluetopoPipeline:
         tiles = select_tiles_by_utm(project_dir, conn, "19", cfg)
         assert len(tiles) == 2
 
-    def test_build_tile_paths(self, pipeline_env):
+    def testbuild_tile_paths(self, pipeline_env):
         conn, project_dir, cfg, tiles_info = pipeline_env
 
         tiles = select_tiles_by_utm(project_dir, conn, "19", cfg)
-        paths = _build_tile_paths(tiles, project_dir, cfg)
+        paths = build_tile_paths(tiles, project_dir, cfg)
         assert len(paths) == 2
         for p in paths:
             assert os.path.isfile(p)
@@ -116,7 +115,7 @@ class TestBluetopoPipeline:
         conn, project_dir, cfg, tiles_info = pipeline_env
 
         tiles = select_tiles_by_utm(project_dir, conn, "19", cfg)
-        paths = _build_tile_paths(tiles, project_dir, cfg)
+        paths = build_tile_paths(tiles, project_dir, cfg)
         factors = compute_overview_factors(paths)
         assert isinstance(factors, list)
 
@@ -128,7 +127,7 @@ class TestBluetopoPipeline:
         assert len(tiles) == 2
 
         # Build tile paths
-        tile_paths = _build_tile_paths(tiles, project_dir, cfg)
+        tile_paths = build_tile_paths(tiles, project_dir, cfg)
 
         # Compute overview factors
         factors = compute_overview_factors(tile_paths)
@@ -146,7 +145,7 @@ class TestBluetopoPipeline:
         conn, project_dir, cfg, tiles_info = pipeline_env
 
         tiles = select_tiles_by_utm(project_dir, conn, "19", cfg)
-        tile_paths = _build_tile_paths(tiles, project_dir, cfg)
+        tile_paths = build_tile_paths(tiles, project_dir, cfg)
         factors = compute_overview_factors(tile_paths)
 
         vrt_dir = os.path.join(project_dir, "BlueTopo_VRT")
@@ -166,7 +165,7 @@ class TestBluetopoPipeline:
 
         # Build UTM VRT
         tiles = select_tiles_by_utm(project_dir, conn, "19", cfg)
-        tile_paths = _build_tile_paths(tiles, project_dir, cfg)
+        tile_paths = build_tile_paths(tiles, project_dir, cfg)
         factors = compute_overview_factors(tile_paths)
 
         vrt_dir = os.path.join(project_dir, "BlueTopo_VRT")
@@ -190,7 +189,7 @@ class TestBluetopoPipeline:
 
         # Build UTM VRT
         tiles = select_tiles_by_utm(project_dir, conn, "19", cfg)
-        tile_paths = _build_tile_paths(tiles, project_dir, cfg)
+        tile_paths = build_tile_paths(tiles, project_dir, cfg)
         factors = compute_overview_factors(tile_paths)
 
         vrt_dir = os.path.join(project_dir, "BlueTopo_VRT")

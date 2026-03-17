@@ -1,13 +1,14 @@
-"""Tests for datasource.py configuration helpers."""
+"""Tests for config.py configuration helpers."""
 
 import re
 
 import pytest
 from osgeo import gdal
 
-from nbs.bluetopo.core.datasource import (
+from nbs.bluetopo._internal.config import (
     DATA_SOURCES,
     KNOWN_RAT_FIELDS,
+    VALID_TARGET_RESOLUTIONS,
     _timestamp,
     get_config,
     get_local_config,
@@ -19,6 +20,9 @@ from nbs.bluetopo.core.datasource import (
     get_disk_field,
     get_disk_fields,
     get_verified_fields,
+    get_link_fields,
+    get_checksum_fields,
+    validate_config,
 )
 
 # ---------------------------------------------------------------------------
@@ -76,14 +80,14 @@ class TestTimestamp:
 
 
 class TestGetCatalogFields:
-    def test_dual_file(self):
+    def test_tileset_pk(self):
         cfg = get_config("bluetopo")
         fields = get_catalog_fields(cfg)
         assert "tilescheme" in fields
         assert fields["tilescheme"] == "text"
         assert "file" not in fields
 
-    def test_single_file(self):
+    def test_catalog_pk(self):
         cfg = get_config("bag")
         fields = get_catalog_fields(cfg)
         assert "file" in fields
@@ -131,7 +135,7 @@ class TestGetVrtUtmFields:
 
 
 class TestGetTilesFields:
-    def test_dual_file(self):
+    def test_dual_file_slots(self):
         cfg = get_config("bluetopo")
         fields = get_tiles_fields(cfg)
         assert "geotiff_disk" in fields
@@ -141,7 +145,7 @@ class TestGetTilesFields:
         assert "geotiff_verified" in fields
         assert "rat_verified" in fields
 
-    def test_single_file(self):
+    def test_single_file_slot(self):
         cfg = get_config("bag")
         fields = get_tiles_fields(cfg)
         assert "file_disk" in fields
@@ -157,7 +161,22 @@ class TestGetTilesFields:
             assert "delivered_date" in fields
             assert "resolution" in fields
             assert "utm" in fields
-            assert "subregion" in fields
+
+    def test_verified_fields_are_integer(self):
+        """Verified flags use integer (0/1), not text."""
+        for src in ["bluetopo", "bag", "s102v22"]:
+            cfg = get_config(src)
+            fields = get_tiles_fields(cfg)
+            for slot in cfg["file_slots"]:
+                col = f"{slot['name']}_verified"
+                assert fields[col] == "integer", f"{src}: {col} should be integer"
+
+    def test_sha256_checksum_columns(self):
+        """Each file slot generates a sha256_checksum column."""
+        cfg = get_config("bluetopo")
+        fields = get_tiles_fields(cfg)
+        assert "geotiff_sha256_checksum" in fields
+        assert "rat_sha256_checksum" in fields
 
 
 # ---------------------------------------------------------------------------
@@ -232,16 +251,41 @@ class TestDiskAndVerifiedFields:
 
 
 # ---------------------------------------------------------------------------
+# get_link_fields / get_checksum_fields
+# ---------------------------------------------------------------------------
+
+
+class TestLinkAndChecksumFields:
+    def test_link_fields_dual(self):
+        cfg = get_config("bluetopo")
+        assert get_link_fields(cfg) == ["geotiff_link", "rat_link"]
+
+    def test_link_fields_single(self):
+        cfg = get_config("bag")
+        assert get_link_fields(cfg) == ["file_link"]
+
+    def test_checksum_fields_dual(self):
+        cfg = get_config("bluetopo")
+        assert get_checksum_fields(cfg) == ["geotiff_sha256_checksum", "rat_sha256_checksum"]
+
+    def test_checksum_fields_single(self):
+        cfg = get_config("bag")
+        assert get_checksum_fields(cfg) == ["file_sha256_checksum"]
+
+
+# ---------------------------------------------------------------------------
 # Config completeness
 # ---------------------------------------------------------------------------
 
 
 REQUIRED_KEYS = [
-    "canonical_name", "min_gdal_version", "geom_prefix", "tile_prefix",
-    "xml_prefix", "bucket", "download_strategy", "file_layout",
+    "canonical_name", "min_gdal_version", "required_gdal_drivers",
+    "geom_prefix", "xml_prefix", "bucket",
     "catalog_table", "catalog_pk",
-    "subdatasets", "band_descriptions", "has_rat", "rat_open_method",
-    "rat_band", "rat_fields",
+    "gpkg_fields", "file_slots",
+    "subdatasets", "band_descriptions",
+    "has_rat", "rat_open_method", "rat_band", "rat_fields",
+    "rat_zero_fields",
 ]
 
 
@@ -257,20 +301,9 @@ class TestConfigCompleteness:
         cfg = get_config(source)
         assert cfg["geom_prefix"] is not None
 
-    @pytest.mark.parametrize("source", ["bluetopo", "modeling"])
-    def test_prefix_listing_sources_have_tile_prefix(self, source):
-        cfg = get_config(source)
-        assert cfg["tile_prefix"] is not None
-
-    @pytest.mark.parametrize("source", ["bag", "s102v21", "s102v22", "s102v30"])
-    def test_direct_link_remote_sources_have_no_tile_prefix(self, source):
-        cfg = get_config(source)
-        assert cfg["tile_prefix"] is None
-
     def test_hsd_local_only(self):
         cfg = get_config("hsd")
         assert cfg["geom_prefix"] is None
-        assert cfg["tile_prefix"] is None
 
     def test_hsd_extra_rat_fields(self):
         cfg = get_config("hsd")
@@ -279,6 +312,165 @@ class TestConfigCompleteness:
         assert "decay_score" in cfg["rat_fields"]
         assert "unqualified" in cfg["rat_fields"]
         assert "sensitive" in cfg["rat_fields"]
+
+
+# ---------------------------------------------------------------------------
+# File slots
+# ---------------------------------------------------------------------------
+
+
+class TestFileSlots:
+    @pytest.mark.parametrize("source", ["bluetopo", "modeling", "hsd"])
+    def test_dual_file_slot_sources(self, source):
+        cfg = get_config(source)
+        assert len(cfg["file_slots"]) == 2
+        names = [s["name"] for s in cfg["file_slots"]]
+        assert names == ["geotiff", "rat"]
+
+    @pytest.mark.parametrize("source", ["bag", "s102v21", "s102v22", "s102v30"])
+    def test_single_file_slot_sources(self, source):
+        cfg = get_config(source)
+        assert len(cfg["file_slots"]) == 1
+        assert cfg["file_slots"][0]["name"] == "file"
+
+    @pytest.mark.parametrize("source", list(DATA_SOURCES.keys()))
+    def test_every_slot_has_name_and_gpkg_link(self, source):
+        cfg = get_config(source)
+        for slot in cfg["file_slots"]:
+            assert "name" in slot
+            assert "gpkg_link" in slot
+            assert "gpkg_checksum" in slot
+
+    def test_bluetopo_gpkg_link_values(self):
+        cfg = get_config("bluetopo")
+        assert cfg["file_slots"][0]["gpkg_link"] == "GeoTIFF_Link"
+        assert cfg["file_slots"][0]["gpkg_checksum"] == "GeoTIFF_SHA256_Checksum"
+        assert cfg["file_slots"][1]["gpkg_link"] == "RAT_Link"
+        assert cfg["file_slots"][1]["gpkg_checksum"] == "RAT_SHA256_Checksum"
+
+    def test_bag_gpkg_link_values(self):
+        cfg = get_config("bag")
+        assert cfg["file_slots"][0]["gpkg_link"] == "BAG"
+        assert cfg["file_slots"][0]["gpkg_checksum"] == "BAG_SHA256"
+
+    def test_s102v22_gpkg_link_values(self):
+        cfg = get_config("s102v22")
+        assert cfg["file_slots"][0]["gpkg_link"] == "S102V22"
+        assert cfg["file_slots"][0]["gpkg_checksum"] == "S102V22_SHA256"
+
+    def test_s102v30_gpkg_link_values(self):
+        cfg = get_config("s102v30")
+        assert cfg["file_slots"][0]["gpkg_link"] == "S102V30"
+        assert cfg["file_slots"][0]["gpkg_checksum"] == "S102V30_SHA256"
+
+
+# ---------------------------------------------------------------------------
+# gpkg_fields
+# ---------------------------------------------------------------------------
+
+
+class TestGpkgFields:
+    @pytest.mark.parametrize("source", list(DATA_SOURCES.keys()))
+    def test_all_sources_have_required_gpkg_field_keys(self, source):
+        cfg = get_config(source)
+        for key in ("tile", "delivered_date", "utm", "resolution"):
+            assert key in cfg["gpkg_fields"]
+
+    @pytest.mark.parametrize("source", ["bluetopo", "modeling", "hsd"])
+    def test_bluetopo_style_gpkg_fields(self, source):
+        cfg = get_config(source)
+        assert cfg["gpkg_fields"]["tile"] == "tile"
+        assert cfg["gpkg_fields"]["delivered_date"] == "Delivered_Date"
+        assert cfg["gpkg_fields"]["utm"] == "UTM"
+        assert cfg["gpkg_fields"]["resolution"] == "Resolution"
+
+    @pytest.mark.parametrize("source", ["bag", "s102v21", "s102v22", "s102v30"])
+    def test_navigation_gpkg_fields(self, source):
+        cfg = get_config(source)
+        assert cfg["gpkg_fields"]["tile"] == "TILE_ID"
+        assert cfg["gpkg_fields"]["delivered_date"] == "ISSUANCE"
+        assert cfg["gpkg_fields"]["utm"] == "UTM"
+        assert cfg["gpkg_fields"]["resolution"] == "Resolution"
+
+    @pytest.mark.parametrize("source", list(DATA_SOURCES.keys()))
+    def test_gpkg_field_values_are_strings(self, source):
+        cfg = get_config(source)
+        for val in cfg["gpkg_fields"].values():
+            assert isinstance(val, str)
+
+
+# ---------------------------------------------------------------------------
+# validate_config
+# ---------------------------------------------------------------------------
+
+
+class TestValidateConfig:
+    def test_valid_config_passes(self):
+        cfg = get_config("bluetopo")
+        # Should not raise
+        validate_config(cfg)
+
+    def test_empty_file_slots_raises(self):
+        cfg = get_config("bluetopo")
+        cfg["file_slots"] = []
+        with pytest.raises(ValueError, match="file_slots must be non-empty"):
+            validate_config(cfg)
+
+    def test_missing_slot_name_raises(self):
+        cfg = get_config("bluetopo")
+        cfg["file_slots"] = [{"gpkg_link": "X", "gpkg_checksum": "Y"}]
+        with pytest.raises(ValueError, match="each file_slot must have 'name'"):
+            validate_config(cfg)
+
+    def test_missing_gpkg_fields_raises(self):
+        cfg = get_config("bluetopo")
+        cfg["gpkg_fields"] = {}
+        with pytest.raises(ValueError, match="gpkg_fields must be defined"):
+            validate_config(cfg)
+
+    def test_missing_gpkg_field_key_raises(self):
+        cfg = get_config("bluetopo")
+        del cfg["gpkg_fields"]["tile"]
+        with pytest.raises(ValueError, match="gpkg_fields missing required key 'tile'"):
+            validate_config(cfg)
+
+    def test_has_rat_without_rat_fields_raises(self):
+        cfg = get_config("bluetopo")
+        cfg["rat_fields"] = None
+        with pytest.raises(ValueError, match="has_rat=True requires 'rat_fields'"):
+            validate_config(cfg)
+
+    def test_invalid_rat_open_method_raises(self):
+        cfg = get_config("bluetopo")
+        cfg["rat_open_method"] = "invalid"
+        with pytest.raises(ValueError, match="unknown rat_open_method"):
+            validate_config(cfg)
+
+    def test_both_subdatasets_and_band_descriptions_raises(self):
+        cfg = get_config("s102v22")
+        cfg["band_descriptions"] = ["Elevation"]
+        with pytest.raises(ValueError, match="cannot have both subdatasets and band_descriptions"):
+            validate_config(cfg)
+
+    def test_neither_subdatasets_nor_band_descriptions_raises(self):
+        cfg = get_config("bluetopo")
+        cfg["subdatasets"] = None
+        cfg["band_descriptions"] = None
+        with pytest.raises(ValueError, match="must have either subdatasets or band_descriptions"):
+            validate_config(cfg)
+
+
+# ---------------------------------------------------------------------------
+# VALID_TARGET_RESOLUTIONS
+# ---------------------------------------------------------------------------
+
+
+class TestValidTargetResolutions:
+    def test_contains_expected_values(self):
+        assert VALID_TARGET_RESOLUTIONS == {2, 4, 8, 16, 32, 64}
+
+    def test_is_a_set(self):
+        assert isinstance(VALID_TARGET_RESOLUTIONS, set)
 
 
 # ---------------------------------------------------------------------------
@@ -367,119 +559,22 @@ class TestRatFieldTypes:
 
 
 # ---------------------------------------------------------------------------
-# Tilescheme field map
-# ---------------------------------------------------------------------------
-
-
-class TestTileschemeFieldMap:
-    def test_bluetopo_no_field_map(self):
-        cfg = get_config("bluetopo")
-        assert cfg["tilescheme_field_map"] is None
-
-    def test_modeling_no_field_map(self):
-        cfg = get_config("modeling")
-        assert cfg["tilescheme_field_map"] is None
-
-    @pytest.mark.parametrize("source", ["bag", "s102v21", "s102v22", "s102v30"])
-    def test_pmn_field_map_has_required_keys(self, source):
-        cfg = get_config(source)
-        fm = cfg["tilescheme_field_map"]
-        assert fm is not None
-        for key in ["tile", "file_link", "file_sha256_checksum",
-                     "delivered_date", "utm", "resolution"]:
-            assert key in fm
-
-    @pytest.mark.parametrize("source", ["bag", "s102v21", "s102v22", "s102v30"])
-    def test_pmn_field_map_values_are_lowercase(self, source):
-        cfg = get_config(source)
-        fm = cfg["tilescheme_field_map"]
-        for val in fm.values():
-            assert val == val.lower()
-
-    def test_bag_maps_to_correct_gpkg_fields(self):
-        cfg = get_config("bag")
-        fm = cfg["tilescheme_field_map"]
-        assert fm["tile"] == "tile_id"
-        assert fm["file_link"] == "bag"
-        assert fm["file_sha256_checksum"] == "bag_sha256"
-
-    def test_s102v22_maps_to_correct_gpkg_fields(self):
-        cfg = get_config("s102v22")
-        fm = cfg["tilescheme_field_map"]
-        assert fm["file_link"] == "s102v22"
-        assert fm["file_sha256_checksum"] == "s102v22_sha256"
-
-    def test_s102v30_maps_to_correct_gpkg_fields(self):
-        cfg = get_config("s102v30")
-        fm = cfg["tilescheme_field_map"]
-        assert fm["tile"] == "tile_id"
-        assert fm["file_link"] == "s102v30"
-        assert fm["file_sha256_checksum"] == "s102v30_sha256"
-        assert fm["delivered_date"] == "issuance"
-
-
-# ---------------------------------------------------------------------------
 # Catalog table / PK consistency
 # ---------------------------------------------------------------------------
 
 
 class TestCatalogTableConsistency:
     @pytest.mark.parametrize("source", ["bluetopo", "modeling", "hsd"])
-    def test_dual_file_uses_tileset_table(self, source):
+    def test_dual_slot_uses_tileset_table(self, source):
         cfg = get_config(source)
         assert cfg["catalog_table"] == "tileset"
         assert cfg["catalog_pk"] == "tilescheme"
 
     @pytest.mark.parametrize("source", ["bag", "s102v21", "s102v22", "s102v30"])
-    def test_single_file_uses_catalog_table(self, source):
+    def test_single_slot_uses_catalog_table(self, source):
         cfg = get_config(source)
         assert cfg["catalog_table"] == "catalog"
         assert cfg["catalog_pk"] == "file"
-
-
-# ---------------------------------------------------------------------------
-# File layout consistency
-# ---------------------------------------------------------------------------
-
-
-class TestFileLayoutConsistency:
-    @pytest.mark.parametrize("source", ["bluetopo", "modeling", "hsd"])
-    def test_dual_file_sources(self, source):
-        cfg = get_config(source)
-        assert cfg["file_layout"] == "dual_file"
-
-    @pytest.mark.parametrize("source", ["bag", "s102v21", "s102v22", "s102v30"])
-    def test_single_file_sources(self, source):
-        cfg = get_config(source)
-        assert cfg["file_layout"] == "single_file"
-
-
-# ---------------------------------------------------------------------------
-# Download strategy consistency
-# ---------------------------------------------------------------------------
-
-
-class TestDownloadStrategyConsistency:
-    @pytest.mark.parametrize("source", ["bluetopo", "modeling"])
-    def test_prefix_listing_sources(self, source):
-        cfg = get_config(source)
-        assert cfg["download_strategy"] == "prefix_listing"
-
-    @pytest.mark.parametrize("source", ["bag", "s102v21", "s102v22", "s102v30", "hsd"])
-    def test_direct_link_sources(self, source):
-        cfg = get_config(source)
-        assert cfg["download_strategy"] == "direct_link"
-
-    @pytest.mark.parametrize("source", list(DATA_SOURCES.keys()))
-    def test_all_configs_have_valid_strategy(self, source):
-        cfg = get_config(source)
-        assert cfg["download_strategy"] in ("prefix_listing", "direct_link")
-
-    @pytest.mark.parametrize("source", list(DATA_SOURCES.keys()))
-    def test_prefix_listing_requires_tile_prefix(self, source):
-        cfg = get_config(source)
-        if cfg["download_strategy"] == "prefix_listing":
-            assert cfg["tile_prefix"] is not None
 
 
 # ---------------------------------------------------------------------------
@@ -611,6 +706,18 @@ class TestDeepCopyIsolation:
         cfg2 = get_config("bluetopo")
         assert len(cfg2["band_descriptions"]) == 3
 
+    def test_mutating_file_slots_doesnt_affect_global(self):
+        cfg = get_config("bluetopo")
+        cfg["file_slots"].append({"name": "extra", "gpkg_link": "X", "gpkg_checksum": "Y"})
+        cfg2 = get_config("bluetopo")
+        assert len(cfg2["file_slots"]) == 2
+
+    def test_mutating_gpkg_fields_doesnt_affect_global(self):
+        cfg = get_config("bluetopo")
+        cfg["gpkg_fields"]["extra"] = "EXTRA"
+        cfg2 = get_config("bluetopo")
+        assert "extra" not in cfg2["gpkg_fields"]
+
 
 # ---------------------------------------------------------------------------
 # KNOWN_RAT_FIELDS
@@ -652,7 +759,7 @@ class TestGetLocalConfig:
     def test_prefixes_are_none(self):
         cfg = get_local_config("Weird")
         assert cfg["geom_prefix"] is None
-        assert cfg["tile_prefix"] is None
+        assert cfg["xml_prefix"] is None
 
     def test_rat_fields_is_full_known_set(self):
         cfg = get_local_config("Weird")
@@ -667,13 +774,16 @@ class TestGetLocalConfig:
         assert "extra" not in cfg2["rat_fields"]
         assert cfg2["canonical_name"] == "Weird"
 
-    def test_inherits_bluetopo_file_layout(self):
+    def test_inherits_bluetopo_file_slots(self):
         cfg = get_local_config("Weird")
-        assert cfg["file_layout"] == "dual_file"
+        assert len(cfg["file_slots"]) == 2
+        assert cfg["file_slots"][0]["name"] == "geotiff"
+        assert cfg["file_slots"][1]["name"] == "rat"
 
-    def test_local_config_has_direct_link_strategy(self):
+    def test_inherits_bluetopo_gpkg_fields(self):
         cfg = get_local_config("Weird")
-        assert cfg["download_strategy"] == "direct_link"
+        assert cfg["gpkg_fields"]["tile"] == "tile"
+        assert cfg["gpkg_fields"]["delivered_date"] == "Delivered_Date"
 
     def test_inherits_bluetopo_rat_settings(self):
         cfg = get_local_config("Weird")
@@ -682,25 +792,26 @@ class TestGetLocalConfig:
         assert cfg["rat_band"] == 3
 
     def test_known_name_inherits_source_config(self):
-        """Known source name preserves file_layout and structure from that source."""
+        """Known source name preserves file_slots and structure from that source."""
         cfg = get_local_config("BAG")
-        assert cfg["file_layout"] == "single_file"
-        assert cfg["download_strategy"] == "direct_link"
-        assert cfg["tile_prefix"] is None
+        assert len(cfg["file_slots"]) == 1
+        assert cfg["file_slots"][0]["name"] == "file"
+        assert cfg["geom_prefix"] is None
+        assert cfg["xml_prefix"] is None
         assert cfg["canonical_name"] == "BAG"
 
-    def test_known_dual_file_name_inherits_dual_file(self):
-        """Known dual_file source name preserves dual_file layout."""
+    def test_known_dual_slot_name_inherits_dual_slots(self):
+        """Known dual-slot source name preserves dual file_slots."""
         cfg = get_local_config("HSD")
-        assert cfg["file_layout"] == "dual_file"
-        assert cfg["download_strategy"] == "direct_link"
-        assert cfg["tile_prefix"] is None
+        assert len(cfg["file_slots"]) == 2
+        assert cfg["geom_prefix"] is None
+        assert cfg["xml_prefix"] is None
 
     def test_s102v30_local_config(self):
-        """S102V30 local config preserves subdatasets and single_file layout."""
+        """S102V30 local config preserves subdatasets and single file_slot."""
         cfg = get_local_config("S102V30")
-        assert cfg["file_layout"] == "single_file"
-        assert cfg["download_strategy"] == "direct_link"
+        assert len(cfg["file_slots"]) == 1
+        assert cfg["file_slots"][0]["name"] == "file"
         assert cfg["subdatasets"] is not None
         assert len(cfg["subdatasets"]) == 2
         assert cfg["subdatasets"][1]["name"] == "QualityOfBathymetryCoverage"

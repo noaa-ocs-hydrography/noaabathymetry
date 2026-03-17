@@ -5,7 +5,7 @@ import os
 import pytest
 from osgeo import gdal
 
-from nbs.bluetopo.core.build_vrt import create_vrt, compute_overview_factors
+from nbs.bluetopo._internal.vrt import create_vrt, compute_overview_factors
 
 
 # ---------------------------------------------------------------------------
@@ -194,13 +194,13 @@ class TestCreateVrtTargetResolution:
     def test_negative_target_resolution_raises(self, make_geotiff, tmp_path):
         t1 = make_geotiff("tile1.tif", bands=3)
         vrt_path = str(tmp_path / "output.vrt")
-        with pytest.raises(ValueError, match="must be positive"):
+        with pytest.raises(ValueError, match="must be one of"):
             create_vrt([t1], vrt_path, None, False, target_resolution=-8.0)
 
     def test_zero_target_resolution_raises(self, make_geotiff, tmp_path):
         t1 = make_geotiff("tile1.tif", bands=3)
         vrt_path = str(tmp_path / "output.vrt")
-        with pytest.raises(ValueError, match="must be positive"):
+        with pytest.raises(ValueError, match="must be one of"):
             create_vrt([t1], vrt_path, None, False, target_resolution=0.0)
 
 

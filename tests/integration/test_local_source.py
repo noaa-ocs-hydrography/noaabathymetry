@@ -9,10 +9,9 @@ a geopackage whose filename encodes the data source name:
     /some/dir/Unknown_Tile_Scheme.gpkg  ->  get_local_config("Unknown")
 
 If the resolved name matches a known source, that source's config is
-used as the base (preserving file_layout, RAT settings, etc.).
+used as the base (preserving file_slots, RAT settings, etc.).
 Otherwise, BlueTopo is used as the base with the full KNOWN_RAT_FIELDS
-superset.  In both cases, S3 prefixes are cleared and download_strategy
-is set to direct_link for local file access.
+superset.  In both cases, S3 prefixes are cleared for local file access.
 
 These tests exercise that resolution logic and the associated error paths
 without hitting S3 or running the full download/build pipeline.
@@ -23,9 +22,9 @@ from unittest import mock
 
 import pytest
 
-from nbs.bluetopo.core.datasource import get_config, get_local_config, KNOWN_RAT_FIELDS
-import nbs.bluetopo.core.fetch_tiles as fetch_tiles_mod
-import nbs.bluetopo.core.build_vrt as build_vrt_mod
+from nbs.bluetopo._internal.config import get_config, get_local_config, KNOWN_RAT_FIELDS
+import nbs.bluetopo._internal.fetcher as fetch_tiles_mod
+import nbs.bluetopo._internal.builder as build_vrt_mod
 
 
 # ---------------------------------------------------------------------------
@@ -58,21 +57,20 @@ class TestFetchTilesLocalResolution:
         os.makedirs(project_dir)
 
         # Mock everything after config resolution to prevent real pipeline work
-        with mock.patch.object(fetch_tiles_mod, "connect_to_survey_registry") as mock_conn, \
+        with mock.patch.object(fetch_tiles_mod, "connect") as mock_conn, \
              mock.patch.object(fetch_tiles_mod, "get_tessellation", return_value=None), \
              mock.patch.object(fetch_tiles_mod, "upsert_tiles"), \
-             mock.patch.object(fetch_tiles_mod, "download_tiles",
-                               return_value=([], [], [], [], [], [], [], [])):
+             mock.patch.object(fetch_tiles_mod, "all_db_tiles", return_value=[]), \
+             mock.patch.object(fetch_tiles_mod, "build_download_plan", return_value=({}, [], [])), \
+             mock.patch.object(fetch_tiles_mod, "execute_downloads", return_value=[]):
             mock_conn.return_value = mock.MagicMock()
-            fetch_tiles_mod.main(
+            fetch_tiles_mod.fetch_tiles(
                 project_dir=project_dir,
                 data_source=local_dir,
             )
             call_cfg = mock_conn.call_args[0][1]
             assert call_cfg["canonical_name"] == "HSD"
-            assert call_cfg["download_strategy"] == "direct_link"
-            assert call_cfg["tile_prefix"] is None
-            assert call_cfg["file_layout"] == "dual_file"
+            assert len(call_cfg["file_slots"]) == 2
 
     def test_bluetopo_gpkg_resolves_to_local_bluetopo_config(self, tmp_path):
         """BlueTopo_Tile_Scheme.gpkg via directory -> local config based on BlueTopo."""
@@ -80,21 +78,20 @@ class TestFetchTilesLocalResolution:
         project_dir = str(tmp_path / "project")
         os.makedirs(project_dir)
 
-        with mock.patch.object(fetch_tiles_mod, "connect_to_survey_registry") as mock_conn, \
+        with mock.patch.object(fetch_tiles_mod, "connect") as mock_conn, \
              mock.patch.object(fetch_tiles_mod, "get_tessellation", return_value=None), \
              mock.patch.object(fetch_tiles_mod, "upsert_tiles"), \
-             mock.patch.object(fetch_tiles_mod, "download_tiles",
-                               return_value=([], [], [], [], [], [], [], [])):
+             mock.patch.object(fetch_tiles_mod, "all_db_tiles", return_value=[]), \
+             mock.patch.object(fetch_tiles_mod, "build_download_plan", return_value=({}, [], [])), \
+             mock.patch.object(fetch_tiles_mod, "execute_downloads", return_value=[]):
             mock_conn.return_value = mock.MagicMock()
-            fetch_tiles_mod.main(
+            fetch_tiles_mod.fetch_tiles(
                 project_dir=project_dir,
                 data_source=local_dir,
             )
             call_cfg = mock_conn.call_args[0][1]
             assert call_cfg["canonical_name"] == "BlueTopo"
-            assert call_cfg["download_strategy"] == "direct_link"
-            assert call_cfg["tile_prefix"] is None
-            assert call_cfg["file_layout"] == "dual_file"
+            assert len(call_cfg["file_slots"]) == 2
 
     def test_unknown_gpkg_uses_local_config(self, tmp_path):
         """UnknownSource_Tile_Scheme.gpkg -> get_local_config with resolved name."""
@@ -102,21 +99,20 @@ class TestFetchTilesLocalResolution:
         project_dir = str(tmp_path / "project")
         os.makedirs(project_dir)
 
-        with mock.patch.object(fetch_tiles_mod, "connect_to_survey_registry") as mock_conn, \
+        with mock.patch.object(fetch_tiles_mod, "connect") as mock_conn, \
              mock.patch.object(fetch_tiles_mod, "get_tessellation", return_value=None), \
              mock.patch.object(fetch_tiles_mod, "upsert_tiles"), \
-             mock.patch.object(fetch_tiles_mod, "download_tiles",
-                               return_value=([], [], [], [], [], [], [], [])):
+             mock.patch.object(fetch_tiles_mod, "all_db_tiles", return_value=[]), \
+             mock.patch.object(fetch_tiles_mod, "build_download_plan", return_value=({}, [], [])), \
+             mock.patch.object(fetch_tiles_mod, "execute_downloads", return_value=[]):
             mock_conn.return_value = mock.MagicMock()
-            fetch_tiles_mod.main(
+            fetch_tiles_mod.fetch_tiles(
                 project_dir=project_dir,
                 data_source=local_dir,
             )
             call_cfg = mock_conn.call_args[0][1]
             assert call_cfg["canonical_name"] == "UnknownSource"
             assert call_cfg["geom_prefix"] is None
-            assert call_cfg["tile_prefix"] is None
-            assert call_cfg["download_strategy"] == "direct_link"
             assert len(call_cfg["rat_fields"]) == len(KNOWN_RAT_FIELDS)
 
     def test_bag_gpkg_resolves_to_bag_local_config(self, tmp_path):
@@ -125,21 +121,20 @@ class TestFetchTilesLocalResolution:
         project_dir = str(tmp_path / "project")
         os.makedirs(project_dir)
 
-        with mock.patch.object(fetch_tiles_mod, "connect_to_survey_registry") as mock_conn, \
+        with mock.patch.object(fetch_tiles_mod, "connect") as mock_conn, \
              mock.patch.object(fetch_tiles_mod, "get_tessellation", return_value=None), \
              mock.patch.object(fetch_tiles_mod, "upsert_tiles"), \
-             mock.patch.object(fetch_tiles_mod, "download_tiles",
-                               return_value=([], [], [], [], [], [], [], [])):
+             mock.patch.object(fetch_tiles_mod, "all_db_tiles", return_value=[]), \
+             mock.patch.object(fetch_tiles_mod, "build_download_plan", return_value=({}, [], [])), \
+             mock.patch.object(fetch_tiles_mod, "execute_downloads", return_value=[]):
             mock_conn.return_value = mock.MagicMock()
-            fetch_tiles_mod.main(
+            fetch_tiles_mod.fetch_tiles(
                 project_dir=project_dir,
                 data_source=local_dir,
             )
             call_cfg = mock_conn.call_args[0][1]
             assert call_cfg["canonical_name"] == "BAG"
-            assert call_cfg["file_layout"] == "single_file"
-            assert call_cfg["download_strategy"] == "direct_link"
-            assert call_cfg["tile_prefix"] is None
+            assert len(call_cfg["file_slots"]) == 1
 
     def test_no_gpkg_raises_valueerror(self, tmp_path):
         """Directory with no tile-scheme gpkg raises ValueError."""
@@ -148,7 +143,7 @@ class TestFetchTilesLocalResolution:
         os.makedirs(project_dir)
 
         with pytest.raises(ValueError, match="tile scheme file"):
-            fetch_tiles_mod.main(
+            fetch_tiles_mod.fetch_tiles(
                 project_dir=project_dir,
                 data_source=local_dir,
             )
@@ -160,7 +155,7 @@ class TestFetchTilesLocalResolution:
         os.makedirs(project_dir)
 
         with pytest.raises(ValueError, match="tile scheme file"):
-            fetch_tiles_mod.main(
+            fetch_tiles_mod.fetch_tiles(
                 project_dir=project_dir,
                 data_source=local_dir,
             )
@@ -171,7 +166,7 @@ class TestFetchTilesLocalResolution:
         os.makedirs(project_dir)
 
         with pytest.raises(ValueError, match="local-only"):
-            fetch_tiles_mod.main(
+            fetch_tiles_mod.fetch_tiles(
                 project_dir=project_dir,
                 data_source="hsd",
             )
@@ -185,13 +180,14 @@ class TestFetchTilesLocalResolution:
         project_dir = str(tmp_path / "project")
         os.makedirs(project_dir)
 
-        with mock.patch.object(fetch_tiles_mod, "connect_to_survey_registry") as mock_conn, \
+        with mock.patch.object(fetch_tiles_mod, "connect") as mock_conn, \
              mock.patch.object(fetch_tiles_mod, "get_tessellation", return_value=None), \
              mock.patch.object(fetch_tiles_mod, "upsert_tiles"), \
-             mock.patch.object(fetch_tiles_mod, "download_tiles",
-                               return_value=([], [], [], [], [], [], [], [])):
+             mock.patch.object(fetch_tiles_mod, "all_db_tiles", return_value=[]), \
+             mock.patch.object(fetch_tiles_mod, "build_download_plan", return_value=({}, [], [])), \
+             mock.patch.object(fetch_tiles_mod, "execute_downloads", return_value=[]):
             mock_conn.return_value = mock.MagicMock()
-            fetch_tiles_mod.main(
+            fetch_tiles_mod.fetch_tiles(
                 project_dir=project_dir,
                 data_source=local_dir,
             )
@@ -208,13 +204,14 @@ class TestFetchTilesLocalResolution:
         project_dir = str(tmp_path / "project")
         os.makedirs(project_dir)
 
-        with mock.patch.object(fetch_tiles_mod, "connect_to_survey_registry") as mock_conn, \
+        with mock.patch.object(fetch_tiles_mod, "connect") as mock_conn, \
              mock.patch.object(fetch_tiles_mod, "get_tessellation", return_value=None), \
              mock.patch.object(fetch_tiles_mod, "upsert_tiles"), \
-             mock.patch.object(fetch_tiles_mod, "download_tiles",
-                               return_value=([], [], [], [], [], [], [], [])):
+             mock.patch.object(fetch_tiles_mod, "all_db_tiles", return_value=[]), \
+             mock.patch.object(fetch_tiles_mod, "build_download_plan", return_value=({}, [], [])), \
+             mock.patch.object(fetch_tiles_mod, "execute_downloads", return_value=[]):
             mock_conn.return_value = mock.MagicMock()
-            fetch_tiles_mod.main(
+            fetch_tiles_mod.fetch_tiles(
                 project_dir=project_dir,
                 data_source=local_dir,
             )
@@ -231,13 +228,14 @@ class TestFetchTilesLocalResolution:
         project_dir = str(tmp_path / "project")
         os.makedirs(project_dir)
 
-        with mock.patch.object(fetch_tiles_mod, "connect_to_survey_registry") as mock_conn, \
+        with mock.patch.object(fetch_tiles_mod, "connect") as mock_conn, \
              mock.patch.object(fetch_tiles_mod, "get_tessellation", return_value=None), \
              mock.patch.object(fetch_tiles_mod, "upsert_tiles"), \
-             mock.patch.object(fetch_tiles_mod, "download_tiles",
-                               return_value=([], [], [], [], [], [], [], [])):
+             mock.patch.object(fetch_tiles_mod, "all_db_tiles", return_value=[]), \
+             mock.patch.object(fetch_tiles_mod, "build_download_plan", return_value=({}, [], [])), \
+             mock.patch.object(fetch_tiles_mod, "execute_downloads", return_value=[]):
             mock_conn.return_value = mock.MagicMock()
-            fetch_tiles_mod.main(
+            fetch_tiles_mod.fetch_tiles(
                 project_dir=project_dir,
                 data_source=local_dir,
             )
@@ -254,13 +252,14 @@ class TestFetchTilesLocalResolution:
         project_dir = str(tmp_path / "project")
         os.makedirs(project_dir)
 
-        with mock.patch.object(fetch_tiles_mod, "connect_to_survey_registry") as mock_conn, \
+        with mock.patch.object(fetch_tiles_mod, "connect") as mock_conn, \
              mock.patch.object(fetch_tiles_mod, "get_tessellation", return_value=None), \
              mock.patch.object(fetch_tiles_mod, "upsert_tiles"), \
-             mock.patch.object(fetch_tiles_mod, "download_tiles",
-                               return_value=([], [], [], [], [], [], [], [])):
+             mock.patch.object(fetch_tiles_mod, "all_db_tiles", return_value=[]), \
+             mock.patch.object(fetch_tiles_mod, "build_download_plan", return_value=({}, [], [])), \
+             mock.patch.object(fetch_tiles_mod, "execute_downloads", return_value=[]):
             mock_conn.return_value = mock.MagicMock()
-            fetch_tiles_mod.main(
+            fetch_tiles_mod.fetch_tiles(
                 project_dir=project_dir,
                 data_source=local_dir,
             )
@@ -268,24 +267,26 @@ class TestFetchTilesLocalResolution:
             call_cfg = mock_conn.call_args[0][1]
             assert call_cfg["canonical_name"] == "BlueTopo"
 
-    def test_local_passes_local_dir_to_download_tiles(self, tmp_path):
-        """Local source passes local_dir to download_tiles."""
+    def test_local_passes_local_dir_to_build_download_plan(self, tmp_path):
+        """Local source passes local_dir to build_download_plan."""
         local_dir = _create_local_dir(tmp_path, ["BlueTopo_Tile_Scheme.gpkg"])
         project_dir = str(tmp_path / "project")
         os.makedirs(project_dir)
 
-        with mock.patch.object(fetch_tiles_mod, "connect_to_survey_registry") as mock_conn, \
+        with mock.patch.object(fetch_tiles_mod, "connect") as mock_conn, \
              mock.patch.object(fetch_tiles_mod, "get_tessellation", return_value=None), \
              mock.patch.object(fetch_tiles_mod, "upsert_tiles"), \
-             mock.patch.object(fetch_tiles_mod, "download_tiles",
-                               return_value=([], [], [], [], [], [], [], [])) as mock_dl:
+             mock.patch.object(fetch_tiles_mod, "all_db_tiles", return_value=[]), \
+             mock.patch.object(fetch_tiles_mod, "build_download_plan",
+                               return_value=({}, [], [])) as mock_plan, \
+             mock.patch.object(fetch_tiles_mod, "execute_downloads", return_value=[]):
             mock_conn.return_value = mock.MagicMock()
-            fetch_tiles_mod.main(
+            fetch_tiles_mod.fetch_tiles(
                 project_dir=project_dir,
                 data_source=local_dir,
             )
-            # download_tiles receives local_dir as keyword argument
-            call_kwargs = mock_dl.call_args[1]
+            # build_download_plan receives local_dir as keyword argument
+            call_kwargs = mock_plan.call_args[1]
             assert call_kwargs["local_dir"] == local_dir
 
     def test_local_sets_geom_prefix_to_local_dir(self, tmp_path):
@@ -294,14 +295,15 @@ class TestFetchTilesLocalResolution:
         project_dir = str(tmp_path / "project")
         os.makedirs(project_dir)
 
-        with mock.patch.object(fetch_tiles_mod, "connect_to_survey_registry") as mock_conn, \
+        with mock.patch.object(fetch_tiles_mod, "connect") as mock_conn, \
              mock.patch.object(fetch_tiles_mod, "get_tessellation",
                                return_value=None) as mock_tess, \
              mock.patch.object(fetch_tiles_mod, "upsert_tiles"), \
-             mock.patch.object(fetch_tiles_mod, "download_tiles",
-                               return_value=([], [], [], [], [], [], [], [])):
+             mock.patch.object(fetch_tiles_mod, "all_db_tiles", return_value=[]), \
+             mock.patch.object(fetch_tiles_mod, "build_download_plan", return_value=({}, [], [])), \
+             mock.patch.object(fetch_tiles_mod, "execute_downloads", return_value=[]):
             mock_conn.return_value = mock.MagicMock()
-            fetch_tiles_mod.main(
+            fetch_tiles_mod.fetch_tiles(
                 project_dir=project_dir,
                 data_source=local_dir,
             )
@@ -312,7 +314,7 @@ class TestFetchTilesLocalResolution:
     def test_relative_path_raises(self, tmp_path):
         """Relative project_dir path raises ValueError."""
         with pytest.raises(ValueError, match="absolute path"):
-            fetch_tiles_mod.main(
+            fetch_tiles_mod.fetch_tiles(
                 project_dir="relative/path",
                 data_source="bluetopo",
             )
@@ -322,13 +324,15 @@ class TestFetchTilesLocalResolution:
         project_dir = str(tmp_path / "project")
         os.makedirs(project_dir)
 
-        with mock.patch.object(fetch_tiles_mod, "connect_to_survey_registry") as mock_conn, \
+        with mock.patch.object(fetch_tiles_mod, "connect") as mock_conn, \
              mock.patch.object(fetch_tiles_mod, "get_tessellation", return_value=None), \
              mock.patch.object(fetch_tiles_mod, "upsert_tiles"), \
-             mock.patch.object(fetch_tiles_mod, "download_tiles",
-                               return_value=([], [], [], [], [], [], [], [])):
+             mock.patch.object(fetch_tiles_mod, "all_db_tiles", return_value=[]), \
+             mock.patch.object(fetch_tiles_mod, "_get_s3_client", return_value=None), \
+             mock.patch.object(fetch_tiles_mod, "build_download_plan", return_value=({}, [], [])), \
+             mock.patch.object(fetch_tiles_mod, "execute_downloads", return_value=[]):
             mock_conn.return_value = mock.MagicMock()
-            fetch_tiles_mod.main(
+            fetch_tiles_mod.fetch_tiles(
                 project_dir=project_dir,
                 data_source=None,
             )
@@ -349,7 +353,7 @@ class TestBuildVrtLocalResolution:
         project_dir = str(tmp_path / "project")
         os.makedirs(project_dir, exist_ok=True)
         # Create the registry DB file
-        from nbs.bluetopo.core.build_vrt import connect_to_survey_registry
+        from nbs.bluetopo._internal.db import connect as connect_to_survey_registry
         conn = connect_to_survey_registry(project_dir, cfg)
         conn.close()
         # Create the tile folder that main() expects
@@ -362,19 +366,17 @@ class TestBuildVrtLocalResolution:
         local_dir = _create_local_dir(tmp_path, ["HSD_Tile_Scheme.gpkg"])
         project_dir = self._setup_project(tmp_path, "HSD", cfg)
 
-        with mock.patch.object(build_vrt_mod, "connect_to_survey_registry") as mock_conn, \
+        with mock.patch.object(build_vrt_mod, "connect") as mock_conn, \
              mock.patch.object(build_vrt_mod, "missing_utms", return_value=0), \
              mock.patch.object(build_vrt_mod, "select_unbuilt_utms", return_value=[]):
             mock_conn.return_value = mock.MagicMock()
-            build_vrt_mod.main(
+            build_vrt_mod.build_vrt(
                 project_dir=project_dir,
                 data_source=local_dir,
             )
             call_cfg = mock_conn.call_args[0][1]
             assert call_cfg["canonical_name"] == "HSD"
-            assert call_cfg["download_strategy"] == "direct_link"
-            assert call_cfg["tile_prefix"] is None
-            assert call_cfg["file_layout"] == "dual_file"
+            assert len(call_cfg["file_slots"]) == 2
 
     def test_no_gpkg_raises_valueerror(self, tmp_path):
         """Directory with no tile-scheme gpkg raises ValueError."""
@@ -383,7 +385,7 @@ class TestBuildVrtLocalResolution:
         os.makedirs(project_dir)
 
         with pytest.raises(ValueError, match="tile scheme file"):
-            build_vrt_mod.main(
+            build_vrt_mod.build_vrt(
                 project_dir=project_dir,
                 data_source=local_dir,
             )
@@ -394,7 +396,7 @@ class TestBuildVrtLocalResolution:
         os.makedirs(project_dir)
 
         with pytest.raises(ValueError, match="local-only"):
-            build_vrt_mod.main(
+            build_vrt_mod.build_vrt(
                 project_dir=project_dir,
                 data_source="hsd",
             )
@@ -402,7 +404,7 @@ class TestBuildVrtLocalResolution:
     def test_relative_path_raises(self, tmp_path):
         """Relative project_dir raises ValueError."""
         with pytest.raises(ValueError, match="absolute path"):
-            build_vrt_mod.main(
+            build_vrt_mod.build_vrt(
                 project_dir="relative/path",
                 data_source="bluetopo",
             )
@@ -410,7 +412,7 @@ class TestBuildVrtLocalResolution:
     def test_missing_project_dir_raises(self, tmp_path):
         """Non-existent project_dir raises ValueError."""
         with pytest.raises(ValueError, match="Folder path not found"):
-            build_vrt_mod.main(
+            build_vrt_mod.build_vrt(
                 project_dir=str(tmp_path / "nonexistent"),
                 data_source="bluetopo",
             )
@@ -421,7 +423,7 @@ class TestBuildVrtLocalResolution:
         os.makedirs(project_dir)
 
         with pytest.raises(ValueError, match="database not found"):
-            build_vrt_mod.main(
+            build_vrt_mod.build_vrt(
                 project_dir=project_dir,
                 data_source="bluetopo",
             )
@@ -432,12 +434,12 @@ class TestBuildVrtLocalResolution:
         project_dir = str(tmp_path / "project")
         os.makedirs(project_dir)
         # Create DB but not the tile folder
-        from nbs.bluetopo.core.build_vrt import connect_to_survey_registry
+        from nbs.bluetopo._internal.db import connect as connect_to_survey_registry
         conn = connect_to_survey_registry(project_dir, cfg)
         conn.close()
 
         with pytest.raises(ValueError, match="Tile downloads folder not found"):
-            build_vrt_mod.main(
+            build_vrt_mod.build_vrt(
                 project_dir=project_dir,
                 data_source="bluetopo",
             )
@@ -455,16 +457,15 @@ class TestBuildVrtLocalResolution:
             f.write("")
         os.makedirs(os.path.join(project_dir, "Weird"), exist_ok=True)
 
-        with mock.patch.object(build_vrt_mod, "connect_to_survey_registry") as mock_conn, \
+        with mock.patch.object(build_vrt_mod, "connect") as mock_conn, \
              mock.patch.object(build_vrt_mod, "missing_utms", return_value=0), \
              mock.patch.object(build_vrt_mod, "select_unbuilt_utms", return_value=[]):
             mock_conn.return_value = mock.MagicMock()
-            build_vrt_mod.main(
+            build_vrt_mod.build_vrt(
                 project_dir=project_dir,
                 data_source=local_dir,
             )
             call_cfg = mock_conn.call_args[0][1]
             assert call_cfg["canonical_name"] == "Weird"
             assert call_cfg["geom_prefix"] is None
-            assert call_cfg["tile_prefix"] is None
             assert len(call_cfg["rat_fields"]) == len(KNOWN_RAT_FIELDS)

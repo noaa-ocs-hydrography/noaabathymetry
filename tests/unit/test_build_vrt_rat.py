@@ -5,12 +5,9 @@ import os
 import pytest
 from osgeo import gdal
 
-from nbs.bluetopo.core.datasource import get_config, get_local_config, KNOWN_RAT_FIELDS
-from nbs.bluetopo.core.build_vrt import (
-    add_vrt_rat,
-    create_vrt,
-    connect_to_survey_registry,
-)
+from nbs.bluetopo._internal.config import get_config, get_local_config, KNOWN_RAT_FIELDS
+from nbs.bluetopo._internal.db import connect as connect_to_survey_registry
+from nbs.bluetopo._internal.vrt import add_vrt_rat, create_vrt
 
 # Minimal RAT fields for testing (subset of BlueTopo)
 MINI_RAT_FIELDS = {
@@ -49,7 +46,7 @@ class TestAddVrtRat:
         rel_tif = os.path.relpath(tif, project_dir)
 
         conn, _ = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1",
+            {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel_tif, "rat_disk": rel_tif},
         ])
 
@@ -87,9 +84,9 @@ class TestAddVrtRat:
         rel2 = os.path.relpath(tif2, project_dir)
 
         conn, _ = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1",
+            {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel1, "rat_disk": rel1},
-            {"tilename": "T2", "utm": "19", "subregion": "R1",
+            {"tilename": "T2", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel2, "rat_disk": rel2},
         ])
 
@@ -126,9 +123,9 @@ class TestAddVrtRat:
         rel2 = os.path.relpath(tif2, project_dir)
 
         conn, _ = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1",
+            {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel1, "rat_disk": rel1},
-            {"tilename": "T2", "utm": "19", "subregion": "R1",
+            {"tilename": "T2", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel2, "rat_disk": rel2},
         ])
 
@@ -154,7 +151,7 @@ class TestAddVrtRat:
         rel = os.path.relpath(tif, project_dir)
 
         conn, _ = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1",
+            {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel, "rat_disk": rel},
         ])
 
@@ -176,7 +173,7 @@ class TestAddVrtRat:
         cfg = _make_bt_cfg()
         project_dir = str(tmp_path)
         conn, _ = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1",
+            {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": "missing.tif", "rat_disk": "missing.aux"},
         ])
         # Create a valid VRT to open (using a real GeoTIFF as source)
@@ -225,7 +222,7 @@ class TestRatZeroFields:
         rel_tif = os.path.relpath(tif, project_dir)
 
         conn, _ = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1",
+            {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel_tif, "rat_disk": rel_tif},
         ])
 
@@ -269,9 +266,9 @@ class TestRatMultipleSurveys:
         rel2 = os.path.relpath(tif2, project_dir)
 
         conn, _ = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1",
+            {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel1, "rat_disk": rel1},
-            {"tilename": "T2", "utm": "19", "subregion": "R1",
+            {"tilename": "T2", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel2, "rat_disk": rel2},
         ])
 
@@ -301,7 +298,7 @@ class TestRatMultipleSurveys:
         rel = os.path.relpath(tif, project_dir)
 
         conn, _ = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1",
+            {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel, "rat_disk": rel},
         ])
 
@@ -378,9 +375,9 @@ class TestDynamicFieldDetection:
         rel2 = os.path.relpath(tif2, project_dir)
 
         conn, _ = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1",
+            {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel1, "rat_disk": rel1},
-            {"tilename": "T2", "utm": "19", "subregion": "R1",
+            {"tilename": "T2", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel2, "rat_disk": rel2},
         ])
 
@@ -414,7 +411,7 @@ class TestDynamicFieldDetection:
         rel = os.path.relpath(tif, project_dir)
 
         conn, _ = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1",
+            {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel, "rat_disk": rel},
         ])
 
@@ -443,7 +440,7 @@ class TestDynamicFieldDetection:
         rel = os.path.relpath(tif, project_dir)
 
         conn, _ = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1",
+            {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel, "rat_disk": rel},
         ])
 
@@ -478,7 +475,7 @@ class TestDynamicFieldDetection:
         rel = os.path.relpath(tif, project_dir)
 
         conn, _ = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1",
+            {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel, "rat_disk": rel},
         ])
 
@@ -512,7 +509,7 @@ class TestDynamicFieldDetection:
         rel = os.path.relpath(tif, project_dir)
 
         conn, _ = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1",
+            {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel, "rat_disk": rel},
         ])
 
@@ -550,9 +547,9 @@ class TestDynamicFieldDetection:
         rel2 = os.path.relpath(tif2, project_dir)
 
         conn, _ = registry_db(cfg, tiles=[
-            {"tilename": "T1", "utm": "19", "subregion": "R1",
+            {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel1, "rat_disk": rel1},
-            {"tilename": "T2", "utm": "19", "subregion": "R1",
+            {"tilename": "T2", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel2, "rat_disk": rel2},
         ])
 

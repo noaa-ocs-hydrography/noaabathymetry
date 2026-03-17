@@ -1,0 +1,224 @@
+"""
+fetch_tiles.py - Orchestrate NBS tile discovery and download.
+
+Thin orchestrator that coordinates:
+1. Data source resolution
+2. Tessellation and XML catalog download
+3. Geometry intersection for tile discovery
+4. Tile synchronization with latest tilescheme
+5. Parallel tile download with checksum verification
+"""
+
+import datetime
+import os
+import platform
+from dataclasses import dataclass, field
+
+from nbs.bluetopo._internal.config import _timestamp, resolve_data_source
+from nbs.bluetopo._internal.db import connect
+from nbs.bluetopo._internal.download import (
+    _get_s3_client,
+    all_db_tiles,
+    build_download_plan,
+    classify_tiles,
+    execute_downloads,
+    get_tessellation,
+    get_xml,
+    insert_new,
+    update_records,
+    upsert_tiles,
+)
+from nbs.bluetopo._internal.geometry import get_tile_list, parse_geometry_input
+
+
+@dataclass
+class FetchResult:
+    """Result of a fetch_tiles operation.
+
+    Attributes
+    ----------
+    existing : list[str]
+        Tiles already downloaded, verified, and up to date.
+    downloaded : list[str]
+        Tiles successfully downloaded in this run.
+    failed : list[dict]
+        Tiles that failed download. Each dict has ``tile`` and ``reason`` keys.
+    not_found : list[str]
+        Tiles whose files could not be located on S3.
+    new_tiles_tracked : int
+        Number of new tiles added to tracking via geometry intersection.
+    """
+    existing: list = field(default_factory=list)
+    downloaded: list = field(default_factory=list)
+    failed: list = field(default_factory=list)
+    not_found: list = field(default_factory=list)
+    new_tiles_tracked: int = 0
+
+
+def fetch_tiles(
+    project_dir: str,
+    desired_area_filename: str = None,
+    data_source: str = None,
+    debug: bool = False,
+) -> FetchResult:
+    """Discover, download, and update NBS tiles.
+
+    Orchestrates the full fetch workflow:
+
+    1. Resolve data source config (named source or local directory).
+    2. Download tessellation geopackage and optional XML catalog.
+    3. If a geometry is provided, intersect with tile scheme to discover tiles.
+    4. Synchronize tile records with the latest tilescheme deliveries.
+    5. Download all pending tiles with checksum verification.
+
+    Parameters
+    ----------
+    project_dir : str
+        Absolute path to the project directory.  Created if it does not exist.
+    desired_area_filename : str | None
+        Geometry input (file path, bounding box, WKT, or GeoJSON) defining
+        the area of interest.  Pass None to skip discovery.
+    data_source : str | None
+        A known source name (e.g. ``"bluetopo"``, ``"bag"``, ``"s102v30"``),
+        a local directory path, or None (defaults to ``"bluetopo"``).
+    debug : bool
+        If True, writes a diagnostic report to the project directory.
+
+    Returns
+    -------
+    FetchResult
+        Structured result with existing, downloaded, failed, and not_found tiles.
+    """
+    project_dir = os.path.expanduser(project_dir)
+    if not os.path.isabs(project_dir):
+        msg = "Please use an absolute path for your project folder."
+        if "windows" not in platform.system().lower():
+            msg += "\nTypically for non windows systems this means starting with '/'"
+        raise ValueError(msg)
+    if desired_area_filename:
+        _is_path_like = (
+            os.path.sep in desired_area_filename
+            or desired_area_filename.startswith("~")
+            or os.path.isfile(desired_area_filename)
+        )
+        if _is_path_like:
+            desired_area_filename = os.path.expanduser(desired_area_filename)
+            if not os.path.isabs(desired_area_filename):
+                msg = "Please use an absolute path for your geometry path."
+                if "windows" not in platform.system().lower():
+                    msg += "\nTypically for non windows systems this means starting with '/'"
+                raise ValueError(msg)
+
+    cfg, local_dir = resolve_data_source(data_source)
+    data_source = cfg["canonical_name"]
+    geom_prefix = local_dir or cfg["geom_prefix"]
+    bucket = cfg["bucket"]
+
+    report = None
+    if debug:
+        from nbs.bluetopo._internal.debug import DebugReport
+        report = DebugReport(project_dir, data_source, cfg)
+
+    result = FetchResult()
+    try:
+        result = _run_fetch(project_dir, desired_area_filename, cfg, data_source,
+                            geom_prefix, bucket, local_dir, result)
+    except Exception:
+        if report:
+            report.capture_exception()
+        raise
+    finally:
+        if report:
+            report.add_result(result)
+            report.write()
+    return result
+
+
+def _run_fetch(project_dir, desired_area_filename, cfg, data_source,
+               geom_prefix, bucket, local_dir, result):
+    """Core fetch pipeline. Separated to allow debug wrapper without re-indenting."""
+    start = datetime.datetime.now()
+    print(f"[{_timestamp()}] {data_source}: Beginning work in project folder: {project_dir}")
+    os.makedirs(project_dir, exist_ok=True)
+
+    conn = connect(project_dir, cfg)
+    try:
+        # Download XML catalog if needed (S102 sources)
+        xml_prefix = cfg.get("xml_prefix")
+        if xml_prefix:
+            get_xml(conn, project_dir, xml_prefix, data_source, cfg, bucket=bucket)
+
+        # Download tessellation geopackage
+        geom_file = get_tessellation(conn, project_dir, geom_prefix, data_source, cfg,
+                                     local_dir=local_dir, bucket=bucket)
+
+        # Discover new tiles via geometry intersection
+        if desired_area_filename:
+            desired_area_ds = parse_geometry_input(desired_area_filename)
+            tile_list = get_tile_list(desired_area_ds, geom_file)
+            if tile_list is None:
+                tile_list = []
+            result.new_tiles_tracked = insert_new(conn, tile_list, cfg)
+            print(f"\nTracking {result.new_tiles_tracked} available {data_source} tile(s) "
+                  f"discovered in a total of {len(tile_list)} intersected tile(s) "
+                  "with given polygon.")
+
+        # Synchronize with latest tilescheme
+        upsert_tiles(conn, project_dir, geom_file, cfg)
+
+        # Download tiles
+        db_tiles = all_db_tiles(conn)
+        existing, missing, new = classify_tiles(db_tiles, project_dir, cfg)
+        result.existing = existing
+
+        client = None if local_dir else _get_s3_client()
+        download_dict, tiles_found, tiles_not_found = build_download_plan(
+            db_tiles, project_dir, cfg, data_source,
+            client=client, bucket=bucket, local_dir=local_dir,
+            skip_tilenames=set(existing))
+
+        print(f"\n{len(new)} tile(s) with new data")
+        print(f"{len(missing)} tile(s) already downloaded are missing locally")
+
+        results = execute_downloads(download_dict, data_source)
+
+        for r in results:
+            if r["Result"] is True:
+                result.downloaded.append(r["Tile"])
+            else:
+                result.failed.append({"tile": r["Tile"], "reason": r.get("Reason", "unknown")})
+        result.not_found = tiles_not_found
+
+        if result.downloaded:
+            update_records(conn, download_dict, result.downloaded, cfg)
+
+        # Summary
+        failed_verifications = [f for f in result.failed if "incorrect hash" in f["reason"]]
+        print("\n___________________________________ SUMMARY ___________________________________")
+        print("\nExisting:")
+        print("Number of tiles already existing locally without updates:", len(existing))
+        if new or missing:
+            print("\nSearch:")
+            print(f"Number of tiles to attempt to fetch: {len(new) + len(missing)} "
+                  f"[ {len(new)} new data + {len(missing)} missing locally ]")
+            if len(tiles_found) < (len(new) + len(missing)):
+                print("* Some tiles we wanted to fetch were not found in the S3 bucket."
+                      "\n* The NBS may be actively updating the tiles in question."
+                      "\n* You can rerun fetch_tiles at a later time to download these tiles."
+                      "\n* Please contact the NBS if this issue does not fix itself on subsequent later runs.")
+            print("\nFetch:")
+            print(f"Number of tiles found in S3 successfully downloaded: "
+                  f"{len(result.downloaded)}/{len(tiles_found)}")
+            if result.failed:
+                print("* Some tiles appear to have failed downloading."
+                      "\n* Please rerun fetch_tiles to retry.")
+                if failed_verifications:
+                    failed_names = [f["tile"] for f in failed_verifications]
+                    print(f"{len(failed_verifications)} tiles failed checksum verification: "
+                          f"{failed_names}"
+                          "\nPlease contact the NBS if this issue does not fix itself on subsequent runs.")
+        print(f"\n[{_timestamp()}] {data_source}: Operation complete after "
+              f"{datetime.datetime.now() - start}")
+    finally:
+        conn.close()
+    return result

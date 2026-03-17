@@ -1,26 +1,35 @@
 """
-datasource.py - Configuration-driven data source definitions.
+config.py - Configuration-driven data source definitions.
 
 All data source variation is captured here. Adding a new NBS product
-(e.g. S102V30) requires only a new entry in ``DATA_SOURCES`` -- no new
-functions in build_vrt or fetch_tiles.
+requires only a new entry in ``DATA_SOURCES`` -- no new functions in
+build_vrt or fetch_tiles.
 
-File layouts
-------------
-dual_file
-    Two files per tile: a GeoTIFF (.tif) and a Raster Attribute Table
-    (.tif.aux.xml).  Used by BlueTopo, Modeling, and HSD.
-single_file
-    One file per tile (BAG or S102 HDF5).  Used by BAG, S102V21, S102V22, and S102V30.
+File slots
+----------
+Each data source defines one or more **file slots** describing the files
+that make up a tile. Each slot maps a geopackage field (where the S3 URL
+or local path lives) to a set of DB columns (link, disk path, checksum,
+verified flag).  This replaces the old ``file_layout`` / ``tilescheme_field_map``
+branching with a single, uniform model.
 
-Download strategies
--------------------
-prefix_listing
-    Tiles are discovered by listing S3 objects under ``tile_prefix/{tilename}/``.
-    Used by BlueTopo and Modeling.
-direct_link
-    Tile locations are stored as direct links in the tilescheme geopackage.
-    Used by BAG, S102V21, S102V22, S102V30, HSD, and unknown local sources.
+Examples::
+
+    # BlueTopo: two files per tile
+    "file_slots": [
+        {"name": "geotiff", "gpkg_link": "GeoTIFF_Link",
+         "gpkg_checksum": "GeoTIFF_SHA256_Checksum"},
+        {"name": "rat", "gpkg_link": "RAT_Link",
+         "gpkg_checksum": "RAT_SHA256_Checksum"},
+    ]
+
+    # BAG: one file per tile
+    "file_slots": [
+        {"name": "file", "gpkg_link": "BAG", "gpkg_checksum": "BAG_SHA256"},
+    ]
+
+Each slot generates four DB columns: ``{name}_link``, ``{name}_disk``,
+``{name}_sha256_checksum``, ``{name}_verified`` (integer 0/1).
 
 Config key reference
 --------------------
@@ -30,58 +39,69 @@ min_gdal_version : int
     Minimum GDAL version encoded as ``major*1_000_000 + minor*10_000``
     (e.g. 3090000 = GDAL 3.9).
 required_gdal_drivers : list[str]
-    GDAL driver short names that must be available to build VRTs for this
-    source (e.g. ``["BAG"]``, ``["S102"]``).  Empty for GeoTIFF sources.
+    GDAL driver short names that must be available (e.g. ``["S102"]``).
 geom_prefix : str | None
     S3 key prefix for the tile-scheme geopackage.  None for local-only sources.
-tile_prefix : str | None
-    S3 key prefix for tile data.  None for local-only sources and sources
-    that use ``direct_link`` download strategy.
 xml_prefix : str | None
     S3 key prefix for the CATALOG.XML (S102 sources only).
 bucket : str
     S3 bucket name.
-download_strategy : str
-    ``"prefix_listing"`` (list S3 objects under tile_prefix) or
-    ``"direct_link"`` (tile URLs stored in tilescheme geopackage).
-file_layout : str
-    ``"dual_file"`` or ``"single_file"`` -- controls DB columns and download logic.
 catalog_table : str
-    Name of the catalog table in the SQLite registry (``"tileset"`` or ``"catalog"``).
+    Name of the catalog table in the SQLite registry.
 catalog_pk : str
-    Primary key column of the catalog table (``"tilescheme"`` or ``"file"``).
+    Primary key column of the catalog table.
+gpkg_fields : dict
+    Maps standard metadata names (``tile``, ``delivered_date``, ``utm``,
+    ``resolution``) to geopackage column names.
+file_slots : list[dict]
+    Per-file definitions (see above).
 subdatasets : list[dict] | None
-    For multi-subdataset sources (S102V22, S102V30), a list of dicts each
-    containing ``name``, ``suffix``, ``band_descriptions``, and
-    ``s102_protocol``.  None for single-dataset sources.
+    For multi-subdataset sources (S102V22, S102V30).
 band_descriptions : list[str] | None
-    Band description labels for single-dataset sources (e.g. ``["Elevation",
-    "Uncertainty", "Contributor"]``).  None when subdatasets are used instead.
+    Band labels for single-dataset sources.
 has_rat : bool
-    Whether to build a GDAL Raster Attribute Table on UTM VRTs.
+    Whether to build a Raster Attribute Table on UTM VRTs.
 rat_open_method : str | None
-    ``"direct"`` (read RAT from GeoTIFF band) or ``"s102_quality"`` (read
-    via ``S102:"path":<quality_group>`` driver, where the quality group name
-    comes from the second subdataset's ``name`` field).
+    ``"direct"`` or ``"s102_quality"``.
 rat_band : int | None
-    1-based band index where the RAT is read from / written to.
+    1-based band index for RAT read/write.
 rat_fields : dict | None
-    Ordered mapping of ``{field_name: [python_type, gdal_usage]}`` defining the
-    RAT column schema.
+    ``{field_name: [python_type, gdal_usage]}`` for RAT columns.
 rat_zero_fields : list[str]
-    Fields whose values are forced to 0 during RAT aggregation (S102V22,
-    S102V30).
-tilescheme_field_map : dict | None
-    Maps standard field names (``tile``, ``file_link``, ...) to geopackage
-    field names for sources whose tilescheme uses non-standard column names.
-    None for BlueTopo/Modeling which use standard names directly.
+    Fields forced to 0 during RAT aggregation.
 """
 
 import copy
 import datetime
+import os
 
 from osgeo import gdal
 
+
+# ---------------------------------------------------------------------------
+# Geopackage field mappings (metadata only; file fields are in file_slots)
+# ---------------------------------------------------------------------------
+
+# BlueTopo / Modeling / HSD use these field names directly
+_BLUETOPO_GPKG_FIELDS = {
+    "tile": "tile",
+    "delivered_date": "Delivered_Date",
+    "utm": "UTM",
+    "resolution": "Resolution",
+}
+
+# Navigation tile scheme (shared by BAG, S102V21, S102V22, S102V30)
+_NAVIGATION_GPKG_FIELDS = {
+    "tile": "TILE_ID",
+    "delivered_date": "ISSUANCE",
+    "utm": "UTM",
+    "resolution": "Resolution",
+}
+
+
+# ---------------------------------------------------------------------------
+# Data source configurations
+# ---------------------------------------------------------------------------
 
 DATA_SOURCES = {
     # -------------------------------------------------------------------------
@@ -93,14 +113,20 @@ DATA_SOURCES = {
         "required_gdal_drivers": [],
         # AWS
         "geom_prefix": "BlueTopo/_BlueTopo_Tile_Scheme/BlueTopo_Tile_Scheme",
-        "tile_prefix": "BlueTopo",
         "xml_prefix": None,
         "bucket": "noaa-ocs-nationalbathymetry-pds",
         # DB schema
-        "download_strategy": "prefix_listing",
-        "file_layout": "dual_file",
         "catalog_table": "tileset",
         "catalog_pk": "tilescheme",
+        # Geopackage field mapping
+        "gpkg_fields": _BLUETOPO_GPKG_FIELDS,
+        # File slots
+        "file_slots": [
+            {"name": "geotiff", "gpkg_link": "GeoTIFF_Link",
+             "gpkg_checksum": "GeoTIFF_SHA256_Checksum"},
+            {"name": "rat", "gpkg_link": "RAT_Link",
+             "gpkg_checksum": "RAT_SHA256_Checksum"},
+        ],
         # Subdatasets
         "subdatasets": None,
         "band_descriptions": ["Elevation", "Uncertainty", "Contributor"],
@@ -128,8 +154,7 @@ DATA_SOURCES = {
             "survey_date_start": [str, gdal.GFU_Generic],
             "survey_date_end": [str, gdal.GFU_Generic],
         },
-        # Tilescheme field mapping
-        "tilescheme_field_map": None,
+        "rat_zero_fields": [],
     },
     # -------------------------------------------------------------------------
     # Modeling -- test-and-evaluation bathymetric compilation for modeling
@@ -140,14 +165,20 @@ DATA_SOURCES = {
         "required_gdal_drivers": [],
         # AWS
         "geom_prefix": "Test-and-Evaluation/Modeling/_Modeling_Tile_Scheme/Modeling_Tile_Scheme",
-        "tile_prefix": "Test-and-Evaluation/Modeling",
         "xml_prefix": None,
         "bucket": "noaa-ocs-nationalbathymetry-pds",
         # DB schema
-        "download_strategy": "prefix_listing",
-        "file_layout": "dual_file",
         "catalog_table": "tileset",
         "catalog_pk": "tilescheme",
+        # Geopackage field mapping
+        "gpkg_fields": _BLUETOPO_GPKG_FIELDS,
+        # File slots
+        "file_slots": [
+            {"name": "geotiff", "gpkg_link": "GeoTIFF_Link",
+             "gpkg_checksum": "GeoTIFF_SHA256_Checksum"},
+            {"name": "rat", "gpkg_link": "RAT_Link",
+             "gpkg_checksum": "RAT_SHA256_Checksum"},
+        ],
         # Subdatasets
         "subdatasets": None,
         "band_descriptions": ["Elevation", "Uncertainty", "Contributor"],
@@ -175,8 +206,7 @@ DATA_SOURCES = {
             "survey_date_start": [str, gdal.GFU_Generic],
             "survey_date_end": [str, gdal.GFU_Generic],
         },
-        # Tilescheme field mapping
-        "tilescheme_field_map": None,
+        "rat_zero_fields": [],
     },
     # -------------------------------------------------------------------------
     # BAG -- Bathymetric Attributed Grid (single-file, no RAT)
@@ -187,14 +217,17 @@ DATA_SOURCES = {
         "required_gdal_drivers": ["BAG"],
         # AWS
         "geom_prefix": "Test-and-Evaluation/Navigation_Test_and_Evaluation/_Navigation_Tile_Scheme/Navigation_Tile_Scheme",
-        "tile_prefix": None,
         "xml_prefix": None,
         "bucket": "noaa-ocs-nationalbathymetry-pds",
         # DB schema
-        "download_strategy": "direct_link",
-        "file_layout": "single_file",
         "catalog_table": "catalog",
         "catalog_pk": "file",
+        # Geopackage field mapping
+        "gpkg_fields": _NAVIGATION_GPKG_FIELDS,
+        # File slots
+        "file_slots": [
+            {"name": "file", "gpkg_link": "BAG", "gpkg_checksum": "BAG_SHA256"},
+        ],
         # Subdatasets
         "subdatasets": None,
         "band_descriptions": ["Elevation", "Uncertainty"],
@@ -203,15 +236,7 @@ DATA_SOURCES = {
         "rat_open_method": None,
         "rat_band": None,
         "rat_fields": None,
-        # Tilescheme field mapping
-        "tilescheme_field_map": {
-            "tile": "tile_id",
-            "file_link": "bag",
-            "file_sha256_checksum": "bag_sha256",
-            "delivered_date": "issuance",
-            "utm": "utm",
-            "resolution": "resolution",
-        },
+        "rat_zero_fields": [],
     },
     # -------------------------------------------------------------------------
     # S102 v2.1 -- IHO S-102 bathymetric surface (single-file, no RAT)
@@ -222,14 +247,17 @@ DATA_SOURCES = {
         "required_gdal_drivers": ["S102"],
         # AWS
         "geom_prefix": "Test-and-Evaluation/Navigation_Test_and_Evaluation/_Navigation_Tile_Scheme/Navigation_Tile_Scheme",
-        "tile_prefix": None,
         "xml_prefix": "Test-and-Evaluation/Navigation_Test_and_Evaluation/S102V21/_CATALOG",
         "bucket": "noaa-ocs-nationalbathymetry-pds",
         # DB schema
-        "download_strategy": "direct_link",
-        "file_layout": "single_file",
         "catalog_table": "catalog",
         "catalog_pk": "file",
+        # Geopackage field mapping
+        "gpkg_fields": _NAVIGATION_GPKG_FIELDS,
+        # File slots
+        "file_slots": [
+            {"name": "file", "gpkg_link": "S102V21", "gpkg_checksum": "S102V21_SHA256"},
+        ],
         # Subdatasets
         "subdatasets": None,
         "band_descriptions": ["Elevation", "Uncertainty"],
@@ -238,15 +266,7 @@ DATA_SOURCES = {
         "rat_open_method": None,
         "rat_band": None,
         "rat_fields": None,
-        # Tilescheme field mapping
-        "tilescheme_field_map": {
-            "tile": "tile_id",
-            "file_link": "s102v21",
-            "file_sha256_checksum": "s102v21_sha256",
-            "delivered_date": "issuance",
-            "utm": "utm",
-            "resolution": "resolution",
-        },
+        "rat_zero_fields": [],
     },
     # -------------------------------------------------------------------------
     # S102 v2.2 -- dual subdatasets (BathymetryCoverage + QualityOfSurvey)
@@ -257,14 +277,17 @@ DATA_SOURCES = {
         "required_gdal_drivers": ["S102"],
         # AWS
         "geom_prefix": "Test-and-Evaluation/Navigation_Test_and_Evaluation/_Navigation_Tile_Scheme/Navigation_Tile_Scheme",
-        "tile_prefix": None,
         "xml_prefix": "Test-and-Evaluation/Navigation_Test_and_Evaluation/S102V22/_CATALOG",
         "bucket": "noaa-ocs-nationalbathymetry-pds",
         # DB schema
-        "download_strategy": "direct_link",
-        "file_layout": "single_file",
         "catalog_table": "catalog",
         "catalog_pk": "file",
+        # Geopackage field mapping
+        "gpkg_fields": _NAVIGATION_GPKG_FIELDS,
+        # File slots
+        "file_slots": [
+            {"name": "file", "gpkg_link": "S102V22", "gpkg_checksum": "S102V22_SHA256"},
+        ],
         # Subdatasets
         "subdatasets": [
             {
@@ -303,24 +326,10 @@ DATA_SOURCES = {
             "bathymetric_uncertainty_type": [int, gdal.GFU_Generic],
         },
         "rat_zero_fields": ["feature_size_var", "bathymetric_uncertainty_type"],
-        # Tilescheme field mapping
-        "tilescheme_field_map": {
-            "tile": "tile_id",
-            "file_link": "s102v22",
-            "file_sha256_checksum": "s102v22_sha256",
-            "delivered_date": "issuance",
-            "utm": "utm",
-            "resolution": "resolution",
-        },
     },
     # -------------------------------------------------------------------------
-    # S102 v3.0 -- dual subdatasets (BathymetryCoverage + QualityOfBathymetryCoverage)
-    #
-    # Differences from v2.2:
-    #   - Quality group renamed: QualityOfSurvey → QualityOfBathymetryCoverage
-    #   - RAT field 14 renamed: bathymetricUncertaintyType →
-    #     typeOfBathymetricEstimationUncertainty
-    #   - GDAL S102 driver accepts both quality group names for both versions
+    # S102 v3.0 -- dual subdatasets (BathymetryCoverage +
+    #              QualityOfBathymetryCoverage)
     # -------------------------------------------------------------------------
     "s102v30": {
         "canonical_name": "S102V30",
@@ -328,14 +337,17 @@ DATA_SOURCES = {
         "required_gdal_drivers": ["S102"],
         # AWS
         "geom_prefix": "Test-and-Evaluation/Navigation_Test_and_Evaluation/_Navigation_Tile_Scheme/Navigation_Tile_Scheme",
-        "tile_prefix": None,
         "xml_prefix": "Test-and-Evaluation/Navigation_Test_and_Evaluation/S102V30/_CATALOG",
         "bucket": "noaa-ocs-nationalbathymetry-pds",
         # DB schema
-        "download_strategy": "direct_link",
-        "file_layout": "single_file",
         "catalog_table": "catalog",
         "catalog_pk": "file",
+        # Geopackage field mapping
+        "gpkg_fields": _NAVIGATION_GPKG_FIELDS,
+        # File slots
+        "file_slots": [
+            {"name": "file", "gpkg_link": "S102V30", "gpkg_checksum": "S102V30_SHA256"},
+        ],
         # Subdatasets
         "subdatasets": [
             {
@@ -374,34 +386,29 @@ DATA_SOURCES = {
             "type_of_bathymetric_estimation_uncertainty": [int, gdal.GFU_Generic],
         },
         "rat_zero_fields": ["feature_size_var", "type_of_bathymetric_estimation_uncertainty"],
-        # Tilescheme field mapping
-        "tilescheme_field_map": {
-            "tile": "tile_id",
-            "file_link": "s102v30",
-            "file_sha256_checksum": "s102v30_sha256",
-            "delivered_date": "issuance",
-            "utm": "utm",
-            "resolution": "resolution",
-        },
     },
     # -------------------------------------------------------------------------
-    # HSD -- Hydrographic Surveys Division (local-only, extends BlueTopo
-    # config with extra RAT fields: catzoc, supercession_score, etc.)
-    # Must be used via a local directory path, not by name.
+    # HSD -- Hydrographic Surveys Division (local-only)
     # -------------------------------------------------------------------------
     "hsd": {
         "canonical_name": "HSD",
         "min_gdal_version": 3040000,
         "required_gdal_drivers": [],
-        "geom_prefix": None,   # local-only: overridden by local directory path
-        "tile_prefix": None,   # local-only: no S3 prefix
+        "geom_prefix": None,
         "xml_prefix": None,
         "bucket": "noaa-ocs-nationalbathymetry-pds",
         # DB schema
-        "download_strategy": "direct_link",
-        "file_layout": "dual_file",
         "catalog_table": "tileset",
         "catalog_pk": "tilescheme",
+        # Geopackage field mapping
+        "gpkg_fields": _BLUETOPO_GPKG_FIELDS,
+        # File slots
+        "file_slots": [
+            {"name": "geotiff", "gpkg_link": "GeoTIFF_Link",
+             "gpkg_checksum": "GeoTIFF_SHA256_Checksum"},
+            {"name": "rat", "gpkg_link": "RAT_Link",
+             "gpkg_checksum": "RAT_SHA256_Checksum"},
+        ],
         # Subdatasets
         "subdatasets": None,
         "band_descriptions": ["Elevation", "Uncertainty", "Contributor"],
@@ -434,14 +441,13 @@ DATA_SOURCES = {
             "unqualified": [int, gdal.GFU_Generic],
             "sensitive": [int, gdal.GFU_Generic],
         },
-        # Tilescheme field mapping
-        "tilescheme_field_map": None,
+        "rat_zero_fields": [],
     },
 }
 
 
 # Master ordered dict of all known direct-method RAT fields.
-# This is the HSD superset: BlueTopo's 18 fields + 5 HSD extras.
+# HSD superset: BlueTopo's 18 fields + 5 HSD extras.
 # Used as the default for unknown local data sources.
 KNOWN_RAT_FIELDS = {
     "value": [int, gdal.GFU_MinMax],
@@ -469,6 +475,51 @@ KNOWN_RAT_FIELDS = {
     "sensitive": [int, gdal.GFU_Generic],
 }
 
+VALID_TARGET_RESOLUTIONS = {2, 4, 8, 16, 32, 64}
+
+
+# ---------------------------------------------------------------------------
+# Config validation
+# ---------------------------------------------------------------------------
+
+def validate_config(cfg):
+    """Validate interdependencies in a data source config.
+
+    Raises ValueError if the config is inconsistent.
+    """
+    name = cfg.get("canonical_name", "?")
+
+    if not cfg.get("file_slots"):
+        raise ValueError(f"{name}: file_slots must be non-empty")
+
+    for slot in cfg["file_slots"]:
+        if "name" not in slot or "gpkg_link" not in slot or "gpkg_checksum" not in slot:
+            raise ValueError(f"{name}: each file_slot must have 'name', 'gpkg_link', and 'gpkg_checksum'")
+
+    if not cfg.get("gpkg_fields"):
+        raise ValueError(f"{name}: gpkg_fields must be defined")
+
+    for required_key in ("tile", "delivered_date", "utm", "resolution"):
+        if required_key not in cfg["gpkg_fields"]:
+            raise ValueError(f"{name}: gpkg_fields missing required key '{required_key}'")
+
+    if cfg.get("has_rat"):
+        for key in ("rat_open_method", "rat_band", "rat_fields"):
+            if not cfg.get(key):
+                raise ValueError(f"{name}: has_rat=True requires '{key}'")
+        if cfg["rat_open_method"] not in ("direct", "s102_quality"):
+            raise ValueError(f"{name}: unknown rat_open_method '{cfg['rat_open_method']}'")
+
+    if cfg.get("subdatasets") and cfg.get("band_descriptions"):
+        raise ValueError(f"{name}: cannot have both subdatasets and band_descriptions")
+
+    if not cfg.get("subdatasets") and not cfg.get("band_descriptions"):
+        raise ValueError(f"{name}: must have either subdatasets or band_descriptions")
+
+
+# ---------------------------------------------------------------------------
+# Utility
+# ---------------------------------------------------------------------------
 
 def _timestamp():
     """Return current time as ``'YYYY-MM-DD HH:MM:SS TZ'``."""
@@ -476,60 +527,87 @@ def _timestamp():
     return f"{now.strftime('%Y-%m-%d %H:%M:%S')} {now.astimezone().tzname()}"
 
 
+# ---------------------------------------------------------------------------
+# Config access
+# ---------------------------------------------------------------------------
+
 def get_config(data_source_key):
-    """Case-insensitive lookup. Returns a deep copy of config dict. Raises ValueError for unknown sources."""
+    """Case-insensitive lookup. Returns a validated deep copy."""
     key = data_source_key.lower()
     if key not in DATA_SOURCES:
         raise ValueError(f"Unknown data source: {data_source_key}")
-    return copy.deepcopy(DATA_SOURCES[key])
+    cfg = copy.deepcopy(DATA_SOURCES[key])
+    validate_config(cfg)
+    return cfg
 
 
 def get_local_config(resolved_name):
     """Build a config for a local directory data source.
 
-    If *resolved_name* matches a known source (e.g. ``"BlueTopo"``,
-    ``"S102V21"``), that source's config is used as the base so that
-    file_layout, subdatasets, RAT settings, etc. are preserved.
-    Otherwise, BlueTopo is used as the base with the full known RAT
-    field superset, allowing dynamic detection of which fields are
-    actually present at RAT-aggregation time.
+    If *resolved_name* matches a known source, that source's config is
+    used as the base.  Otherwise, BlueTopo is used with the full known
+    RAT field superset for dynamic detection.
 
-    In both cases, S3 prefixes are cleared and the download strategy
-    is set to ``"direct_link"`` for local file access.
+    S3 prefixes are cleared for local file access.
     """
     key = resolved_name.lower()
     if key in DATA_SOURCES:
         cfg = copy.deepcopy(DATA_SOURCES[key])
-        # canonical_name already set from the known source config
     else:
         cfg = copy.deepcopy(DATA_SOURCES["bluetopo"])
         cfg["rat_fields"] = copy.deepcopy(KNOWN_RAT_FIELDS)
         cfg["canonical_name"] = resolved_name
     cfg["geom_prefix"] = None
-    cfg["tile_prefix"] = None
     cfg["xml_prefix"] = None
-    cfg["download_strategy"] = "direct_link"
+    validate_config(cfg)
     return cfg
 
 
-def get_catalog_fields(cfg):
-    """Return ``{column_name: sql_type}`` for the catalog table.
+def resolve_data_source(data_source):
+    """Resolve a data source name or local directory path into a config.
 
-    dual_file layouts use ``tilescheme`` as the PK; single_file use ``file``.
+    Returns
+    -------
+    tuple[dict, str | None]
+        ``(cfg, local_dir)`` where *local_dir* is None for S3 sources.
     """
-    if cfg["file_layout"] == "dual_file":
-        return {"tilescheme": "text", "location": "text", "downloaded": "text"}
-    else:
-        return {"file": "text", "location": "text", "downloaded": "text"}
+    if data_source is None:
+        data_source = "bluetopo"
+    try:
+        cfg = get_config(data_source)
+        if cfg["geom_prefix"] is None:
+            raise ValueError(
+                f"{data_source} is a local-only data source. "
+                "Please provide a local directory path instead of the source name."
+            )
+        return cfg, None
+    except ValueError:
+        if not os.path.isdir(data_source):
+            raise
+        files = os.listdir(data_source)
+        files = [f for f in files if f.endswith(".gpkg") and "Tile_Scheme" in f]
+        files.sort(reverse=True)
+        if not files:
+            raise ValueError(
+                "Please pass in directory which contains a tile scheme "
+                "file if you're using a local data source."
+            )
+        resolved_name = os.path.basename(files[0]).split("_")[0]
+        cfg = get_local_config(resolved_name)
+        return cfg, data_source
+
+
+# ---------------------------------------------------------------------------
+# Schema helpers (derived from file_slots — no branching)
+# ---------------------------------------------------------------------------
+
+def get_catalog_fields(cfg):
+    """Return ``{column_name: sql_type}`` for the catalog table."""
+    return {cfg["catalog_pk"]: "text", "location": "text", "downloaded": "text"}
 
 
 def get_vrt_utm_fields(cfg):
-    """Return ``{column_name: sql_type}`` for the ``vrt_utm`` table.
-
-    For single-dataset sources: ``utm_vrt``, ``utm_ovr``, ``built``.
-    For multi-subdataset sources: per-subdataset VRT/OVR pairs, a
-    ``utm_combined_vrt``, and per-subdataset + combined built flags.
-    """
+    """Return ``{column_name: sql_type}`` for the ``vrt_utm`` table."""
     fields = {"utm": "text"}
     if cfg["subdatasets"]:
         for i in range(len(cfg["subdatasets"])):
@@ -549,68 +627,56 @@ def get_vrt_utm_fields(cfg):
 def get_tiles_fields(cfg):
     """Return ``{column_name: sql_type}`` for the ``tiles`` table.
 
-    dual_file tiles track separate GeoTIFF and RAT links, disk paths,
-    checksums, and verified flags.  single_file tiles track a single file.
+    Columns are derived from file_slots.  Verified flags use integer (0/1).
     """
-    if cfg["file_layout"] == "dual_file":
-        return {
-            "tilename": "text",
-            "geotiff_link": "text",
-            "rat_link": "text",
-            "delivered_date": "text",
-            "resolution": "text",
-            "utm": "text",
-            "subregion": "text",
-            "geotiff_disk": "text",
-            "rat_disk": "text",
-            "geotiff_sha256_checksum": "text",
-            "rat_sha256_checksum": "text",
-            "geotiff_verified": "text",
-            "rat_verified": "text",
-        }
-    else:
-        return {
-            "tilename": "text",
-            "file_link": "text",
-            "delivered_date": "text",
-            "resolution": "text",
-            "utm": "text",
-            "subregion": "text",
-            "file_disk": "text",
-            "file_sha256_checksum": "text",
-            "file_verified": "text",
-        }
+    fields = {
+        "tilename": "text",
+        "delivered_date": "text",
+        "resolution": "text",
+        "utm": "text",
+    }
+    for slot in cfg["file_slots"]:
+        name = slot["name"]
+        fields[f"{name}_link"] = "text"
+        fields[f"{name}_disk"] = "text"
+        fields[f"{name}_sha256_checksum"] = "text"
+        fields[f"{name}_verified"] = "integer"
+    return fields
 
 
 def get_built_flags(cfg):
-    """Return built-flag column names (e.g. ``["built"]`` or ``["built_subdataset1", ...]``)."""
+    """Return built-flag column names."""
     if cfg["subdatasets"]:
         return [f"built_subdataset{i+1}" for i in range(len(cfg["subdatasets"]))]
     return ["built"]
 
 
 def get_utm_file_columns(cfg):
-    """Return VRT/OVR path column names from ``vrt_utm`` (excludes PK and built flags)."""
+    """Return VRT/OVR path column names (excludes PK and built flags)."""
     fields = get_vrt_utm_fields(cfg)
     return [k for k in fields if k != "utm" and "built" not in k]
 
 
 def get_disk_field(cfg):
-    """Return the primary disk-path column name (``"geotiff_disk"`` or ``"file_disk"``)."""
-    if cfg["file_layout"] == "dual_file":
-        return "geotiff_disk"
-    return "file_disk"
+    """Return the primary disk-path column name."""
+    return f"{cfg['file_slots'][0]['name']}_disk"
 
 
 def get_disk_fields(cfg):
-    """Return all disk-path column names (e.g. ``["geotiff_disk", "rat_disk"]``)."""
-    if cfg["file_layout"] == "dual_file":
-        return ["geotiff_disk", "rat_disk"]
-    return ["file_disk"]
+    """Return all disk-path column names."""
+    return [f"{slot['name']}_disk" for slot in cfg["file_slots"]]
 
 
 def get_verified_fields(cfg):
-    """Return checksum-verified flag column names (e.g. ``["geotiff_verified", "rat_verified"]``)."""
-    if cfg["file_layout"] == "dual_file":
-        return ["geotiff_verified", "rat_verified"]
-    return ["file_verified"]
+    """Return all verified-flag column names."""
+    return [f"{slot['name']}_verified" for slot in cfg["file_slots"]]
+
+
+def get_link_fields(cfg):
+    """Return all link column names."""
+    return [f"{slot['name']}_link" for slot in cfg["file_slots"]]
+
+
+def get_checksum_fields(cfg):
+    """Return all checksum column names."""
+    return [f"{slot['name']}_sha256_checksum" for slot in cfg["file_slots"]]
