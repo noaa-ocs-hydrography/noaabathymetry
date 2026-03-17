@@ -487,7 +487,7 @@ class TestRemotePipeline:
         # Fetch
         fetch_result = fetch_main(
             project_dir=project_dir,
-            desired_area_filename=polygon,
+            geometry=polygon,
             data_source=source,
         )
         assert_fetch_results(project_dir, cfg, fetch_result.downloaded, fetch_result.not_found + [f["tile"] for f in fetch_result.failed])
@@ -526,7 +526,7 @@ class TestDownloadThenLocal:
         # Remote fetch
         fetch_result = fetch_main(
             project_dir=project_dir_1,
-            desired_area_filename=polygon,
+            geometry=polygon,
             data_source=source,
         )
         if len(fetch_result.downloaded) == 0:
@@ -540,7 +540,7 @@ class TestDownloadThenLocal:
         # Local fetch — polygon needed to discover tiles via insert_new()
         fetch_result_local = fetch_main(
             project_dir=project_dir_2,
-            desired_area_filename=polygon,
+            geometry=polygon,
             data_source=local_dir,
         )
 
@@ -588,7 +588,7 @@ class TestSyntheticLocal:
         # Local fetch — polygon needed to discover tiles via insert_new()
         fetch_result = fetch_main(
             project_dir=project_dir,
-            desired_area_filename=polygon,
+            geometry=polygon,
             data_source=local_dir,
         )
 
@@ -629,7 +629,7 @@ class TestDeleteTileRefetch:
         # Initial fetch
         fetch_result = fetch_main(
             project_dir=project_dir,
-            desired_area_filename=polygon,
+            geometry=polygon,
             data_source=source,
         )
         if len(fetch_result.downloaded) == 0:
@@ -689,7 +689,7 @@ class TestDeleteVRTRebuild:
         # Initial fetch + build
         fetch_result = fetch_main(
             project_dir=project_dir,
-            desired_area_filename=polygon,
+            geometry=polygon,
             data_source=source,
         )
         if len(fetch_result.downloaded) == 0:

@@ -87,7 +87,7 @@ class TestFetchTilesCommand:
                 fetch_tiles_command()
                 mock_ft.assert_called_once_with(
                     project_dir="/tmp/test",
-                    desired_area_filename="polygon.shp",
+                    geometry="polygon.shp",
                     data_source="bag",
                     debug=False,
                 )
@@ -98,7 +98,7 @@ class TestFetchTilesCommand:
             with mock.patch("nbs.bluetopo.cli.fetch_tiles") as mock_ft:
                 fetch_tiles_command()
                 args = mock_ft.call_args
-                assert args.kwargs["desired_area_filename"] is None
+                assert args.kwargs["geometry"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -136,7 +136,7 @@ class TestLongFormArgs:
                                      "--geometry", "area.shp"]):
             with mock.patch("nbs.bluetopo.cli.fetch_tiles") as mock_ft:
                 fetch_tiles_command()
-                assert mock_ft.call_args.kwargs["desired_area_filename"] == "area.shp"
+                assert mock_ft.call_args.kwargs["geometry"] == "area.shp"
 
     def test_fetch_tiles_source_alias(self):
         from nbs.bluetopo.cli import fetch_tiles_command

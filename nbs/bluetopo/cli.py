@@ -88,7 +88,7 @@ def fetch_tiles_command():
     args = parser.parse_args()
     fetch_tiles(
         project_dir=args.dir,
-        desired_area_filename=args.geom,
+        geometry=args.geom,
         data_source=args.source,
         debug=args.debug,
     )

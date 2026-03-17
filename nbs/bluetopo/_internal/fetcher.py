@@ -28,7 +28,7 @@ from nbs.bluetopo._internal.download import (
     update_records,
     upsert_tiles,
 )
-from nbs.bluetopo._internal.geometry import get_tile_list, parse_geometry_input
+from nbs.bluetopo._internal.spatial import get_tile_list, parse_geometry_input
 
 
 @dataclass
@@ -57,7 +57,7 @@ class FetchResult:
 
 def fetch_tiles(
     project_dir: str,
-    desired_area_filename: str = None,
+    geometry: str = None,
     data_source: str = None,
     debug: bool = False,
 ) -> FetchResult:
@@ -75,9 +75,10 @@ def fetch_tiles(
     ----------
     project_dir : str
         Absolute path to the project directory.  Created if it does not exist.
-    desired_area_filename : str | None
-        Geometry input (file path, bounding box, WKT, or GeoJSON) defining
-        the area of interest.  Pass None to skip discovery.
+    geometry : str | None
+        Geometry input defining the area of interest.  Accepts a file path,
+        bounding box (``xmin,ymin,xmax,ymax``), WKT, or GeoJSON string.
+        String inputs assume EPSG:4326.  Pass None to skip discovery.
     data_source : str | None
         A known source name (e.g. ``"bluetopo"``, ``"bag"``, ``"s102v30"``),
         a local directory path, or None (defaults to ``"bluetopo"``).
@@ -95,15 +96,15 @@ def fetch_tiles(
         if "windows" not in platform.system().lower():
             msg += "\nTypically for non windows systems this means starting with '/'"
         raise ValueError(msg)
-    if desired_area_filename:
+    if geometry:
         _is_path_like = (
-            os.path.sep in desired_area_filename
-            or desired_area_filename.startswith("~")
-            or os.path.isfile(desired_area_filename)
+            os.path.sep in geometry
+            or geometry.startswith("~")
+            or os.path.isfile(geometry)
         )
         if _is_path_like:
-            desired_area_filename = os.path.expanduser(desired_area_filename)
-            if not os.path.isabs(desired_area_filename):
+            geometry = os.path.expanduser(geometry)
+            if not os.path.isabs(geometry):
                 msg = "Please use an absolute path for your geometry path."
                 if "windows" not in platform.system().lower():
                     msg += "\nTypically for non windows systems this means starting with '/'"
@@ -116,12 +117,12 @@ def fetch_tiles(
 
     report = None
     if debug:
-        from nbs.bluetopo._internal.debug import DebugReport
+        from nbs.bluetopo._internal.diagnostics import DebugReport
         report = DebugReport(project_dir, data_source, cfg)
 
     result = FetchResult()
     try:
-        result = _run_fetch(project_dir, desired_area_filename, cfg, data_source,
+        result = _run_fetch(project_dir, geometry, cfg, data_source,
                             geom_prefix, bucket, local_dir, result)
     except Exception:
         if report:
@@ -134,7 +135,7 @@ def fetch_tiles(
     return result
 
 
-def _run_fetch(project_dir, desired_area_filename, cfg, data_source,
+def _run_fetch(project_dir, geometry, cfg, data_source,
                geom_prefix, bucket, local_dir, result):
     """Core fetch pipeline. Separated to allow debug wrapper without re-indenting."""
     start = datetime.datetime.now()
@@ -153,9 +154,9 @@ def _run_fetch(project_dir, desired_area_filename, cfg, data_source,
                                      local_dir=local_dir, bucket=bucket)
 
         # Discover new tiles via geometry intersection
-        if desired_area_filename:
-            desired_area_ds = parse_geometry_input(desired_area_filename)
-            tile_list = get_tile_list(desired_area_ds, geom_file)
+        if geometry:
+            geometry_ds = parse_geometry_input(geometry)
+            tile_list = get_tile_list(geometry_ds, geom_file)
             if tile_list is None:
                 tile_list = []
             result.new_tiles_tracked = insert_new(conn, tile_list, cfg)

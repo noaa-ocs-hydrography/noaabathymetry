@@ -7,7 +7,7 @@ from osgeo import gdal, ogr, osr
 
 from nbs.bluetopo._internal.config import get_config
 from nbs.bluetopo._internal.db import connect as connect_to_survey_registry
-from nbs.bluetopo._internal.geometry import (
+from nbs.bluetopo._internal.spatial import (
     get_tile_list,
     parse_geometry_input,
     transform_layer,

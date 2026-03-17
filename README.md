@@ -55,40 +55,55 @@ pip install bluetopo
 
 ## Quickstart
 
-To download the desired files, first create a geometry file (such as a geopackage) with a polygon depicting the area of interest. Then run the following commands inside of a Python shell:
-
 ```python
-from nbs.bluetopo import fetch_tiles
+from nbs.bluetopo import fetch_tiles, build_vrt
 ```
 
+Define your area of interest using any of the formats below, then fetch and build:
+
 ```python
-result = fetch_tiles(r'C:\download_path', desired_area_filename='area_of_interest.gpkg')
+result = fetch_tiles('/path/to/project', geometry='area_of_interest.gpkg')
+result = build_vrt('/path/to/project')
 ```
 
-To build a GDAL VRT of the downloaded tiles:
+### Geometry formats
 
+The `geometry` parameter accepts four formats. File-based inputs use the CRS defined in the file. All other formats assume **EPSG:4326 (WGS 84)**.
+
+**File path** — any GDAL-compatible vector file (shapefile, geopackage, GeoJSON file, etc.):
 ```python
-from nbs.bluetopo import build_vrt
+result = fetch_tiles('/path/to/project', geometry='/path/to/area_of_interest.gpkg')
 ```
 
+**Bounding box** — `xmin,ymin,xmax,ymax` in EPSG:4326 (longitude/latitude):
 ```python
-result = build_vrt(r'C:\download_path')
+result = fetch_tiles('/path/to/project', geometry='-76.1,36.9,-75.9,37.1')
+```
+
+**WKT** — Well-Known Text geometry in EPSG:4326:
+```python
+result = fetch_tiles('/path/to/project', geometry='POLYGON((-76.1 36.9, -75.9 36.9, -75.9 37.1, -76.1 37.1, -76.1 36.9))')
+```
+
+**GeoJSON** — GeoJSON geometry or Feature object in EPSG:4326:
+```python
+result = fetch_tiles('/path/to/project', geometry='{"type":"Polygon","coordinates":[[[-76.1,36.9],[-75.9,36.9],[-75.9,37.1],[-76.1,37.1],[-76.1,36.9]]]}')
 ```
 
 ## CLI
 
-You can also use the command line. Confirm the environment we created during installation is activated.
-
-To fetch the latest BlueTopo data, use `fetch_tiles` passing a directory path and a geometry file path with a polygon depicting your area of interest:
+To fetch the latest BlueTopo data, pass a directory path and a geometry input:
 
 ```
-fetch_tiles -d [DIRECTORY PATH] -g [GEOMETRY FILE PATH]
+fetch_tiles -d /path/to/project -g area_of_interest.gpkg
 ```
+
+The `-g` flag accepts the same formats as the Python `geometry` parameter (file path, bounding box, WKT, or GeoJSON).
 
 Pass the same directory path to `build_vrt` to create a VRT from the fetched data:
 
 ```
-build_vrt -d [DIRECTORY PATH]
+build_vrt -d /path/to/project
 ```
 
 Use `-h` for help and to see additional arguments.

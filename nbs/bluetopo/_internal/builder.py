@@ -125,7 +125,7 @@ def build_vrt(project_dir: str, data_source: str = None,
 
     report = None
     if debug:
-        from nbs.bluetopo._internal.debug import DebugReport
+        from nbs.bluetopo._internal.diagnostics import DebugReport
         report = DebugReport(project_dir, data_source, cfg)
 
     result = BuildResult()

@@ -1,5 +1,5 @@
 """
-debug.py - Diagnostic report generation for troubleshooting.
+diagnostics.py - Diagnostic report generation for troubleshooting.
 
 When debug=True is passed to fetch_tiles() or build_vrt(), a report file
 is written to the project directory capturing environment, config, DB state,

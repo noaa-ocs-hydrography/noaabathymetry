@@ -1,5 +1,5 @@
 """
-geometry.py - Geometry parsing, CRS transforms, and tile intersection.
+spatial.py - Geometry parsing, CRS transforms, and tile intersection.
 
 Handles user-provided geometry inputs (file paths, bounding boxes, WKT,
 GeoJSON) and intersects them with tile-scheme geopackages to discover
