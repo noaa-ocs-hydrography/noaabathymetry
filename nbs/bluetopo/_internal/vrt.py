@@ -227,7 +227,8 @@ def _read_rat_data(tiles, project_dir, cfg, exp_fields, expected_fields):
             ]
             col_map = [actual_names.index(name) for name in exp_fields]
         elif rat_open_method == "s102_quality":
-            quality_name = cfg["subdatasets"][1]["name"]
+            quality_sd = next(sd for sd in cfg["subdatasets"] if sd.get("s102_protocol"))
+            quality_name = quality_sd["name"]
             gtiff = os.path.join(project_dir, tile[disk_fields[0]]).replace('\\', '/')
             ds = gdal.Open(f'S102:"{gtiff}":{quality_name}')
             contrib = ds.GetRasterBand(1)

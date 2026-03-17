@@ -123,26 +123,32 @@ def fetch_tiles(
     result = FetchResult()
     try:
         result = _run_fetch(project_dir, geometry, cfg, data_source,
-                            geom_prefix, bucket, local_dir, result)
+                            geom_prefix, bucket, local_dir, result, report)
     except Exception:
         if report:
             report.capture_exception()
         raise
     finally:
         if report:
-            report.add_result(result)
-            report.write()
+            try:
+                report.add_result(result)
+                report.write()
+            finally:
+                if report.conn:
+                    report.conn.close()
     return result
 
 
 def _run_fetch(project_dir, geometry, cfg, data_source,
-               geom_prefix, bucket, local_dir, result):
+               geom_prefix, bucket, local_dir, result, report=None):
     """Core fetch pipeline. Separated to allow debug wrapper without re-indenting."""
     start = datetime.datetime.now()
     print(f"[{_timestamp()}] {data_source}: Beginning work in project folder: {project_dir}")
     os.makedirs(project_dir, exist_ok=True)
 
     conn = connect(project_dir, cfg)
+    if report:
+        report.set_conn(conn)
     try:
         # Download XML catalog if needed (S102 sources)
         xml_prefix = cfg.get("xml_prefix")
@@ -221,5 +227,6 @@ def _run_fetch(project_dir, geometry, cfg, data_source,
         print(f"\n[{_timestamp()}] {data_source}: Operation complete after "
               f"{datetime.datetime.now() - start}")
     finally:
-        conn.close()
+        if not report:
+            conn.close()
     return result

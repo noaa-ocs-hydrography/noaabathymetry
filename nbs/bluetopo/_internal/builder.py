@@ -131,25 +131,31 @@ def build_vrt(project_dir: str, data_source: str = None,
     result = BuildResult()
     try:
         result = _run_build(project_dir, cfg, data_source, relative_to_vrt,
-                            target_resolution, result)
+                            target_resolution, result, report)
     except Exception:
         if report:
             report.capture_exception()
         raise
     finally:
         if report:
-            report.add_result(result)
-            report.write()
+            try:
+                report.add_result(result)
+                report.write()
+            finally:
+                if report.conn:
+                    report.conn.close()
     return result
 
 
 def _run_build(project_dir, cfg, data_source, relative_to_vrt,
-               target_resolution, result):
+               target_resolution, result, report=None):
     """Core build pipeline. Separated to allow debug wrapper."""
     start = datetime.datetime.now()
     print(f"[{_timestamp()}] {data_source}: Beginning work in project folder: {project_dir}\n")
 
     conn = connect(project_dir, cfg)
+    if report:
+        report.set_conn(conn)
     try:
         result.missing_reset = missing_utms(project_dir, conn, cfg)
         if result.missing_reset:
@@ -253,5 +259,6 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
 
         print(f"[{_timestamp()}] {data_source}: Operation complete after {datetime.datetime.now() - start}")
     finally:
-        conn.close()
+        if not report:
+            conn.close()
     return result

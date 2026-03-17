@@ -26,7 +26,7 @@ def build_vrt_command():
     parser.add_argument(
         "-d", "--dir", "--directory",
         help="The directory path to use. Required argument.",
-        type=str, nargs="?", dest="dir", required=True,
+        type=str, dest="dir", required=True,
     )
     parser.add_argument(
         "-s", "--source",
@@ -36,7 +36,7 @@ def build_vrt_command():
     parser.add_argument(
         "-r", "--rel", "--relative_to_vrt",
         help="Store VRT file paths as relative (default: true).",
-        nargs="?", dest="relative_to_vrt", default="true",
+        nargs="?", dest="relative_to_vrt", default=True,
         const=True, type=str_to_bool,
     )
     parser.add_argument(
@@ -67,7 +67,7 @@ def fetch_tiles_command():
     parser.add_argument(
         "-d", "--dir", "--directory",
         help="The directory path to use. Required argument.",
-        type=str, nargs="?", dest="dir", required=True,
+        type=str, dest="dir", required=True,
     )
     parser.add_argument(
         "-g", "--geom", "--geometry",

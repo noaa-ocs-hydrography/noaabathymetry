@@ -102,7 +102,7 @@ class TestBluetopoPipeline:
         tiles = select_tiles_by_utm(project_dir, conn, "19", cfg)
         assert len(tiles) == 2
 
-    def testbuild_tile_paths(self, pipeline_env):
+    def test_build_tile_paths(self, pipeline_env):
         conn, project_dir, cfg, tiles_info = pipeline_env
 
         tiles = select_tiles_by_utm(project_dir, conn, "19", cfg)

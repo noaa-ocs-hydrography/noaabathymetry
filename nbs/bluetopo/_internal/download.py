@@ -316,7 +316,7 @@ def _build_tile_download(tile, cfg, data_source, client, bucket, local_dir):
     for slot in slots:
         name = slot["name"]
         link = tile.get(f"{name}_link")
-        if not link or link == "None":
+        if not link or str(link).lower() == "none":
             return None
 
         if local_dir is not None:
@@ -691,7 +691,7 @@ def upsert_tiles(conn, project_dir, tile_scheme, cfg):
         for col in link_cols + ["delivered_date", "resolution", "utm"] + checksum_cols:
             update_parts.append(f"{col} = EXCLUDED.{col}")
         for col in disk_cols + verified_cols:
-            update_parts.append(f"{col} = Null")
+            update_parts.append(f"{col} = NULL")
         update_clause = ", ".join(update_parts)
 
         cursor.executemany(

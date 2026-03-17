@@ -154,13 +154,13 @@ def get_tile_list(desired_area, tile_scheme_filename):
         print("Unable to open tile scheme file")
         return None
     driver = ogr.GetDriverByName("MEMORY")
-    intersect = driver.CreateDataSource("memData")
-    intersect_lyr = intersect.CreateLayer("mem", geom_type=ogr.wkbPolygon)
     source_layer = source.GetLayer(0)
     source_crs = source_layer.GetSpatialRef()
     num_target_layers = data_source.GetLayerCount()
     feature_list = []
     for layer_num in range(num_target_layers):
+        intersect = driver.CreateDataSource(f"intersect_{layer_num}")
+        intersect_lyr = intersect.CreateLayer("mem", geom_type=ogr.wkbPolygon)
         target_layer = data_source.GetLayer(layer_num)
         target_crs = target_layer.GetSpatialRef()
         if target_crs is None:
