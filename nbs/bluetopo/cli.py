@@ -40,10 +40,16 @@ def build_vrt_command():
         const=True, type=str_to_bool,
     )
     parser.add_argument(
-        "-t", "--target-resolution",
-        help="Target resolution in meters. Must be one of: 2, 4, 8, 16, 32, 64.",
-        type=float, choices=[2, 4, 8, 16, 32, 64],
-        dest="target_resolution", default=None,
+        "-t", "--vrt-resolution-target",
+        help="VRT output pixel size in meters (any positive number).",
+        type=float,
+        dest="vrt_resolution_target", default=None,
+    )
+    parser.add_argument(
+        "--tile-resolution-filter",
+        help="Only include tiles at these resolutions (meters). "
+             "Outputs to a separate VRT directory. Example: --tile-resolution-filter 4 8",
+        type=int, nargs="+", dest="tile_resolution_filter", default=None,
     )
     parser.add_argument(
         "--debug", action="store_true",
@@ -54,8 +60,9 @@ def build_vrt_command():
         project_dir=args.dir,
         data_source=args.source,
         relative_to_vrt=args.relative_to_vrt,
-        target_resolution=args.target_resolution,
+        vrt_resolution_target=args.vrt_resolution_target,
         debug=args.debug,
+        tile_resolution_filter=args.tile_resolution_filter,
     )
 
 
@@ -82,6 +89,11 @@ def fetch_tiles_command():
         default="bluetopo", dest="source", nargs="?",
     )
     parser.add_argument(
+        "--tile-resolution-filter",
+        help="Only fetch tiles at these resolutions (meters). Example: --tile-resolution-filter 4 8",
+        type=int, nargs="+", dest="tile_resolution_filter", default=None,
+    )
+    parser.add_argument(
         "--debug", action="store_true",
         help="Write a diagnostic report to the project directory.",
     )
@@ -91,4 +103,5 @@ def fetch_tiles_command():
         geometry=args.geom,
         data_source=args.source,
         debug=args.debug,
+        tile_resolution_filter=args.tile_resolution_filter,
     )

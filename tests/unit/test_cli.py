@@ -53,8 +53,9 @@ class TestBuildVrtCommand:
                     project_dir="/tmp/test",
                     data_source="bluetopo",
                     relative_to_vrt=True,
-                    target_resolution=None,
+                    vrt_resolution_target=None,
                     debug=False,
+                    tile_resolution_filter=None,
                 )
 
     def test_default_source(self):
@@ -90,6 +91,7 @@ class TestFetchTilesCommand:
                     geometry="polygon.shp",
                     data_source="bag",
                     debug=False,
+                    tile_resolution_filter=None,
                 )
 
     def test_default_no_geom(self):

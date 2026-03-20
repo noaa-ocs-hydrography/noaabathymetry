@@ -155,6 +155,9 @@ DATA_SOURCES = {
             "survey_date_end": [str, gdal.GFU_Generic],
         },
         "rat_zero_fields": [],
+        # Overviews
+        "overview_levels": [8, 16, 32, 64, 128],
+        "overview_filter_coarsest": True,
     },
     # -------------------------------------------------------------------------
     # Modeling -- test-and-evaluation bathymetric compilation for modeling
@@ -207,6 +210,9 @@ DATA_SOURCES = {
             "survey_date_end": [str, gdal.GFU_Generic],
         },
         "rat_zero_fields": [],
+        # Overviews
+        "overview_levels": [8, 16, 32, 64, 128],
+        "overview_filter_coarsest": True,
     },
     # -------------------------------------------------------------------------
     # BAG -- Bathymetric Attributed Grid (single-file, no RAT)
@@ -237,6 +243,9 @@ DATA_SOURCES = {
         "rat_band": None,
         "rat_fields": None,
         "rat_zero_fields": [],
+        # Overviews
+        "overview_levels": [8, 16, 32, 64, 128],
+        "overview_filter_coarsest": False,
     },
     # -------------------------------------------------------------------------
     # S102 v2.1 -- IHO S-102 bathymetric surface (single-file, no RAT)
@@ -267,6 +276,9 @@ DATA_SOURCES = {
         "rat_band": None,
         "rat_fields": None,
         "rat_zero_fields": [],
+        # Overviews
+        "overview_levels": [8, 16, 32, 64, 128],
+        "overview_filter_coarsest": False,
     },
     # -------------------------------------------------------------------------
     # S102 v2.2 -- dual subdatasets (BathymetryCoverage + QualityOfSurvey)
@@ -326,6 +338,9 @@ DATA_SOURCES = {
             "bathymetric_uncertainty_type": [int, gdal.GFU_Generic],
         },
         "rat_zero_fields": ["feature_size_var", "bathymetric_uncertainty_type"],
+        # Overviews
+        "overview_levels": [8, 16, 32, 64, 128],
+        "overview_filter_coarsest": False,
     },
     # -------------------------------------------------------------------------
     # S102 v3.0 -- dual subdatasets (BathymetryCoverage +
@@ -386,6 +401,9 @@ DATA_SOURCES = {
             "type_of_bathymetric_estimation_uncertainty": [int, gdal.GFU_Generic],
         },
         "rat_zero_fields": ["feature_size_var", "type_of_bathymetric_estimation_uncertainty"],
+        # Overviews
+        "overview_levels": [8, 16, 32, 64, 128],
+        "overview_filter_coarsest": False,
     },
     # -------------------------------------------------------------------------
     # HSD -- Hydrographic Surveys Division (local-only)
@@ -442,6 +460,9 @@ DATA_SOURCES = {
             "sensitive": [int, gdal.GFU_Generic],
         },
         "rat_zero_fields": [],
+        # Overviews
+        "overview_levels": [8, 16, 32, 64, 128],
+        "overview_filter_coarsest": True,
     },
 }
 
@@ -475,7 +496,45 @@ KNOWN_RAT_FIELDS = {
     "sensitive": [int, gdal.GFU_Generic],
 }
 
-VALID_TARGET_RESOLUTIONS = {2, 4, 8, 16, 32, 64}
+def parse_resolution(raw):
+    """Extract integer meters from a resolution string like '4m'.
+
+    Returns None if raw is None/empty or contains no digits.
+    """
+    if not raw:
+        return None
+    digits = ''.join(c for c in str(raw) if c.isdigit())
+    if not digits:
+        return None
+    return int(digits)
+
+
+def make_resolution_label(resolutions):
+    """Build a label like '4m' or '4m_8m' from integer resolution values."""
+    return "_".join(f"{r}m" for r in sorted(resolutions))
+
+
+def make_vrt_dir_name(data_source, tile_resolution_filter=None, vrt_resolution_target=None):
+    """Build the VRT output directory name from build parameters.
+
+    Examples: 'BlueTopo_VRT', 'BlueTopo_VRT_4m_8m', 'BlueTopo_VRT_tr8m',
+    'BlueTopo_VRT_4m_8m_tr8m'.
+    """
+    name = f"{data_source}_VRT"
+    if tile_resolution_filter:
+        name += f"_{make_resolution_label(tile_resolution_filter)}"
+    if vrt_resolution_target is not None:
+        res_str = f"{vrt_resolution_target:g}".replace(".", "p")
+        name += f"_tr{res_str}m"
+    return name
+
+
+def validate_vrt_resolution_target(value):
+    """Raise ValueError if vrt_resolution_target is not a positive number."""
+    if value is not None and value <= 0:
+        raise ValueError(
+            f"vrt_resolution_target must be a positive number, got {value}"
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -14,7 +14,12 @@ import os
 import platform
 from dataclasses import dataclass, field
 
-from nbs.bluetopo._internal.config import _timestamp, resolve_data_source
+from nbs.bluetopo._internal.config import (
+    _timestamp,
+    make_resolution_label,
+    parse_resolution,
+    resolve_data_source,
+)
 from nbs.bluetopo._internal.db import connect
 from nbs.bluetopo._internal.download import (
     _get_s3_client,
@@ -47,12 +52,15 @@ class FetchResult:
         Tiles whose files could not be located on S3.
     new_tiles_tracked : int
         Number of new tiles added to tracking via geometry intersection.
+    tile_resolution_filter : list[int] | None
+        Resolution filter that was active, or None if unfiltered.
     """
     existing: list = field(default_factory=list)
     downloaded: list = field(default_factory=list)
     failed: list = field(default_factory=list)
     not_found: list = field(default_factory=list)
     new_tiles_tracked: int = 0
+    tile_resolution_filter: list = None
 
 
 def fetch_tiles(
@@ -60,6 +68,7 @@ def fetch_tiles(
     geometry: str = None,
     data_source: str = None,
     debug: bool = False,
+    tile_resolution_filter: list = None,
 ) -> FetchResult:
     """Discover, download, and update NBS tiles.
 
@@ -120,10 +129,11 @@ def fetch_tiles(
         from nbs.bluetopo._internal.diagnostics import DebugReport
         report = DebugReport(project_dir, data_source, cfg)
 
-    result = FetchResult()
+    result = FetchResult(tile_resolution_filter=tile_resolution_filter)
     try:
         result = _run_fetch(project_dir, geometry, cfg, data_source,
-                            geom_prefix, bucket, local_dir, result, report)
+                            geom_prefix, bucket, local_dir, result, report,
+                            tile_resolution_filter=tile_resolution_filter)
     except Exception:
         if report:
             report.capture_exception()
@@ -140,10 +150,13 @@ def fetch_tiles(
 
 
 def _run_fetch(project_dir, geometry, cfg, data_source,
-               geom_prefix, bucket, local_dir, result, report=None):
+               geom_prefix, bucket, local_dir, result, report=None,
+               tile_resolution_filter=None):
     """Core fetch pipeline. Separated to allow debug wrapper without re-indenting."""
     start = datetime.datetime.now()
     print(f"[{_timestamp()}] {data_source}: Beginning work in project folder: {project_dir}")
+    if tile_resolution_filter:
+        print(f"Tile resolution filter: {make_resolution_label(tile_resolution_filter)}")
     os.makedirs(project_dir, exist_ok=True)
 
     conn = connect(project_dir, cfg)
@@ -165,16 +178,33 @@ def _run_fetch(project_dir, geometry, cfg, data_source,
             tile_list = get_tile_list(geometry_ds, geom_file)
             if tile_list is None:
                 tile_list = []
+            total_intersected = len(tile_list)
+            if tile_resolution_filter:
+                res_field = cfg["gpkg_fields"]["resolution"]
+                res_set = set(tile_resolution_filter)
+                tile_list = [
+                    t for t in tile_list
+                    if parse_resolution(t.get(res_field)) in res_set
+                ]
             result.new_tiles_tracked = insert_new(conn, tile_list, cfg)
             print(f"\nTracking {result.new_tiles_tracked} available {data_source} tile(s) "
                   f"discovered in a total of {len(tile_list)} intersected tile(s) "
                   "with given polygon.")
+            if tile_resolution_filter and len(tile_list) != total_intersected:
+                print(f"  ({total_intersected - len(tile_list)} tile(s) excluded "
+                      "by resolution filter)")
 
         # Synchronize with latest tilescheme
         upsert_tiles(conn, project_dir, geom_file, cfg)
 
         # Download tiles
         db_tiles = all_db_tiles(conn)
+        if tile_resolution_filter:
+            res_set = set(tile_resolution_filter)
+            db_tiles = [
+                t for t in db_tiles
+                if parse_resolution(t.get("resolution")) in res_set
+            ]
         existing, missing, new = classify_tiles(db_tiles, project_dir, cfg)
         result.existing = existing
 

@@ -8,7 +8,10 @@ from osgeo import gdal
 from nbs.bluetopo._internal.config import (
     DATA_SOURCES,
     KNOWN_RAT_FIELDS,
-    VALID_TARGET_RESOLUTIONS,
+    parse_resolution,
+    make_resolution_label,
+    make_vrt_dir_name,
+    validate_vrt_resolution_target,
     _timestamp,
     get_config,
     get_local_config,
@@ -461,16 +464,27 @@ class TestValidateConfig:
 
 
 # ---------------------------------------------------------------------------
-# VALID_TARGET_RESOLUTIONS
+# validate_vrt_resolution_target
 # ---------------------------------------------------------------------------
 
 
-class TestValidTargetResolutions:
-    def test_contains_expected_values(self):
-        assert VALID_TARGET_RESOLUTIONS == {2, 4, 8, 16, 32, 64}
+class TestValidateVrtResolutionTarget:
+    def test_positive_value_passes(self):
+        validate_vrt_resolution_target(5.0)
 
-    def test_is_a_set(self):
-        assert isinstance(VALID_TARGET_RESOLUTIONS, set)
+    def test_positive_float_passes(self):
+        validate_vrt_resolution_target(0.5)
+
+    def test_none_passes(self):
+        validate_vrt_resolution_target(None)
+
+    def test_zero_raises(self):
+        with pytest.raises(ValueError, match="must be a positive number"):
+            validate_vrt_resolution_target(0)
+
+    def test_negative_raises(self):
+        with pytest.raises(ValueError, match="must be a positive number"):
+            validate_vrt_resolution_target(-1)
 
 
 # ---------------------------------------------------------------------------
@@ -825,3 +839,74 @@ class TestGetLocalConfig:
         assert cfg["canonical_name"] == "S102V21"
         cfg = get_local_config("bluetopo")
         assert cfg["canonical_name"] == "BlueTopo"
+
+
+# ---------------------------------------------------------------------------
+# parse_resolution
+# ---------------------------------------------------------------------------
+
+
+class TestParseResolution:
+    def test_standard_format(self):
+        assert parse_resolution("4m") == 4
+
+    def test_large_value(self):
+        assert parse_resolution("128m") == 128
+
+    def test_digits_only(self):
+        assert parse_resolution("16") == 16
+
+    def test_none_returns_none(self):
+        assert parse_resolution(None) is None
+
+    def test_empty_string_returns_none(self):
+        assert parse_resolution("") is None
+
+    def test_no_digits_returns_none(self):
+        assert parse_resolution("abc") is None
+
+
+# ---------------------------------------------------------------------------
+# make_resolution_label
+# ---------------------------------------------------------------------------
+
+
+class TestMakeResolutionLabel:
+    def test_single_value(self):
+        assert make_resolution_label([4]) == "4m"
+
+    def test_multiple_values_sorted(self):
+        assert make_resolution_label([8, 4]) == "4m_8m"
+
+    def test_three_values(self):
+        assert make_resolution_label([16, 4, 8]) == "4m_8m_16m"
+
+
+# ---------------------------------------------------------------------------
+# make_vrt_dir_name
+# ---------------------------------------------------------------------------
+
+
+class TestMakeVrtDirName:
+    def test_no_params(self):
+        assert make_vrt_dir_name("BlueTopo") == "BlueTopo_VRT"
+
+    def test_tile_filter_only(self):
+        assert make_vrt_dir_name("BlueTopo",
+            tile_resolution_filter=[4, 8]) == "BlueTopo_VRT_4m_8m"
+
+    def test_vrt_target_only_integer(self):
+        assert make_vrt_dir_name("BlueTopo",
+            vrt_resolution_target=8.0) == "BlueTopo_VRT_tr8m"
+
+    def test_vrt_target_only_fractional(self):
+        assert make_vrt_dir_name("BlueTopo",
+            vrt_resolution_target=0.5) == "BlueTopo_VRT_tr0p5m"
+
+    def test_both_params(self):
+        assert make_vrt_dir_name("BlueTopo",
+            tile_resolution_filter=[4, 8],
+            vrt_resolution_target=4.0) == "BlueTopo_VRT_4m_8m_tr4m"
+
+    def test_different_source(self):
+        assert make_vrt_dir_name("BAG") == "BAG_VRT"

@@ -2,7 +2,8 @@
 vrt.py - GDAL Virtual Raster creation, overviews, and RAT aggregation.
 
 Builds flat VRTs per UTM zone from source tiles, with adaptive overviews
-targeting standard output resolutions (32m, 64m, 128m).  For multi-subdataset
+targeting config-driven output resolutions, optionally filtered to above
+the coarsest source.  For multi-subdataset
 sources (S102V22, S102V30), one VRT is built per subdataset and then combined.
 """
 
@@ -12,7 +13,8 @@ import os
 from osgeo import gdal
 
 from nbs.bluetopo._internal.config import (
-    VALID_TARGET_RESOLUTIONS,
+    parse_resolution,
+    validate_vrt_resolution_target,
     get_built_flags,
     get_disk_field,
     get_disk_fields,
@@ -21,6 +23,7 @@ from nbs.bluetopo._internal.config import (
 
 gdal.UseExceptions()
 gdal.SetConfigOption("COMPRESS_OVERVIEW", "DEFLATE")
+gdal.SetConfigOption("GDAL_TIFF_OVR_BLOCKSIZE", "512")
 gdal.SetConfigOption("GDAL_NUM_THREADS", "ALL_CPUS")
 
 
@@ -30,7 +33,7 @@ gdal.SetConfigOption("GDAL_NUM_THREADS", "ALL_CPUS")
 
 def create_vrt(files, vrt_path, levels, relative_to_vrt,
                band_descriptions=None, separate=False,
-               target_resolution=None):
+               vrt_resolution_target=None):
     """Build a single GDAL VRT file with optional overviews.
 
     Any existing VRT and .ovr at *vrt_path* are removed first.
@@ -45,13 +48,9 @@ def create_vrt(files, vrt_path, levels, relative_to_vrt,
         raise OSError(f"Failed to remove older vrt files for {vrt_path}\n"
                       "Please close all files and attempt again") from e
     opts_str = '-separate -allow_projection_difference' if separate else '-allow_projection_difference'
-    if target_resolution is not None:
-        if target_resolution not in VALID_TARGET_RESOLUTIONS:
-            raise ValueError(
-                f"target_resolution must be one of {sorted(VALID_TARGET_RESOLUTIONS)}, "
-                f"got {target_resolution}"
-            )
-        opts_str += f' -resolution user -tr {target_resolution} {target_resolution}'
+    if vrt_resolution_target is not None:
+        validate_vrt_resolution_target(vrt_resolution_target)
+        opts_str += f' -resolution user -tr {vrt_resolution_target} {vrt_resolution_target}'
     else:
         opts_str += ' -resolution highest'
     vrt_options = gdal.BuildVRTOptions(options=opts_str, resampleAlg="near")
@@ -80,8 +79,25 @@ def create_vrt(files, vrt_path, levels, relative_to_vrt,
         vrt = None
 
 
-def compute_overview_factors(tile_paths, target_resolution=None):
-    """Compute adaptive overview factors based on source tile resolutions."""
+def compute_overview_factors(tile_paths, vrt_resolution_target=None,
+                             overview_levels=None, filter_coarsest=True):
+    """Compute overview factors from source tile resolutions.
+
+    Parameters
+    ----------
+    tile_paths : list[str]
+        Paths to source raster files.
+    vrt_resolution_target : float | None
+        Override native resolution for factor calculation.
+    overview_levels : list[int]
+        Candidate overview resolutions.  Must be provided.
+    filter_coarsest : bool
+        When True, only resolutions above the coarsest source
+        are kept.  When False, all listed levels are candidates.
+    """
+    if overview_levels is None:
+        raise ValueError("overview_levels must be provided")
+
     resolutions = set()
     for path in tile_paths:
         ds = gdal.Open(path)
@@ -92,21 +108,24 @@ def compute_overview_factors(tile_paths, target_resolution=None):
     if not resolutions:
         return []
 
-    native_res = target_resolution if target_resolution else min(resolutions)
+    native_res = vrt_resolution_target if vrt_resolution_target else min(resolutions)
     coarsest_res = max(resolutions)
 
-    target_output_resolutions = [32, 64, 128]
-    targets = [r for r in target_output_resolutions if r > coarsest_res]
+    if filter_coarsest:
+        targets = [r for r in overview_levels if r > coarsest_res]
+    else:
+        targets = list(overview_levels)
+
     factors = [round(t / native_res) for t in targets if native_res > 0]
     factors = [f for f in factors if f >= 2]
-    return sorted(factors)
+    return sorted(set(factors))
 
 
 # ---------------------------------------------------------------------------
 # Tile selection and path building
 # ---------------------------------------------------------------------------
 
-def select_tiles_by_utm(project_dir, conn, utm, cfg):
+def select_tiles_by_utm(project_dir, conn, utm, cfg, tile_resolution_filter=None):
     """Return tiles in a UTM zone whose files exist on disk, sorted coarse-to-fine."""
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM tiles WHERE utm = ?", (utm,))
@@ -127,14 +146,20 @@ def select_tiles_by_utm(project_dir, conn, utm, cfg):
               "Run fetch_tiles to retrieve files "
               "or correct the directory path if incorrect.")
 
+    if tile_resolution_filter:
+        res_set = set(tile_resolution_filter)
+        existing_tiles = [
+            t for t in existing_tiles
+            if parse_resolution(t.get("resolution")) in res_set
+        ]
+
     def _res_sort_key(tile):
-        raw = tile.get("resolution") or ""
-        digits = ''.join(c for c in raw if c.isdigit())
-        if not digits:
+        val = parse_resolution(tile.get("resolution"))
+        if val is None:
             raise ValueError(
                 f"Tile '{tile.get('tilename', '?')}' has non-numeric or empty "
-                f"resolution '{raw}'.")
-        return int(digits)
+                f"resolution '{tile.get('resolution', '')}'.")
+        return val
 
     existing_tiles.sort(key=_res_sort_key, reverse=True)
     return existing_tiles
