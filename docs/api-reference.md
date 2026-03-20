@@ -1,0 +1,224 @@
+# API Reference
+
+## Python API
+
+Both public functions are importable from `nbs.bluetopo`:
+
+```python
+from nbs.bluetopo import fetch_tiles, build_vrt
+```
+
+---
+
+### fetch_tiles
+
+```python
+fetch_tiles(
+    project_dir: str,
+    geometry: str = None,
+    data_source: str = None,
+    debug: bool = False,
+    tile_resolution_filter: list = None,
+) -> FetchResult
+```
+
+Discover, download, and update NBS tiles.
+
+**Parameters**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `project_dir` | `str` | *required* | Absolute path to the project directory. Created if it does not exist. |
+| `geometry` | `str \| None` | `None` | Geometry input defining the area of interest. Accepts a file path, bounding box (`xmin,ymin,xmax,ymax`), WKT, or GeoJSON string. String inputs assume EPSG:4326. Pass `None` to skip tile discovery (useful for re-downloading existing tiles). |
+| `data_source` | `str \| None` | `None` | An S3 source name (e.g. `"bluetopo"`, `"bag"`, `"s102v30"`), a local directory path containing a tile scheme geopackage, or `None` (defaults to `"bluetopo"`). |
+| `debug` | `bool` | `False` | If `True`, writes a diagnostic report to the project directory. |
+| `tile_resolution_filter` | `list[int] \| None` | `None` | Only fetch tiles at these resolutions (meters). Example: `[4, 8]`. |
+
+**Returns:** [`FetchResult`](#fetchresult)
+
+**Raises**
+
+| Exception | Condition |
+|---|---|
+| `ValueError` | `project_dir` is not an absolute path. |
+| `ValueError` | `geometry` path is not absolute. |
+| `ValueError` | Unknown `data_source` name and path is not a directory. |
+| `ValueError` | Local directory has no tile scheme geopackage. |
+| `RuntimeError` | No tile scheme found on S3 after retry. |
+
+**Example**
+
+```python
+from nbs.bluetopo import fetch_tiles
+
+result = fetch_tiles(
+    '/home/user/bathymetry',
+    geometry='-76.1,36.9,-75.9,37.1',
+    data_source='bluetopo',
+)
+
+print(f"New tiles tracked: {result.new_tiles_tracked}")
+print(f"Downloaded: {len(result.downloaded)}")
+print(f"Already existing: {len(result.existing)}")
+print(f"Not found on S3: {len(result.not_found)}")
+for failure in result.failed:
+    print(f"  Failed: {failure['tile']} - {failure['reason']}")
+```
+
+---
+
+### build_vrt
+
+```python
+build_vrt(
+    project_dir: str,
+    data_source: str = None,
+    relative_to_vrt: bool = True,
+    vrt_resolution_target: float = None,
+    debug: bool = False,
+    tile_resolution_filter: list = None,
+) -> BuildResult
+```
+
+Build a flat GDAL VRT per UTM zone from all source tiles.
+
+**Parameters**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `project_dir` | `str` | *required* | Absolute path to the project directory. |
+| `data_source` | `str \| None` | `None` | A known source name, a local directory path, or `None` (defaults to `"bluetopo"`). |
+| `relative_to_vrt` | `bool` | `True` | Store referenced file paths as relative to the VRT's directory. Set to `False` for absolute paths. |
+| `vrt_resolution_target` | `float \| None` | `None` | Force output pixel size in meters. Must be a positive number. |
+| `debug` | `bool` | `False` | If `True`, writes a diagnostic report to the project directory. |
+| `tile_resolution_filter` | `list[int] \| None` | `None` | Only include tiles at these resolutions (meters). Outputs to a separate VRT directory. |
+
+**Returns:** [`BuildResult`](#buildresult)
+
+**Raises**
+
+| Exception | Condition |
+|---|---|
+| `ValueError` | `project_dir` is not an absolute path. |
+| `ValueError` | Project directory does not exist. |
+| `ValueError` | Registry database not found (`fetch_tiles` must run first). |
+| `ValueError` | Tile downloads folder not found (`fetch_tiles` must run first). |
+| `ValueError` | `vrt_resolution_target` is not positive. |
+| `RuntimeError` | GDAL version is too old for the data source. |
+| `RuntimeError` | GDAL is missing required drivers (e.g. S102, BAG). |
+
+**Example**
+
+```python
+from nbs.bluetopo import build_vrt
+
+result = build_vrt(
+    '/home/user/bathymetry',
+    data_source='bluetopo',
+    vrt_resolution_target=8,
+    tile_resolution_filter=[4, 8],
+)
+
+for entry in result.built:
+    print(f"Built UTM {entry['utm']}: {entry['vrt']}")
+print(f"Skipped (up to date): {len(result.skipped)}")
+print(f"Missing VRTs reset: {result.missing_reset}")
+```
+
+---
+
+### FetchResult
+
+Dataclass returned by `fetch_tiles`.
+
+| Attribute | Type | Description |
+|---|---|---|
+| `existing` | `list[str]` | Tile names already downloaded, verified, and up to date. |
+| `downloaded` | `list[str]` | Tile names successfully downloaded in this run. |
+| `failed` | `list[dict]` | Tiles that failed download. Each dict has `tile` (str) and `reason` (str) keys. |
+| `not_found` | `list[str]` | Tile names whose files could not be located on S3. |
+| `new_tiles_tracked` | `int` | Number of new tiles added to tracking via geometry intersection. |
+| `tile_resolution_filter` | `list[int] \| None` | Resolution filter that was active, or `None` if unfiltered. |
+
+---
+
+### BuildResult
+
+Dataclass returned by `build_vrt`.
+
+| Attribute | Type | Description |
+|---|---|---|
+| `built` | `list[dict]` | UTM zones that were built. Each dict has `utm` (str), `vrt` (str), and `ovr` (str or None) keys. |
+| `skipped` | `list[str]` | UTM zone identifiers that were already up to date. |
+| `missing_reset` | `int` | Number of UTM zones reset due to VRT files missing on disk. |
+| `tile_resolution_filter` | `list[int] \| None` | Resolution filter that was active, or `None` if unfiltered. |
+| `vrt_resolution_target` | `float \| None` | VRT pixel size override that was active, or `None` for native resolution. |
+
+---
+
+## CLI Reference
+
+Two commands are installed when you `pip install bluetopo`.
+
+### fetch_tiles command
+
+```
+fetch_tiles -d DIR [-g GEOMETRY] [-s SOURCE] [--tile-resolution-filter N [N ...]] [--debug]
+```
+
+| Flag | Long form | Description |
+|---|---|---|
+| `-d` | `--dir`, `--directory` | **Required.** Absolute path to the project directory. |
+| `-g` | `--geom`, `--geometry` | Geometry input (file path, bounding box, WKT, or GeoJSON). String inputs assume EPSG:4326. |
+| `-s` | `--source` | Data source identifier. Default: `bluetopo`. |
+| | `--tile-resolution-filter` | Only fetch tiles at these resolutions (meters). Multiple values allowed. |
+| | `--debug` | Write a diagnostic report to the project directory. |
+| `-v` | `--version` | Show version and exit. |
+
+**Examples**
+
+```bash
+# Discover tiles within a bounding box and download tracked tiles
+fetch_tiles -d /home/user/bathymetry -g "-76.1,36.9,-75.9,37.1"
+
+# Fetch from a geopackage, only 4m and 8m tiles
+fetch_tiles -d /home/user/bathymetry -g /path/to/aoi.gpkg --tile-resolution-filter 4 8
+
+# Fetch BAG data
+fetch_tiles -d /home/user/bathymetry -g aoi.gpkg -s bag
+
+# Re-download/update without discovering new tiles (no geometry)
+fetch_tiles -d /home/user/bathymetry
+```
+
+### build_vrt command
+
+```
+build_vrt -d DIR [-s SOURCE] [-r BOOL] [-t RESOLUTION] [--tile-resolution-filter N [N ...]] [--debug]
+```
+
+| Flag | Long form | Description |
+|---|---|---|
+| `-d` | `--dir`, `--directory` | **Required.** Absolute path to the project directory. |
+| `-s` | `--source` | Data source identifier. Default: `bluetopo`. |
+| `-r` | `--rel`, `--relative_to_vrt` | Store VRT file paths as relative. Default: `true`. |
+| `-t` | `--vrt-resolution-target` | Force output pixel size in meters (any positive number). |
+| | `--tile-resolution-filter` | Only include tiles at these resolutions (meters). Multiple values allowed. |
+| | `--debug` | Write a diagnostic report to the project directory. |
+| `-v` | `--version` | Show version and exit. |
+
+**Examples**
+
+```bash
+# Build VRTs from fetched BlueTopo tiles
+build_vrt -d /home/user/bathymetry
+
+# Build at 8m resolution target
+build_vrt -d /home/user/bathymetry -t 8
+
+# Build only from 4m tiles
+build_vrt -d /home/user/bathymetry --tile-resolution-filter 4
+
+# Build Modeling VRTs
+build_vrt -d /home/user/bathymetry -s modeling
+```

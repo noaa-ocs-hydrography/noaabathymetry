@@ -371,8 +371,8 @@ def add_vrt_rat(conn, utm, project_dir, vrt_path, cfg):
 # UTM zone management
 # ---------------------------------------------------------------------------
 
-def select_unbuilt_utms(conn, cfg):
-    """Retrieve all unbuilt UTM records."""
+def select_unbuilt_utms(conn, cfg, params_key=""):
+    """Retrieve all unbuilt UTM records for the given params_key."""
     built_flags = get_built_flags(cfg)
     if cfg["subdatasets"]:
         all_flags = built_flags + ["built_combined"]
@@ -380,7 +380,10 @@ def select_unbuilt_utms(conn, cfg):
     else:
         where_clause = " or ".join(f"{f} = 0" for f in built_flags)
     cursor = conn.cursor()
-    cursor.execute(f"SELECT * FROM vrt_utm WHERE {where_clause}")
+    cursor.execute(
+        f"SELECT * FROM vrt_utm WHERE params_key = ? AND ({where_clause})",
+        (params_key,),
+    )
     return [dict(row) for row in cursor.fetchall()]
 
 
@@ -395,16 +398,17 @@ def update_utm(conn, fields, cfg):
         set_parts.append("built_combined = 1")
     set_clause = ", ".join(set_parts)
     values = [fields.get(col) for col in utm_cols]
-    values.append(fields["utm"])
+    params_key = fields.get("params_key", "")
+    values.extend([fields["utm"], params_key])
     cursor = conn.cursor()
     cursor.execute(
-        f"UPDATE vrt_utm SET {set_clause} WHERE utm = ?",
+        f"UPDATE vrt_utm SET {set_clause} WHERE utm = ? AND params_key = ?",
         values,
     )
     conn.commit()
 
 
-def missing_utms(project_dir, conn, cfg):
+def missing_utms(project_dir, conn, cfg, params_key=""):
     """Reset UTM zones whose VRT files are missing from disk.
 
     OVR columns with None are treated as "no overview needed" and not
@@ -418,7 +422,10 @@ def missing_utms(project_dir, conn, cfg):
     else:
         where_built = " or ".join(f"{f} = 1" for f in built_flags)
     cursor = conn.cursor()
-    cursor.execute(f"SELECT * FROM vrt_utm WHERE {where_built}")
+    cursor.execute(
+        f"SELECT * FROM vrt_utm WHERE params_key = ? AND ({where_built})",
+        (params_key,),
+    )
     utms = [dict(row) for row in cursor.fetchall()]
     missing_utm_count = 0
     utm_cols = get_utm_file_columns(cfg)
@@ -442,11 +449,55 @@ def missing_utms(project_dir, conn, cfg):
             if cfg["subdatasets"]:
                 set_parts.append("built_combined = 0")
             set_clause = ", ".join(set_parts)
-            values = [None] * len(utm_cols) + [utm["utm"]]
+            values = [None] * len(utm_cols) + [utm["utm"], params_key]
             cursor.execute(
-                f"UPDATE vrt_utm SET {set_clause} WHERE utm = ?",
+                f"UPDATE vrt_utm SET {set_clause} WHERE utm = ? AND params_key = ?",
                 values,
             )
     if missing_utm_count:
         conn.commit()
     return missing_utm_count
+
+
+def ensure_params_rows(conn, cfg, params_key):
+    """Seed vrt_utm rows for a parameterized build.
+
+    For each UTM zone in the default partition (params_key='') that doesn't
+    yet exist in the target partition, inserts a new row with built=0 and
+    null VRT/OVR paths.
+    """
+    built_flags = get_built_flags(cfg)
+    utm_cols = get_utm_file_columns(cfg)
+
+    cursor = conn.cursor()
+    cursor.execute("SELECT utm FROM vrt_utm WHERE params_key = ''")
+    default_utms = {row["utm"] for row in cursor.fetchall()}
+
+    cursor.execute("SELECT utm FROM vrt_utm WHERE params_key = ?", (params_key,))
+    existing_utms = {row["utm"] for row in cursor.fetchall()}
+
+    new_utms = default_utms - existing_utms
+    if not new_utms:
+        return
+
+    col_names = ["utm", "params_key"] + utm_cols + built_flags
+    if cfg["subdatasets"]:
+        col_names.append("built_combined")
+
+    col_str = ", ".join(col_names)
+    placeholders = ", ".join(["?"] * len(col_names))
+
+    rows = []
+    for utm in new_utms:
+        values = [utm, params_key]
+        values.extend([None] * len(utm_cols))
+        values.extend([0] * len(built_flags))
+        if cfg["subdatasets"]:
+            values.append(0)
+        rows.append(tuple(values))
+
+    cursor.executemany(
+        f"INSERT OR IGNORE INTO vrt_utm({col_str}) VALUES({placeholders})",
+        rows,
+    )
+    conn.commit()

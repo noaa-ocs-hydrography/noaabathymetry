@@ -225,13 +225,15 @@ class DebugReport:
             unverified = cursor.fetchone()[0]
             pending = total_tiles - verified - unverified
 
-            cursor.execute("SELECT COUNT(*) FROM vrt_utm")
+            cursor.execute("SELECT COUNT(*) FROM vrt_utm WHERE params_key = ''")
             total_utms = cursor.fetchone()[0]
             built_check = " AND ".join(f"{f} = 1" for f in built_flags)
-            cursor.execute(f"SELECT COUNT(*) FROM vrt_utm WHERE {built_check}")
+            cursor.execute(f"SELECT COUNT(*) FROM vrt_utm WHERE params_key = '' AND {built_check}")
             built_utms = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(DISTINCT params_key) FROM vrt_utm WHERE params_key != ''")
+            param_partitions = cursor.fetchone()[0]
 
-            self.sections.append("\n".join([
+            lines = [
                 "-" * 72,
                 "  5. DATABASE SUMMARY",
                 "-" * 72,
@@ -239,10 +241,13 @@ class DebugReport:
                 f"    Downloaded & verified : {verified}",
                 f"    Downloaded, unverified: {unverified}",
                 f"    Pending download      : {pending}",
-                f"  UTM zones: {total_utms} total",
+                f"  UTM zones (default): {total_utms} total",
                 f"    Built   : {built_utms}",
                 f"    Unbuilt : {total_utms - built_utms}",
-            ]))
+            ]
+            if param_partitions:
+                lines.append(f"  Parameterized partitions: {param_partitions}")
+            self.sections.append("\n".join(lines))
         except Exception as e:
             self.sections.append(f"  5. DATABASE SUMMARY\n  ERROR: {e}")
 
@@ -326,21 +331,23 @@ class DebugReport:
             utm_cols = get_utm_file_columns(self.cfg)
             built_flags = get_built_flags(self.cfg)
 
-            cursor.execute("SELECT * FROM vrt_utm ORDER BY utm")
+            cursor.execute("SELECT * FROM vrt_utm ORDER BY params_key, utm")
             utms = [dict(row) for row in cursor.fetchall()]
 
             lines = [
                 "-" * 72,
                 "  7. UTM ZONE DETAILS",
                 "-" * 72,
-                f"  Total UTM zones: {len(utms)}",
+                f"  Total UTM zone rows: {len(utms)}",
                 "",
             ]
 
             for utm in utms:
+                pk = utm.get("params_key", "")
+                pk_label = f" [params: {pk}]" if pk else ""
                 built = all(utm.get(f) == 1 for f in built_flags)
                 status = "BUILT" if built else "UNBUILT"
-                lines.append(f"  UTM {utm['utm']} [{status}]")
+                lines.append(f"  UTM {utm['utm']}{pk_label} [{status}]")
                 for col in utm_cols:
                     val = utm.get(col)
                     if val is None:

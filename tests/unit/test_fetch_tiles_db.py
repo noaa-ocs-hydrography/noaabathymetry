@@ -425,4 +425,62 @@ class TestUpdateRecordsEdge:
         cursor.execute("SELECT COUNT(*) FROM vrt_utm")
         assert cursor.fetchone()[0] == 2
 
+    def test_resets_parameterized_partitions(self, registry_db):
+        """Downloading tiles resets built flags in parameterized partitions."""
+        cfg = get_config("bluetopo")
+        conn, _ = registry_db(cfg, tiles=[
+            {"tilename": "T1", "utm": "19", "resolution": "2m"},
+        ])
+        # Seed a default row and a parameterized row, both marked built
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO vrt_utm(utm, params_key, built) VALUES(?, ?, ?)",
+            ("19", "", 1))
+        cursor.execute(
+            "INSERT INTO vrt_utm(utm, params_key, built) VALUES(?, ?, ?)",
+            ("19", "_4m", 1))
+        conn.commit()
+
+        download_dict = {
+            "T1": {"tile": "T1", "utm": "19", "files": [
+                {"name": "geotiff", "disk": "path.tif",
+                 "source": "s3://bucket/T1.tif", "dest": "T1.tif", "checksum": "abc"},
+                {"name": "rat", "disk": "path.aux",
+                 "source": "s3://bucket/T1.aux", "dest": "T1.aux", "checksum": "def"},
+            ]},
+        }
+        update_records(conn, download_dict, ["T1"], cfg)
+
+        cursor.execute("SELECT built FROM vrt_utm WHERE utm = '19' AND params_key = ''")
+        assert cursor.fetchone()[0] == 0
+        cursor.execute("SELECT built FROM vrt_utm WHERE utm = '19' AND params_key = '_4m'")
+        assert cursor.fetchone()[0] == 0
+
+    def test_resets_multi_subdataset_parameterized_partitions(self, registry_db):
+        """Downloading tiles resets all built flags in parameterized partitions for subdataset sources."""
+        cfg = get_config("s102v22")
+        conn, _ = registry_db(cfg, tiles=[
+            {"tilename": "T1", "utm": "19", "resolution": "2m"},
+        ])
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO vrt_utm(utm, params_key, built_subdataset1, built_subdataset2, built_combined) "
+            "VALUES(?, ?, ?, ?, ?)",
+            ("19", "_4m", 1, 1, 1))
+        conn.commit()
+
+        download_dict = {
+            "T1": {"tile": "T1", "utm": "19", "files": [
+                {"name": "file", "disk": "S102V22/Data/T1.h5",
+                 "source": "s3://bucket/T1.h5", "dest": "T1.h5", "checksum": "abc"},
+            ]},
+        }
+        update_records(conn, download_dict, ["T1"], cfg)
+
+        cursor.execute("SELECT * FROM vrt_utm WHERE utm = '19' AND params_key = '_4m'")
+        row = dict(cursor.fetchone())
+        assert row["built_subdataset1"] == 0
+        assert row["built_subdataset2"] == 0
+        assert row["built_combined"] == 0
+
 

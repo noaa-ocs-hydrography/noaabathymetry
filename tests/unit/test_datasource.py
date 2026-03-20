@@ -11,6 +11,7 @@ from nbs.bluetopo._internal.config import (
     parse_resolution,
     make_resolution_label,
     make_vrt_dir_name,
+    make_params_key,
     validate_vrt_resolution_target,
     _timestamp,
     get_config,
@@ -114,15 +115,17 @@ class TestGetVrtUtmFields:
     def test_single_dataset(self):
         cfg = get_config("bluetopo")
         fields = get_vrt_utm_fields(cfg)
+        assert "utm" in fields
+        assert "params_key" in fields
         assert "utm_vrt" in fields
         assert "utm_ovr" in fields
         assert "built" in fields
-        assert "utm" in fields
 
     @pytest.mark.parametrize("source", ["s102v22", "s102v30"])
     def test_multi_subdataset(self, source):
         cfg = get_config(source)
         fields = get_vrt_utm_fields(cfg)
+        assert "params_key" in fields
         assert "utm_subdataset1_vrt" in fields
         assert "utm_subdataset2_vrt" in fields
         assert "utm_combined_vrt" in fields
@@ -205,10 +208,11 @@ class TestGetBuiltFlags:
 
 
 class TestUtmFileColumns:
-    def test_utm_excludes_utm_built(self):
+    def test_utm_excludes_utm_params_key_built(self):
         cfg = get_config("bluetopo")
         cols = get_utm_file_columns(cfg)
         assert "utm" not in cols
+        assert "params_key" not in cols
         assert "built" not in cols
         assert "utm_vrt" in cols
 
@@ -910,3 +914,35 @@ class TestMakeVrtDirName:
 
     def test_different_source(self):
         assert make_vrt_dir_name("BAG") == "BAG_VRT"
+
+
+# ---------------------------------------------------------------------------
+# make_params_key
+# ---------------------------------------------------------------------------
+
+
+class TestMakeParamsKey:
+    def test_no_params(self):
+        assert make_params_key("BlueTopo") == ""
+
+    def test_tile_filter_only(self):
+        assert make_params_key("BlueTopo",
+            tile_resolution_filter=[4, 8]) == "_4m_8m"
+
+    def test_vrt_target_only(self):
+        assert make_params_key("BlueTopo",
+            vrt_resolution_target=8.0) == "_tr8m"
+
+    def test_both_params(self):
+        assert make_params_key("BlueTopo",
+            tile_resolution_filter=[4, 8],
+            vrt_resolution_target=4.0) == "_4m_8m_tr4m"
+
+    def test_fractional_target(self):
+        assert make_params_key("BlueTopo",
+            vrt_resolution_target=0.5) == "_tr0p5m"
+
+    def test_different_source(self):
+        assert make_params_key("BAG") == ""
+        assert make_params_key("BAG",
+            tile_resolution_filter=[4]) == "_4m"

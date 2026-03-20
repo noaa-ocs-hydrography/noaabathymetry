@@ -66,7 +66,9 @@ def connect(project_dir: str, cfg: dict) -> sqlite3.Connection:
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS vrt_utm (
-            utm text PRIMARY KEY
+            utm text NOT NULL,
+            params_key text NOT NULL DEFAULT '',
+            PRIMARY KEY (utm, params_key)
             );
             """
         )

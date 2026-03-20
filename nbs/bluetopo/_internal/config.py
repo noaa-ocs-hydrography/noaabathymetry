@@ -529,6 +529,17 @@ def make_vrt_dir_name(data_source, tile_resolution_filter=None, vrt_resolution_t
     return name
 
 
+def make_params_key(data_source, tile_resolution_filter=None, vrt_resolution_target=None):
+    """Derive the params_key string for VRT database tracking.
+
+    Returns ``""`` for default (unparameterized) builds, or the suffix
+    portion of the VRT directory name (e.g., ``"_4m_8m_tr8m"``).
+    """
+    dir_name = make_vrt_dir_name(data_source, tile_resolution_filter,
+                                 vrt_resolution_target)
+    return dir_name.removeprefix(f"{data_source}_VRT")
+
+
 def validate_vrt_resolution_target(value):
     """Raise ValueError if vrt_resolution_target is not a positive number."""
     if value is not None and value <= 0:
@@ -667,7 +678,7 @@ def get_catalog_fields(cfg):
 
 def get_vrt_utm_fields(cfg):
     """Return ``{column_name: sql_type}`` for the ``vrt_utm`` table."""
-    fields = {"utm": "text"}
+    fields = {"utm": "text", "params_key": "text"}
     if cfg["subdatasets"]:
         for i in range(len(cfg["subdatasets"])):
             fields[f"utm_subdataset{i+1}_vrt"] = "text"
@@ -713,7 +724,7 @@ def get_built_flags(cfg):
 def get_utm_file_columns(cfg):
     """Return VRT/OVR path column names (excludes PK and built flags)."""
     fields = get_vrt_utm_fields(cfg)
-    return [k for k in fields if k != "utm" and "built" not in k]
+    return [k for k in fields if k not in ("utm", "params_key") and "built" not in k]
 
 
 def get_disk_field(cfg):

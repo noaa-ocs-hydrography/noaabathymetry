@@ -19,6 +19,7 @@ from nbs.bluetopo._internal.vrt import (
     select_unbuilt_utms,
     update_utm,
     missing_utms,
+    ensure_params_rows,
 )
 
 
@@ -335,3 +336,134 @@ class TestSchemaEvolution:
         tables = {row[0] for row in cursor.fetchall()}
         assert "catalog" in tables
         conn2.close()
+
+
+
+# ---------------------------------------------------------------------------
+# ensure_params_rows
+# ---------------------------------------------------------------------------
+
+
+class TestEnsureParamsRows:
+    def test_seeds_from_default_partition(self, registry_db):
+        cfg = get_config("bluetopo")
+        conn, _ = registry_db(cfg, utms=[
+            {"utm": "19", "built": 1},
+            {"utm": "20", "built": 0},
+        ])
+        ensure_params_rows(conn, cfg, "_4m")
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM vrt_utm WHERE params_key = '_4m' ORDER BY utm")
+        rows = [dict(r) for r in cursor.fetchall()]
+        assert len(rows) == 2
+        assert {r["utm"] for r in rows} == {"19", "20"}
+        assert all(r["built"] == 0 for r in rows)
+        assert all(r["utm_vrt"] is None for r in rows)
+
+    def test_no_duplicate_on_second_call(self, registry_db):
+        cfg = get_config("bluetopo")
+        conn, _ = registry_db(cfg, utms=[
+            {"utm": "19", "built": 1},
+        ])
+        ensure_params_rows(conn, cfg, "_4m")
+        ensure_params_rows(conn, cfg, "_4m")
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM vrt_utm WHERE params_key = '_4m'")
+        assert cursor.fetchone()[0] == 1
+
+    def test_noop_when_default_empty(self, registry_db):
+        cfg = get_config("bluetopo")
+        conn, _ = registry_db(cfg)
+        ensure_params_rows(conn, cfg, "_4m")
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM vrt_utm WHERE params_key = '_4m'")
+        assert cursor.fetchone()[0] == 0
+
+    def test_seeds_new_utms_only(self, registry_db):
+        """After seeding once, adding a new default UTM and seeding again only adds the new one."""
+        cfg = get_config("bluetopo")
+        conn, _ = registry_db(cfg, utms=[
+            {"utm": "19", "built": 1},
+        ])
+        ensure_params_rows(conn, cfg, "_4m")
+        # Add a new default UTM
+        conn.cursor().execute(
+            "INSERT INTO vrt_utm(utm, params_key, built) VALUES(?, '', 0)", ("20",))
+        conn.commit()
+        ensure_params_rows(conn, cfg, "_4m")
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM vrt_utm WHERE params_key = '_4m'")
+        assert cursor.fetchone()[0] == 2
+
+    @pytest.mark.parametrize("source", ["s102v22", "s102v30"])
+    def test_multi_subdataset_seeds(self, registry_db, source):
+        cfg = get_config(source)
+        conn, _ = registry_db(cfg, utms=[
+            {"utm": "19", "built_subdataset1": 1, "built_subdataset2": 1,
+             "built_combined": 1},
+        ])
+        ensure_params_rows(conn, cfg, "_4m")
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM vrt_utm WHERE params_key = '_4m'")
+        row = dict(cursor.fetchone())
+        assert row["built_subdataset1"] == 0
+        assert row["built_subdataset2"] == 0
+        assert row["built_combined"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Composite key isolation
+# ---------------------------------------------------------------------------
+
+
+class TestCompositeKeyIsolation:
+    def test_update_does_not_affect_other_partition(self, registry_db):
+        cfg = get_config("bluetopo")
+        conn, _ = registry_db(cfg, utms=[
+            {"utm": "19", "built": 0},
+        ])
+        ensure_params_rows(conn, cfg, "_4m")
+        # Update only the parameterized row
+        fields = {"utm": "19", "params_key": "_4m",
+                  "utm_vrt": "p.vrt", "utm_ovr": "p.ovr"}
+        update_utm(conn, fields, cfg)
+        cursor = conn.cursor()
+        # Default partition should still be unbuilt
+        cursor.execute("SELECT * FROM vrt_utm WHERE utm = '19' AND params_key = ''")
+        default = dict(cursor.fetchone())
+        assert default["built"] == 0
+        assert default["utm_vrt"] is None
+        # Parameterized partition should be built
+        cursor.execute("SELECT * FROM vrt_utm WHERE utm = '19' AND params_key = '_4m'")
+        param = dict(cursor.fetchone())
+        assert param["built"] == 1
+        assert param["utm_vrt"] == "p.vrt"
+
+    def test_select_unbuilt_filters_by_params_key(self, registry_db):
+        cfg = get_config("bluetopo")
+        conn, _ = registry_db(cfg, utms=[
+            {"utm": "19", "built": 1},
+        ])
+        ensure_params_rows(conn, cfg, "_4m")
+        # Default partition is built
+        assert len(select_unbuilt_utms(conn, cfg, "")) == 0
+        # Parameterized partition is unbuilt
+        assert len(select_unbuilt_utms(conn, cfg, "_4m")) == 1
+
+    def test_missing_utms_filters_by_params_key(self, registry_db, tmp_path):
+        cfg = get_config("bluetopo")
+        conn, project_dir = registry_db(cfg, utms=[
+            {"utm": "19", "built": 1, "utm_vrt": "exists.vrt", "utm_ovr": None},
+        ])
+        # Create the file for the default partition
+        with open(os.path.join(project_dir, "exists.vrt"), "w") as f:
+            f.write("<VRT/>")
+        # Seed and mark parameterized as built with a missing VRT
+        ensure_params_rows(conn, cfg, "_4m")
+        fields = {"utm": "19", "params_key": "_4m",
+                  "utm_vrt": "missing_param.vrt", "utm_ovr": None}
+        update_utm(conn, fields, cfg)
+        # missing_utms on default should find 0
+        assert missing_utms(project_dir, conn, cfg, "") == 0
+        # missing_utms on parameterized should find 1
+        assert missing_utms(project_dir, conn, cfg, "_4m") == 1

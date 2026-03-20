@@ -24,5 +24,8 @@ env
 .idea
 .vscode
 
+# Docs
+book
+
 # OS
 .DS_Store

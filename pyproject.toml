@@ -25,6 +25,7 @@ build_vrt = "nbs.bluetopo.cli:build_vrt_command"
 
 [project.urls]
 homepage = "https://www.nauticalcharts.noaa.gov/data/bluetopo.html"
+documentation = "https://noaa-ocs-hydrography.github.io/BlueTopo/"
 source = "https://github.com/noaa-ocs-hydrography/BlueTopo"
 
 [tool.pytest.ini_options]

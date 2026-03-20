@@ -3,6 +3,7 @@
 ---
 
 <p align="center">
+    <a href="https://noaa-ocs-hydrography.github.io/BlueTopo/">Documentation</a> •
     <a href="#background">Background</a> •
     <a href="#requirements">Requirements</a> •
     <a href="#installation">Installation</a> •

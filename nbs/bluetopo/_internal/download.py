@@ -32,9 +32,10 @@ from tqdm import tqdm
 
 from nbs.bluetopo._internal.config import (
     _timestamp,
+    get_built_flags,
     get_disk_fields,
+    get_utm_file_columns,
     get_verified_fields,
-    get_vrt_utm_fields,
 )
 
 
@@ -472,11 +473,9 @@ def update_records(conn, download_dict, successful_downloads, cfg):
     Verified flags are stored as integer 1.
     """
     slots = cfg["file_slots"]
-    vrt_utm_fields = get_vrt_utm_fields(cfg)
-    utm_cols = list(vrt_utm_fields.keys())
 
     tiles_records = []
-    utm_records = []
+    affected_utms = set()
 
     for tilename, download in download_dict.items():
         if tilename not in successful_downloads:
@@ -491,16 +490,7 @@ def update_records(conn, download_dict, successful_downloads, cfg):
         tile_values.append(tilename)
         tiles_records.append(tuple(tile_values))
 
-        # Build utm record
-        utm_values = [download["utm"]]
-        for col in utm_cols:
-            if col == "utm":
-                continue
-            if "built" in col:
-                utm_values.append(0)
-            else:
-                utm_values.append(None)
-        utm_records.append(tuple(utm_values))
+        affected_utms.add(download["utm"])
 
     if not tiles_records:
         return
@@ -520,17 +510,36 @@ def update_records(conn, download_dict, successful_downloads, cfg):
             tiles_records,
         )
 
-        utm_col_names = ", ".join(utm_cols)
-        utm_placeholders = ", ".join(["?"] * len(utm_cols))
-        utm_update_parts = ", ".join(
-            f"{col} = EXCLUDED.{col}" for col in utm_cols if col != "utm"
-        )
+        # Ensure default partition rows exist for affected UTMs.
+        # Built flags are set to 0 in the INSERT so the row is valid
+        # even before the UPDATE below runs.
+        built_flags = get_built_flags(cfg)
+        insert_cols = ["utm", "params_key"] + built_flags
+        if cfg.get("subdatasets"):
+            insert_cols.append("built_combined")
+        insert_col_str = ", ".join(insert_cols)
+        insert_ph = ", ".join(["?"] * len(insert_cols))
+        insert_rows = []
+        for utm in affected_utms:
+            vals = [utm, ""] + [0] * (len(insert_cols) - 2)
+            insert_rows.append(tuple(vals))
         cursor.executemany(
-            f"""INSERT INTO vrt_utm({utm_col_names})
-                VALUES({utm_placeholders})
-                ON CONFLICT(utm) DO UPDATE
-                SET {utm_update_parts}""",
-            utm_records,
+            f"INSERT OR IGNORE INTO vrt_utm({insert_col_str}) VALUES({insert_ph})",
+            insert_rows,
+        )
+
+        # Reset all partitions (default + parameterized) for affected UTMs
+        utm_file_cols = get_utm_file_columns(cfg)
+        reset_parts = [f"{col} = NULL" for col in utm_file_cols]
+        for f in built_flags:
+            reset_parts.append(f"{f} = 0")
+        if cfg.get("subdatasets"):
+            reset_parts.append("built_combined = 0")
+        reset_clause = ", ".join(reset_parts)
+        utm_ph = ", ".join(["?"] * len(affected_utms))
+        cursor.execute(
+            f"UPDATE vrt_utm SET {reset_clause} WHERE utm IN ({utm_ph})",
+            list(affected_utms),
         )
 
         cursor.execute("COMMIT;")

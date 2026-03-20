@@ -19,6 +19,7 @@ from osgeo import gdal
 from nbs.bluetopo._internal.config import (
     make_resolution_label,
     make_vrt_dir_name,
+    make_params_key,
     validate_vrt_resolution_target,
     _timestamp,
     resolve_data_source,
@@ -29,6 +30,7 @@ from nbs.bluetopo._internal.vrt import (
     build_tile_paths,
     compute_overview_factors,
     create_vrt,
+    ensure_params_rows,
     missing_utms,
     select_tiles_by_utm,
     select_unbuilt_utms,
@@ -167,32 +169,23 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
     if report:
         report.set_conn(conn)
     try:
-        is_parameterized = (tile_resolution_filter is not None
-                            or vrt_resolution_target is not None)
         vrt_dir_name = make_vrt_dir_name(data_source, tile_resolution_filter,
                                          vrt_resolution_target)
+        params_key = make_params_key(data_source, tile_resolution_filter,
+                                     vrt_resolution_target)
 
-        if is_parameterized:
+        if params_key:
             if tile_resolution_filter:
                 print(f"Tile resolution filter: "
                       f"{make_resolution_label(tile_resolution_filter)}")
             if vrt_resolution_target is not None:
                 print(f"VRT resolution target: {vrt_resolution_target:g}m")
-            cursor = conn.cursor()
-            cursor.execute("SELECT DISTINCT utm FROM vrt_utm")
-            utms_to_build = [{"utm": row["utm"]} for row in cursor.fetchall()]
-            track_built = False
-        else:
-            result.missing_reset = missing_utms(project_dir, conn, cfg)
-            if result.missing_reset:
-                print(f"{result.missing_reset} utm vrts files missing. Added to build list.")
-            utms_to_build = select_unbuilt_utms(conn, cfg)
-            track_built = True
+            ensure_params_rows(conn, cfg, params_key)
 
-        # Suffix for VRT filenames so parameterized builds are distinguishable
-        # when loaded in GIS tools. Default builds get no suffix.
-        # e.g. vrt_dir_name="BlueTopo_VRT_4m_tr8m" → file_suffix="_4m_tr8m"
-        vrt_file_suffix = vrt_dir_name.removeprefix(f"{data_source}_VRT")
+        result.missing_reset = missing_utms(project_dir, conn, cfg, params_key)
+        if result.missing_reset:
+            print(f"{result.missing_reset} utm vrts files missing. Added to build list.")
+        utms_to_build = select_unbuilt_utms(conn, cfg, params_key)
 
         vrt_dir = os.path.join(project_dir, vrt_dir_name)
         os.makedirs(vrt_dir, exist_ok=True)
@@ -225,7 +218,7 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
 
                 if cfg["subdatasets"]:
                     sd_vrt_paths = []
-                    fields = {"utm": ub_utm["utm"]}
+                    fields = {"utm": ub_utm["utm"], "params_key": params_key}
                     for sd_idx, sd in enumerate(cfg["subdatasets"]):
                         suffix_label = f"_subdataset{sd_idx + 1}"
                         tile_paths = build_tile_paths(tiles, project_dir, cfg, sd)
@@ -237,7 +230,7 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                             filter_coarsest=cfg.get("overview_filter_coarsest", True),
                         )
                         rel_path = os.path.join(vrt_dir_name,
-                                                f"{data_source}_Fetched_UTM{ub_utm['utm']}{sd['suffix']}{vrt_file_suffix}.vrt")
+                                                f"{data_source}_Fetched_UTM{ub_utm['utm']}{sd['suffix']}{params_key}.vrt")
                         utm_sd_vrt = os.path.join(project_dir, rel_path)
                         create_vrt(tile_paths, utm_sd_vrt, factors or None, relative_to_vrt,
                                    sd["band_descriptions"], vrt_resolution_target=vrt_resolution_target)
@@ -252,7 +245,7 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                                 "Please try again. If error persists, please contact NBS.")
 
                     rel_combined = os.path.join(vrt_dir_name,
-                                                f"{data_source}_Fetched_UTM{ub_utm['utm']}{vrt_file_suffix}.vrt")
+                                                f"{data_source}_Fetched_UTM{ub_utm['utm']}{params_key}.vrt")
                     utm_combined_vrt = os.path.join(project_dir, rel_combined)
                     combined_bands = []
                     for sd in cfg["subdatasets"]:
@@ -264,8 +257,7 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                     if cfg["has_rat"]:
                         add_vrt_rat(conn, ub_utm["utm"], project_dir, utm_combined_vrt, cfg)
 
-                    if track_built:
-                        update_utm(conn, fields, cfg)
+                    update_utm(conn, fields, cfg)
                     built_entry["vrt"] = os.path.join(project_dir, rel_combined)
                     built_entry["ovr"] = None
                 else:
@@ -278,7 +270,7 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                         filter_coarsest=cfg.get("overview_filter_coarsest", True),
                     )
                     rel_path = os.path.join(vrt_dir_name,
-                                            f"{data_source}_Fetched_UTM{ub_utm['utm']}{vrt_file_suffix}.vrt")
+                                            f"{data_source}_Fetched_UTM{ub_utm['utm']}{params_key}.vrt")
                     utm_vrt = os.path.join(project_dir, rel_path)
                     create_vrt(tile_paths, utm_vrt, factors or None, relative_to_vrt,
                                cfg["band_descriptions"], vrt_resolution_target=vrt_resolution_target)
@@ -286,7 +278,8 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                     if cfg["has_rat"]:
                         add_vrt_rat(conn, ub_utm["utm"], project_dir, utm_vrt, cfg)
 
-                    fields = {"utm_vrt": rel_path, "utm_ovr": None, "utm": ub_utm["utm"]}
+                    fields = {"utm_vrt": rel_path, "utm_ovr": None,
+                              "utm": ub_utm["utm"], "params_key": params_key}
                     built_entry["ovr"] = None
                     ovr_path = os.path.join(project_dir, rel_path + ".ovr")
                     if os.path.isfile(ovr_path):
@@ -296,33 +289,22 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                         raise RuntimeError(
                             f"Overview failed to create for utm{ub_utm['utm']}. "
                             "Please try again. If error persists, please contact NBS.")
-                    if track_built:
-                        update_utm(conn, fields, cfg)
+                    update_utm(conn, fields, cfg)
                     built_entry["vrt"] = utm_vrt
 
                 result.built.append(built_entry)
                 print(f"utm{ub_utm['utm']} complete after {datetime.datetime.now() - utm_start}")
         else:
-            if is_parameterized:
-                if tile_resolution_filter:
-                    print("No tiles matched the resolution filter for any UTM zone.")
-                else:
-                    print("No UTM zones found in the database.")
-            else:
-                print("UTM vrt(s) appear up to date with the most recently "
-                      f"fetched tiles.\nNote: deleting the {data_source}_VRT folder will "
-                      "allow you to recreate from scratch if necessary")
+            print("UTM vrt(s) appear up to date with the most recently "
+                  f"fetched tiles.\nNote: deleting the {vrt_dir_name} folder will "
+                  "allow you to recreate from scratch if necessary")
 
-        # Track skipped UTMs (already built, not in unbuilt list).
-        # Only meaningful for default builds where built-flag tracking
-        # determines what to build.  Parameterized builds always attempt
-        # every UTM, so "skipped" has no built-flag meaning.
-        if track_built:
-            all_utms_cursor = conn.cursor()
-            all_utms_cursor.execute("SELECT utm FROM vrt_utm")
-            all_utm_names = {row["utm"] for row in all_utms_cursor.fetchall()}
-            built_utm_names = {e["utm"] for e in result.built}
-            result.skipped = sorted(all_utm_names - built_utm_names)
+        all_utms_cursor = conn.cursor()
+        all_utms_cursor.execute(
+            "SELECT utm FROM vrt_utm WHERE params_key = ?", (params_key,))
+        all_utm_names = {row["utm"] for row in all_utms_cursor.fetchall()}
+        built_utm_names = {e["utm"] for e in result.built}
+        result.skipped = sorted(all_utm_names - built_utm_names)
 
         print(f"[{_timestamp()}] {data_source}: Operation complete after {datetime.datetime.now() - start}")
     finally:
