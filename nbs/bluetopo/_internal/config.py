@@ -497,9 +497,18 @@ KNOWN_RAT_FIELDS = {
 }
 
 def parse_resolution(raw):
-    """Extract integer meters from a resolution string like '4m'.
+    """Extract integer meters from a resolution string like ``'4m'``.
 
-    Returns None if raw is None/empty or contains no digits.
+    Parameters
+    ----------
+    raw : str | None
+        Resolution value from the geopackage (e.g. ``"4m"``, ``"16"``).
+
+    Returns
+    -------
+    int | None
+        Parsed resolution in meters, or None if *raw* is empty or
+        contains no digits.
     """
     if not raw:
         return None
@@ -510,15 +519,30 @@ def parse_resolution(raw):
 
 
 def make_resolution_label(resolutions):
-    """Build a label like '4m' or '4m_8m' from integer resolution values."""
+    """Build a display label like ``'4m'`` or ``'4m_8m'`` from resolution values.
+
+    Values are sorted ascending before joining (e.g. ``[8, 4]`` → ``'4m_8m'``).
+    """
     return "_".join(f"{r}m" for r in sorted(resolutions))
 
 
 def make_vrt_dir_name(data_source, tile_resolution_filter=None, vrt_resolution_target=None):
     """Build the VRT output directory name from build parameters.
 
-    Examples: 'BlueTopo_VRT', 'BlueTopo_VRT_4m_8m', 'BlueTopo_VRT_tr8m',
-    'BlueTopo_VRT_4m_8m_tr8m'.
+    Parameters
+    ----------
+    data_source : str
+        Canonical data source name (e.g. ``"BlueTopo"``).
+    tile_resolution_filter : list[int] | None
+        Active resolution filter, appended as ``_4m_8m``.
+    vrt_resolution_target : float | None
+        Target pixel size, appended as ``_tr8m``.
+
+    Returns
+    -------
+    str
+        Directory name, e.g. ``'BlueTopo_VRT'``, ``'BlueTopo_VRT_4m_8m'``,
+        ``'BlueTopo_VRT_tr8m'``, ``'BlueTopo_VRT_4m_8m_tr8m'``.
     """
     name = f"{data_source}_VRT"
     if tile_resolution_filter:
@@ -530,10 +554,11 @@ def make_vrt_dir_name(data_source, tile_resolution_filter=None, vrt_resolution_t
 
 
 def make_params_key(data_source, tile_resolution_filter=None, vrt_resolution_target=None):
-    """Derive the params_key string for VRT database tracking.
+    """Derive the ``params_key`` string used to partition ``vrt_utm`` rows.
 
-    Returns ``""`` for default (unparameterized) builds, or the suffix
-    portion of the VRT directory name (e.g., ``"_4m_8m_tr8m"``).
+    The key is the suffix portion of the VRT directory name. Default
+    (unparameterized) builds use ``""``; parameterized builds get a key
+    like ``"_4m_8m"`` or ``"_4m_8m_tr8m"``.
     """
     dir_name = make_vrt_dir_name(data_source, tile_resolution_filter,
                                  vrt_resolution_target)
@@ -541,7 +566,7 @@ def make_params_key(data_source, tile_resolution_filter=None, vrt_resolution_tar
 
 
 def validate_vrt_resolution_target(value):
-    """Raise ValueError if vrt_resolution_target is not a positive number."""
+    """Raise ``ValueError`` if *value* is not None and not positive."""
     if value is not None and value <= 0:
         raise ValueError(
             f"vrt_resolution_target must be a positive number, got {value}"
@@ -553,9 +578,16 @@ def validate_vrt_resolution_target(value):
 # ---------------------------------------------------------------------------
 
 def validate_config(cfg):
-    """Validate interdependencies in a data source config.
+    """Validate interdependencies in a data source configuration dict.
 
-    Raises ValueError if the config is inconsistent.
+    Checks that required keys exist, file_slots are well-formed, RAT
+    settings are consistent with ``has_rat``, and subdatasets/band_descriptions
+    are mutually exclusive.
+
+    Raises
+    ------
+    ValueError
+        If the config is inconsistent or missing required fields.
     """
     name = cfg.get("canonical_name", "?")
 
@@ -602,7 +634,24 @@ def _timestamp():
 # ---------------------------------------------------------------------------
 
 def get_config(data_source_key):
-    """Case-insensitive lookup. Returns a validated deep copy."""
+    """Look up a data source by name and return a validated deep copy.
+
+    Parameters
+    ----------
+    data_source_key : str
+        Data source name (case-insensitive), e.g. ``"bluetopo"``, ``"bag"``.
+
+    Returns
+    -------
+    dict
+        Deep copy of the matching ``DATA_SOURCES`` entry, validated
+        via :func:`validate_config`.
+
+    Raises
+    ------
+    ValueError
+        If *data_source_key* does not match any known source.
+    """
     key = data_source_key.lower()
     if key not in DATA_SOURCES:
         raise ValueError(f"Unknown data source: {data_source_key}")
@@ -615,10 +664,22 @@ def get_local_config(resolved_name):
     """Build a config for a local directory data source.
 
     If *resolved_name* matches a known source, that source's config is
-    used as the base.  Otherwise, BlueTopo is used with the full known
-    RAT field superset for dynamic detection.
+    used as the base.  Otherwise, BlueTopo is used with the full
+    ``KNOWN_RAT_FIELDS`` superset for dynamic field detection.
 
-    S3 prefixes are cleared for local file access.
+    S3 prefixes (``geom_prefix``, ``xml_prefix``) are cleared so the
+    pipeline skips S3 operations and reads from local files instead.
+
+    Parameters
+    ----------
+    resolved_name : str
+        Source name extracted from the tile-scheme geopackage filename
+        (e.g. ``"HSD"`` from ``HSD_Tile_Scheme_2024.gpkg``).
+
+    Returns
+    -------
+    dict
+        Validated config dict with S3 prefixes set to None.
     """
     key = resolved_name.lower()
     if key in DATA_SOURCES:
@@ -672,12 +733,20 @@ def resolve_data_source(data_source):
 # ---------------------------------------------------------------------------
 
 def get_catalog_fields(cfg):
-    """Return ``{column_name: sql_type}`` for the catalog table."""
+    """Return ``{column_name: sql_type}`` for the catalog table.
+
+    Catalog tracks downloaded tessellation and XML assets, not tiles.
+    """
     return {cfg["catalog_pk"]: "text", "location": "text", "downloaded": "text"}
 
 
 def get_vrt_utm_fields(cfg):
-    """Return ``{column_name: sql_type}`` for the ``vrt_utm`` table."""
+    """Return ``{column_name: sql_type}`` for the ``vrt_utm`` table.
+
+    Schema varies by source: subdataset sources get per-subdataset VRT/OVR
+    columns plus a combined VRT column; single-dataset sources get one
+    VRT/OVR pair.
+    """
     fields = {"utm": "text", "params_key": "text"}
     if cfg["subdatasets"]:
         for i in range(len(cfg["subdatasets"])):
@@ -715,20 +784,20 @@ def get_tiles_fields(cfg):
 
 
 def get_built_flags(cfg):
-    """Return built-flag column names."""
+    """Return built-flag column names from ``vrt_utm`` (e.g. ``["built"]``)."""
     if cfg["subdatasets"]:
         return [f"built_subdataset{i+1}" for i in range(len(cfg["subdatasets"]))]
     return ["built"]
 
 
 def get_utm_file_columns(cfg):
-    """Return VRT/OVR path column names (excludes PK and built flags)."""
+    """Return VRT/OVR path column names from ``vrt_utm``, excluding PK and built flags."""
     fields = get_vrt_utm_fields(cfg)
     return [k for k in fields if k not in ("utm", "params_key") and "built" not in k]
 
 
 def get_disk_field(cfg):
-    """Return the primary disk-path column name."""
+    """Return the primary disk-path column name (first file slot)."""
     return f"{cfg['file_slots'][0]['name']}_disk"
 
 

@@ -56,6 +56,8 @@ pip install bluetopo
 
 ## Quickstart
 
+After installation, you have access to a Python API and two matching CLI commands: `fetch_tiles` for downloading tiles and `build_vrt` for assembling them into VRTs.
+
 ```python
 from nbs.bluetopo import fetch_tiles, build_vrt
 ```

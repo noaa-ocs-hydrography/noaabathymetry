@@ -1,6 +1,6 @@
 # Data Sources
 
-BlueTopo supports six S3-hosted data sources from the NOAA National Bathymetric Source (NBS) project that can be fetched by name. It also supports local tile directories, including HSD and custom data.
+BlueTopo supports six S3-hosted data sources from the NOAA National Bathymetric Source (NBS) project that can be fetched by name.
 
 ## S3 sources
 
@@ -209,47 +209,3 @@ A combined VRT is also created with all three bands.
 | `source_institution` | str | Source institution name |
 | `type_of_bathymetric_estimation_uncertainty` | int | Uncertainty type classification |
 
----
-
-## Local sources
-
-Instead of fetching from S3, you can pass a local directory path as `data_source`. The directory must contain a geopackage with `Tile_Scheme` in its filename. BlueTopo detects the source type from the filename prefix and applies the matching configuration.
-
-```python
-result = fetch_tiles('/path/to/project',
-                     geometry='aoi.gpkg',
-                     data_source='/path/to/local/tiles')
-```
-
-How resolution works:
-
-1. BlueTopo scans the directory for `*_Tile_Scheme*.gpkg` files.
-2. It extracts the prefix before `_Tile_Scheme` from the filename (e.g. `HSD_Tile_Scheme_2024.gpkg` resolves to `HSD`).
-3. If that name matches a known source (`bluetopo`, `modeling`, `bag`, `s102v21`, `s102v22`, `s102v30`, `hsd`), that source's config is used.
-4. If it doesn't match, the BlueTopo config is used as a base with an extended RAT field set for dynamic detection.
-
-In all cases, S3 operations are bypassed — tile files are copied from the local directory.
-
-> **Note:** You cannot pass local-only source names (like `hsd`) as the `data_source` argument directly. The name `hsd` exists in the config registry so that local directories with HSD-named geopackages get the correct settings, but `data_source='hsd'` will raise an error because HSD has no S3 prefix.
-
-### HSD
-
-Hydrographic Surveys Division tiles use the same GeoTIFF + RAT structure as BlueTopo, with additional RAT fields for survey quality metadata.
-
-**File slots:** Same as BlueTopo (GeoTIFF + RAT auxiliary file)
-
-**Bands:** Elevation, Uncertainty, Contributor
-
-**RAT fields:** Same as BlueTopo, plus:
-
-| Field | Type | Description |
-|---|---|---|
-| `catzoc` | int | Category of Zone of Confidence |
-| `supercession_score` | float | Survey supercession score |
-| `decay_score` | float | Survey decay score |
-| `unqualified` | int | Unqualified flag |
-| `sensitive` | int | Sensitive data flag |
-
-### Custom sources
-
-Any directory with a geopackage whose filename doesn't match a known source (e.g. `MyProject_Tile_Scheme.gpkg`) is treated as a custom source. It inherits the BlueTopo configuration with the full RAT field superset (all BlueTopo + HSD fields) so that RAT columns can be detected dynamically from the actual tile data.

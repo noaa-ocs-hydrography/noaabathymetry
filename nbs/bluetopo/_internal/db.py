@@ -80,6 +80,9 @@ def connect(project_dir: str, cfg: dict) -> sqlite3.Connection:
             """
         )
         conn.commit()
+        # Schema migration: add any columns required by the config that don't
+        # yet exist.  This allows configs to evolve (e.g. new file slots or
+        # subdatasets) without requiring users to recreate their database.
         table_field_pairs = [
             (catalog_table, catalog_fields),
             ("vrt_utm", vrt_utm_fields),

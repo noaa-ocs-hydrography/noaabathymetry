@@ -18,7 +18,7 @@ if _ogr_mem_driver is None:
 
 
 def _geometry_to_datasource(geom):
-    """Wrap an OGR Geometry in an in-memory DataSource with EPSG:4326."""
+    """Wrap an OGR Geometry in a single-feature in-memory DataSource with EPSG:4326."""
     driver = _ogr_mem_driver
     ds = driver.CreateDataSource("geom_input")
     srs = osr.SpatialReference()
@@ -31,7 +31,7 @@ def _geometry_to_datasource(geom):
 
 
 def _bbox_to_datasource(xmin, ymin, xmax, ymax):
-    """Build a polygon DataSource from bounding box coordinates."""
+    """Build a rectangular polygon DataSource from bounding box coordinates (EPSG:4326)."""
     if xmin >= xmax:
         raise ValueError(f"xmin ({xmin}) must be less than xmax ({xmax})")
     if ymin >= ymax:
@@ -133,7 +133,10 @@ def parse_geometry_input(geom_input):
 
 
 def get_tile_list(desired_area, tile_scheme_filename):
-    """Get the list of tiles intersecting with the given geometry.
+    """Return tile records from the tile-scheme geopackage that intersect the geometry.
+
+    Handles multi-layer inputs and reprojects to the tile scheme's CRS
+    before computing the intersection.
 
     Parameters
     ----------
@@ -144,8 +147,9 @@ def get_tile_list(desired_area, tile_scheme_filename):
 
     Returns
     -------
-    list[dict]
-        Tile records intersecting with the provided geometry.
+    list[dict] | None
+        Tile attribute dicts for intersecting tiles, or None if either
+        input cannot be opened.
     """
     if isinstance(desired_area, ogr.DataSource):
         data_source = desired_area
@@ -190,19 +194,23 @@ def get_tile_list(desired_area, tile_scheme_filename):
 
 
 def transform_layer(input_layer, desired_crs):
-    """Transform a provided OGR layer to the given coordinate reference system.
+    """Reproject all features in an OGR layer to the given CRS.
+
+    Creates a new in-memory DataSource containing the transformed
+    geometries (attribute fields are not copied since only geometry is
+    needed for spatial intersection).
 
     Parameters
     ----------
     input_layer : ogr.Layer
-        The OGR layer to be transformed.
+        The OGR layer to be reprojected.
     desired_crs : osr.SpatialReference
         The target coordinate reference system.
 
     Returns
     -------
     ogr.DataSource
-        Transformed OGR memory datasource.
+        In-memory DataSource with geometries in *desired_crs*.
     """
     target_crs = input_layer.GetSpatialRef()
     coord_trans = osr.CoordinateTransformation(target_crs, desired_crs)

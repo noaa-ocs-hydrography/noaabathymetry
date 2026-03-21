@@ -36,7 +36,27 @@ def create_vrt(files, vrt_path, levels, relative_to_vrt,
                vrt_resolution_target=None):
     """Build a single GDAL VRT file with optional overviews.
 
-    Any existing VRT and .ovr at *vrt_path* are removed first.
+    Any existing VRT and ``.ovr`` at *vrt_path* are removed first.
+    When *relative_to_vrt* is True, source file references are stored
+    as paths relative to the VRT's directory.
+
+    Parameters
+    ----------
+    files : list[str]
+        Absolute paths to source raster files (or S102 protocol URIs).
+    vrt_path : str
+        Absolute output path for the VRT file.
+    levels : list[int] | None
+        Overview factors (e.g. ``[8, 16, 32]``).  None skips overviews.
+    relative_to_vrt : bool
+        Store source paths relative to the VRT's directory.
+    band_descriptions : list[str] | None
+        Labels to assign to each band (e.g. ``["Elevation", "Uncertainty"]``).
+    separate : bool
+        If True, stack inputs as separate bands (used for combined VRTs).
+    vrt_resolution_target : float | None
+        Force output pixel size in meters.  Uses ``-resolution highest``
+        when None.
     """
     files = copy.deepcopy(files)
     try:
@@ -54,13 +74,15 @@ def create_vrt(files, vrt_path, levels, relative_to_vrt,
     else:
         opts_str += ' -resolution highest'
     vrt_options = gdal.BuildVRTOptions(options=opts_str, resampleAlg="near")
+    # BuildVRT resolves relative paths from cwd, so we chdir to the VRT's
+    # directory to ensure the stored references are correct.
     cwd = os.getcwd()
     try:
         os.chdir(os.path.dirname(vrt_path))
         if relative_to_vrt is True:
             for idx in range(len(files)):
                 if 'S102:' in files[idx]:
-                    continue
+                    continue  # S102 URIs have their own path format
                 files[idx] = os.path.relpath(files[idx], os.path.dirname(vrt_path))
         relative_vrt_path = os.path.relpath(vrt_path, os.getcwd())
         vrt = gdal.BuildVRT(relative_vrt_path, files, options=vrt_options)
@@ -80,7 +102,11 @@ def create_vrt(files, vrt_path, levels, relative_to_vrt,
 
 
 def generate_hillshade(vrt_path, hillshade_path):
-    """Generate a hillshade GeoTIFF from band 1 (Elevation) of a VRT."""
+    """Generate a hillshade GeoTIFF from band 1 (Elevation) of a VRT.
+
+    Uses azimuth 315, altitude 45, vertical exaggeration 4x, and
+    builds BILINEAR overviews at factors 16/32/64.
+    """
     if os.path.isfile(hillshade_path):
         os.remove(hillshade_path)
     opts = gdal.DEMProcessingOptions(
@@ -141,7 +167,31 @@ def compute_overview_factors(tile_paths, vrt_resolution_target=None,
 # ---------------------------------------------------------------------------
 
 def select_tiles_by_utm(project_dir, conn, utm, cfg, tile_resolution_filter=None):
-    """Return tiles in a UTM zone whose files exist on disk, sorted coarse-to-fine."""
+    """Return tiles in a UTM zone whose files exist on disk, sorted coarse-to-fine.
+
+    Tiles missing from disk are counted and a warning is printed.
+    When *tile_resolution_filter* is set, only tiles at those resolutions
+    (in meters) are included.
+
+    Parameters
+    ----------
+    project_dir : str
+        Absolute path to the project directory.
+    conn : sqlite3.Connection
+        Database connection.
+    utm : str
+        UTM zone identifier (e.g. ``"18"``).
+    cfg : dict
+        Data source configuration.
+    tile_resolution_filter : list[int] | None
+        Only include tiles at these resolutions.
+
+    Returns
+    -------
+    list[dict]
+        Tile rows sorted by resolution descending (coarsest first), so
+        finer tiles overlay coarser ones in the VRT.
+    """
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM tiles WHERE utm = ?", (utm,))
     tiles = [dict(row) for row in cursor.fetchall()]
@@ -181,7 +231,29 @@ def select_tiles_by_utm(project_dir, conn, utm, cfg, tile_resolution_filter=None
 
 
 def build_tile_paths(tiles, project_dir, cfg, subdataset=None):
-    """Build file paths for source tiles, applying S102 protocol URIs if needed."""
+    """Build absolute file paths for source tiles.
+
+    For S102 subdatasets with ``s102_protocol=True``, paths are wrapped in
+    the ``S102:"path":SubdatasetName`` URI format that GDAL's S102 driver
+    requires.
+
+    Parameters
+    ----------
+    tiles : list[dict]
+        Tile rows from the database.
+    project_dir : str
+        Absolute path to the project directory.
+    cfg : dict
+        Data source configuration.
+    subdataset : dict | None
+        Subdataset definition from ``cfg["subdatasets"]``, or None for
+        single-dataset sources.
+
+    Returns
+    -------
+    list[str]
+        Paths (or S102 URIs) suitable for passing to :func:`create_vrt`.
+    """
     disk_field = get_disk_field(cfg)
     paths = []
     for tile in tiles:
@@ -207,9 +279,16 @@ def build_tile_paths(tiles, project_dir, cfg, subdataset=None):
 # ---------------------------------------------------------------------------
 
 def _discover_rat_fields(tiles, project_dir, cfg, expected_fields):
-    """Pass 1: determine common RAT field subset across all tiles (direct method only).
+    """Pass 1: determine common RAT field subset across all tiles.
 
-    Returns (filtered_expected_fields, dropped_field_names).
+    Only used for the ``"direct"`` RAT open method.  Intersects the
+    expected field set with the actual columns found in each tile's RAT,
+    so the aggregated output only contains fields present in *all* tiles.
+
+    Returns
+    -------
+    tuple[dict, set[str]]
+        ``(filtered_expected_fields, dropped_field_names)``
     """
     rat_band = cfg.get("rat_band", 3)
     disk_fields = get_disk_fields(cfg)
@@ -243,7 +322,27 @@ def _discover_rat_fields(tiles, project_dir, cfg, expected_fields):
 def _read_rat_data(tiles, project_dir, cfg, exp_fields, expected_fields):
     """Pass 2: read RAT data from all tiles using finalized field mapping.
 
-    Returns list of survey rows (each a list of values).
+    Deduplicates surveys by the ``value`` column (first field).  For
+    the ``"direct"`` method, duplicate rows have their ``count`` field
+    summed (capped at INT32_MAX).
+
+    Parameters
+    ----------
+    tiles : list[dict]
+        Tile rows from the database.
+    project_dir : str
+        Absolute path to the project directory.
+    cfg : dict
+        Data source configuration.
+    exp_fields : list[str]
+        Ordered field names (keys of *expected_fields*).
+    expected_fields : dict
+        ``{field_name: [python_type, gdal_usage]}`` mapping.
+
+    Returns
+    -------
+    list[list]
+        Survey rows, each a list of values matching *exp_fields* order.
     """
     rat_open_method = cfg["rat_open_method"]
     rat_band = cfg.get("rat_band", 3)
@@ -310,7 +409,22 @@ def _read_rat_data(tiles, project_dir, cfg, exp_fields, expected_fields):
 
 
 def _write_rat(vrt_path, surveys, expected_fields, rat_band):
-    """Pass 3: create and attach RAT to the VRT."""
+    """Pass 3: create a GDAL RasterAttributeTable and attach it to the VRT.
+
+    Columns are typed according to *expected_fields*.  Boolean strings
+    (``"true"``/``"false"``) are coerced to 0/1 for int/float columns.
+
+    Parameters
+    ----------
+    vrt_path : str
+        Path to the VRT file to modify.
+    surveys : list[list]
+        Survey rows from :func:`_read_rat_data`.
+    expected_fields : dict
+        ``{field_name: [python_type, gdal_usage]}`` mapping.
+    rat_band : int
+        1-based band index to attach the RAT to.
+    """
     rat = gdal.RasterAttributeTable()
     for entry in expected_fields:
         field_type, usage = expected_fields[entry]
@@ -344,9 +458,11 @@ def _write_rat(vrt_path, surveys, expected_fields, rat_band):
 
 
 def add_vrt_rat(conn, utm, project_dir, vrt_path, cfg):
-    """Build and attach a RAT to a UTM VRT by aggregating tile RATs.
+    """Build and attach an aggregated RAT to a UTM VRT from per-tile RATs.
 
-    No-op if cfg["has_rat"] is False.
+    Runs the three-pass RAT pipeline: discover common fields, read data
+    from all tiles, write combined RAT.  No-op if ``cfg["has_rat"]`` is
+    False.
     """
     if not cfg["has_rat"]:
         return
@@ -387,7 +503,7 @@ def add_vrt_rat(conn, utm, project_dir, vrt_path, cfg):
 # ---------------------------------------------------------------------------
 
 def select_unbuilt_utms(conn, cfg, params_key=""):
-    """Retrieve all unbuilt UTM records for the given params_key."""
+    """Return ``vrt_utm`` rows where any built flag is 0 for *params_key*."""
     built_flags = get_built_flags(cfg)
     if cfg["subdatasets"]:
         all_flags = built_flags + ["built_combined"]
@@ -403,7 +519,7 @@ def select_unbuilt_utms(conn, cfg, params_key=""):
 
 
 def update_utm(conn, fields, cfg):
-    """Update a UTM record with VRT/OVR paths and set built flags to 1."""
+    """Update a ``vrt_utm`` row with VRT/OVR paths and set all built flags to 1."""
     utm_cols = get_utm_file_columns(cfg)
     built_flags = get_built_flags(cfg)
     set_parts = [f"{col} = ?" for col in utm_cols]
@@ -424,12 +540,16 @@ def update_utm(conn, fields, cfg):
 
 
 def missing_utms(project_dir, conn, cfg, params_key=""):
-    """Reset UTM zones whose VRT files are missing from disk.
+    """Detect and reset UTM zones whose VRT files are missing from disk.
 
-    OVR columns with None are treated as "no overview needed" and not
-    considered missing.
+    Scans all built rows for *params_key*.  If any VRT path is absent
+    (or any non-None OVR path is absent), the row is reset to unbuilt
+    with all file columns set to NULL.
 
-    Returns the number of UTM zones reset.
+    Returns
+    -------
+    int
+        Number of UTM zones reset.
     """
     built_flags = get_built_flags(cfg)
     if cfg["subdatasets"]:
@@ -475,11 +595,13 @@ def missing_utms(project_dir, conn, cfg, params_key=""):
 
 
 def ensure_params_rows(conn, cfg, params_key):
-    """Seed vrt_utm rows for a parameterized build.
+    """Seed ``vrt_utm`` rows for a parameterized build partition.
 
-    For each UTM zone in the default partition (params_key='') that doesn't
-    yet exist in the target partition, inserts a new row with built=0 and
-    null VRT/OVR paths.
+    Copies UTM zones from the default partition (``params_key=''``) into
+    the target partition if they don't yet exist, initializing built
+    flags to 0 and VRT/OVR paths to NULL.  This allows parameterized
+    builds (e.g. resolution-filtered) to track state independently
+    from the default build.
     """
     built_flags = get_built_flags(cfg)
     utm_cols = get_utm_file_columns(cfg)

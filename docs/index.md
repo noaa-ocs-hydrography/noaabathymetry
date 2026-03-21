@@ -4,7 +4,17 @@ This package simplifies downloading bathymetric tiles from NOAA's public S3 buck
 
 ## Who this package is for
 
-This package is for GIS professionals, hydrographers, and researchers who work with bathymetric data from NOAA's National Bathymetric Source.
+This package gives you a straightforward way to get high-resolution bathymetric data from NOAA's National Bathymetric Source.
+
+Point the package at your area of interest and it handles discovery, download, checksum verification, and optional VRT assembly, ready to open in QGIS, ArcGIS, or any GDAL-compatible tool.
+
+Common use cases include:
+
+- **Hydrographic surveying and chart production.** Access the latest compiled depths and survey source metadata.
+- **Coastal and ocean modeling.** Pull seamless bathymetry grids as input to storm surge, tsunami, or circulation models.
+- **Marine construction and engineering.** Get site-specific depth data for port design, cable routing, or dredging planning.
+- **Environmental and habitat research.** Combine bathymetry with other datasets to study benthic environments.
+- **Education and exploration.** Visualize the seafloor for teaching, outreach, or personal curiosity.
 
 ## Documentation
 
@@ -29,6 +39,10 @@ pip install bluetopo
 
 ## Quick start
 
+After installation, you have access to a Python API and two matching CLI commands: `fetch_tiles` for downloading tiles and `build_vrt` for assembling them into VRTs.
+
+### Python API
+
 ```python
 from nbs.bluetopo import fetch_tiles, build_vrt
 
@@ -36,7 +50,7 @@ result = fetch_tiles('/path/to/project', geometry='area_of_interest.gpkg')
 vrt_result = build_vrt('/path/to/project')
 ```
 
-Both functions return structured result objects you can inspect:
+Both functions return structured result objects ([`FetchResult`](api-reference.md#fetchresult), [`BuildResult`](api-reference.md#buildresult)) you can inspect:
 
 ```python
 result = fetch_tiles('/path/to/project', geometry='area_of_interest.gpkg')
@@ -48,6 +62,8 @@ vrt_result = build_vrt('/path/to/project')
 print(f"Built {len(vrt_result.built)} UTM zone VRTs")
 print(f"Skipped {len(vrt_result.skipped)} already up-to-date zones")
 ```
+
+### CLI
 
 The same workflow is available from the command line:
 
@@ -94,4 +110,4 @@ fetch_tiles -d /path/to/project -g aoi.gpkg -s modeling
 build_vrt -d /path/to/project -s modeling
 ```
 
-You can also pass a local directory path as `data_source` to work with tiles on disk. See [Data Sources](data-sources.md) for details.
+See [Data Sources](data-sources.md) for details on all available sources.

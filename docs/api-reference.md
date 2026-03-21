@@ -30,7 +30,7 @@ Discover, download, and update NBS tiles.
 |---|---|---|---|
 | `project_dir` | `str` | *required* | Absolute path to the project directory. Created if it does not exist. |
 | `geometry` | `str \| None` | `None` | Geometry input defining the area of interest. Accepts a file path, bounding box (`xmin,ymin,xmax,ymax`), WKT, or GeoJSON string. String inputs assume EPSG:4326. Pass `None` to skip tile discovery (useful for re-downloading existing tiles). |
-| `data_source` | `str \| None` | `None` | An S3 source name (e.g. `"bluetopo"`, `"bag"`, `"s102v30"`), a local directory path containing a tile scheme geopackage, or `None` (defaults to `"bluetopo"`). |
+| `data_source` | `str \| None` | `None` | An S3 source name (e.g. `"bluetopo"`, `"bag"`, `"s102v30"`), or `None` (defaults to `"bluetopo"`). |
 | `tile_resolution_filter` | `list[int] \| None` | `None` | Only fetch tiles at these resolutions (meters). Example: `[4, 8]`. |
 | `debug` | `bool` | `False` | If `True`, writes a diagnostic report to the project directory. |
 
@@ -88,11 +88,11 @@ Build a flat GDAL VRT per UTM zone from all source tiles.
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `project_dir` | `str` | *required* | Absolute path to the project directory. |
-| `data_source` | `str \| None` | `None` | A known source name, a local directory path, or `None` (defaults to `"bluetopo"`). |
+| `data_source` | `str \| None` | `None` | A known source name, or `None` (defaults to `"bluetopo"`). |
 | `relative_to_vrt` | `bool` | `True` | Store referenced file paths as relative to the VRT's directory. Set to `False` for absolute paths. |
 | `vrt_resolution_target` | `float \| None` | `None` | Force output pixel size in meters. Must be a positive number. |
 | `tile_resolution_filter` | `list[int] \| None` | `None` | Only include tiles at these resolutions (meters). Outputs to a separate VRT directory. |
-| `hillshade` | `bool` | `False` | If `True`, build hillshade VRTs. |
+| `hillshade` | `bool` | `False` | If `True`, generate a hillshade GeoTIFF from the elevation band. |
 | `debug` | `bool` | `False` | If `True`, writes a diagnostic report to the project directory. |
 
 **Returns:** [`BuildResult`](#buildresult)
@@ -142,6 +142,24 @@ Dataclass returned by `fetch_tiles`.
 | `new_tiles_tracked` | `int` | Number of new tiles added to tracking via geometry intersection. |
 | `tile_resolution_filter` | `list[int] \| None` | Resolution filter that was active, or `None` if unfiltered. |
 
+**Example**
+
+```python
+result = fetch_tiles('/home/user/bathymetry', geometry='aoi.gpkg')
+print(result)
+
+# FetchResult(
+#     existing=['BlueTopo_BC25M4NW_20240301', 'BlueTopo_BC25M4NE_20240301'],
+#     downloaded=['BlueTopo_BC25L4NW_20240315', 'BlueTopo_BC25L4NE_20240315',
+#                 'BlueTopo_BC25L6SW_20240315'],
+#     failed=[{'tile': 'BlueTopo_BC25L6SE_20240315',
+#              'reason': 'incorrect hash for geotiff (expected=a1b2c3d4e5f6... got=9f8e7d6c5b4a...)'}],
+#     not_found=['BlueTopo_BC25L8NW_20240315'],
+#     new_tiles_tracked=6,
+#     tile_resolution_filter=None
+# )
+```
+
 ---
 
 ### BuildResult
@@ -155,6 +173,26 @@ Dataclass returned by `build_vrt`.
 | `missing_reset` | `int` | Number of UTM zones reset due to VRT files missing on disk. |
 | `tile_resolution_filter` | `list[int] \| None` | Resolution filter that was active, or `None` if unfiltered. |
 | `vrt_resolution_target` | `float \| None` | VRT pixel size override that was active, or `None` for native resolution. |
+
+**Example**
+
+```python
+result = build_vrt('/home/user/bathymetry')
+print(result)
+
+# BuildResult(
+#     built=[
+#         {'utm': '18', 'vrt': '/home/user/bathymetry/BlueTopo_VRT/BlueTopo_Fetched_UTM18.vrt',
+#          'ovr': '/home/user/bathymetry/BlueTopo_VRT/BlueTopo_Fetched_UTM18.vrt.ovr'},
+#         {'utm': '19', 'vrt': '/home/user/bathymetry/BlueTopo_VRT/BlueTopo_Fetched_UTM19.vrt',
+#          'ovr': '/home/user/bathymetry/BlueTopo_VRT/BlueTopo_Fetched_UTM19.vrt.ovr'}
+#     ],
+#     skipped=['17'],
+#     missing_reset=0,
+#     tile_resolution_filter=None,
+#     vrt_resolution_target=None
+# )
+```
 
 ---
 
@@ -196,7 +234,7 @@ fetch_tiles -d /home/user/bathymetry
 ### build_vrt command
 
 ```
-build_vrt -d DIR [-s SOURCE] [-r BOOL] [-t RESOLUTION] [--tile-resolution-filter N [N ...]] [--debug]
+build_vrt -d DIR [-s SOURCE] [-r BOOL] [-t RESOLUTION] [--tile-resolution-filter N [N ...]] [--hillshade] [--debug]
 ```
 
 | Flag | Long form | Description |
@@ -206,6 +244,7 @@ build_vrt -d DIR [-s SOURCE] [-r BOOL] [-t RESOLUTION] [--tile-resolution-filter
 | `-r` | `--rel`, `--relative_to_vrt` | Store VRT file paths as relative. Default: `true`. |
 | `-t` | `--vrt-resolution-target` | Force output pixel size in meters (any positive number). |
 | | `--tile-resolution-filter` | Only include tiles at these resolutions (meters). Multiple values allowed. |
+| | `--hillshade` | Generate a hillshade GeoTIFF from the elevation band. |
 | | `--debug` | Write a diagnostic report to the project directory. |
 | `-v` | `--version` | Show version and exit. |
 

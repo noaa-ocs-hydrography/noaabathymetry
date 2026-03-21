@@ -81,8 +81,26 @@ def _s3_key_from_url(url):
 def _list_s3_latest(client, bucket, prefix, label, data_source, retry=True):
     """List S3 objects under *prefix* and return the latest by LastModified.
 
-    Returns (s3_key, all_objects) or (None, []) if nothing found after
-    optional retry.
+    Parameters
+    ----------
+    client : botocore.client.S3
+        Anonymous S3 client.
+    bucket : str
+        S3 bucket name.
+    prefix : str
+        S3 key prefix to search under.
+    label : str
+        Human-readable asset label for log messages (e.g. ``"geometry"``).
+    data_source : str
+        Data source name for log messages.
+    retry : bool
+        If True and no objects found, wait 5 seconds and retry once.
+
+    Returns
+    -------
+    tuple[str | None, list[dict]]
+        ``(latest_s3_key, all_objects)`` sorted newest-first,
+        or ``(None, [])`` if nothing found.
     """
     paginator = client.get_paginator("list_objects_v2")
     objs = paginator.paginate(Bucket=bucket, Prefix=prefix).build_full_result()
@@ -247,7 +265,7 @@ def get_xml(conn, project_dir, prefix, data_source, cfg,
 # ---------------------------------------------------------------------------
 
 def all_db_tiles(conn):
-    """Retrieve all tile records from the tiles table."""
+    """Return all rows from the ``tiles`` table as a list of dicts."""
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM tiles")
     return [dict(row) for row in cursor.fetchall()]
@@ -256,10 +274,23 @@ def all_db_tiles(conn):
 def classify_tiles(db_tiles, project_dir, cfg):
     """Classify tiles into existing, missing, or new.
 
-    Returns (existing, missing, new) where each is a list of tilenames.
-    existing = downloaded + verified + files on disk
-    missing = has disk path recorded but file missing or not verified
-    new = no disk path recorded (never downloaded)
+    Parameters
+    ----------
+    db_tiles : list[dict]
+        Tile rows from the database.
+    project_dir : str
+        Absolute path to the project directory.
+    cfg : dict
+        Data source configuration.
+
+    Returns
+    -------
+    tuple[list[str], list[str], list[str]]
+        ``(existing, missing, new)`` where each is a list of tilenames.
+
+        - **existing** — downloaded, checksum-verified, and files present on disk.
+        - **missing** — disk path recorded but file absent or not verified.
+        - **new** — no disk path recorded (never downloaded).
     """
     disk_fields = get_disk_fields(cfg)
     verified_fields = get_verified_fields(cfg)
@@ -300,9 +331,11 @@ def classify_tiles(db_tiles, project_dir, cfg):
 # ---------------------------------------------------------------------------
 
 def _build_tile_download(tile, cfg, data_source, client, bucket, local_dir):
-    """Build a download dict for a single tile using file_slots.
+    """Build a download plan dict for a single tile from its file_slots.
 
-    Returns the download dict, or None if the tile has no valid links.
+    Each slot maps to a file entry with source path/key, destination path,
+    and expected checksum. Returns None if any slot has no valid link
+    (meaning the tile cannot be downloaded).
     """
     slots = cfg["file_slots"]
     download = {"tile": tile["tilename"], "utm": tile["utm"], "files": []}
@@ -348,15 +381,35 @@ def _build_tile_download(tile, cfg, data_source, client, bucket, local_dir):
 def build_download_plan(db_tiles, project_dir, cfg, data_source,
                         client=None, bucket=None, local_dir=None,
                         skip_tilenames=None):
-    """Build download plan for all tiles needing download.
+    """Build a download plan for all tiles needing download.
+
+    Iterates over *db_tiles*, skips those in *skip_tilenames* or already
+    verified on disk, and builds a per-file download spec for the rest.
 
     Parameters
     ----------
+    db_tiles : list[dict]
+        Tile rows from the database.
+    project_dir : str
+        Absolute path to the project directory.
+    cfg : dict
+        Data source configuration.
+    data_source : str
+        Canonical data source name.
+    client : botocore.client.S3 | None
+        S3 client (None for local sources).
+    bucket : str | None
+        S3 bucket name (None for local sources).
+    local_dir : str | None
+        Local directory path, or None for S3 sources.
     skip_tilenames : set[str] | None
         Tilenames to skip (already classified as existing/verified).
 
-    Returns (download_dict, tiles_found, tiles_not_found) where
-    download_dict is keyed by tilename.
+    Returns
+    -------
+    tuple[dict, list[str], list[str]]
+        ``(download_dict, tiles_found, tiles_not_found)`` where
+        *download_dict* is keyed by tilename.
     """
     disk_fields = get_disk_fields(cfg)
     verified_fields = get_verified_fields(cfg)
@@ -403,12 +456,22 @@ def build_download_plan(db_tiles, project_dir, cfg, data_source,
 # ---------------------------------------------------------------------------
 
 def pull(download):
-    """Download files for a single tile and verify checksums.
+    """Download all files for a single tile and verify checksums.
 
-    Uses file_slots — iterates over download["files"] instead of
-    branching on file_layout.
+    Iterates over ``download["files"]``, fetching each from S3 or
+    copying from a local directory.  After each file lands, verifies
+    its SHA-256 checksum against the expected value from the geopackage.
 
-    Returns dict with Tile, Result (bool), Reason (str).
+    Parameters
+    ----------
+    download : dict
+        Download spec built by :func:`_build_tile_download`, containing
+        ``tile``, ``transport``, ``files``, and transport-specific keys.
+
+    Returns
+    -------
+    dict
+        ``{"Tile": str, "Result": bool, "Reason": str}``
     """
     try:
         for f in download["files"]:
@@ -436,9 +499,21 @@ def pull(download):
 
 
 def execute_downloads(download_dict, data_source):
-    """Execute all downloads in a thread pool with progress bar.
+    """Execute all downloads in a thread pool with a tqdm progress bar.
 
-    Returns list of result dicts from pull().
+    Uses ``(cpu_count - 1)`` worker threads.
+
+    Parameters
+    ----------
+    download_dict : dict[str, dict]
+        Download plans keyed by tilename.
+    data_source : str
+        Data source name shown in the progress bar.
+
+    Returns
+    -------
+    list[dict]
+        Result dicts from :func:`pull`, one per tile.
     """
     results = []
     download_length = len(download_dict)
@@ -467,10 +542,23 @@ def execute_downloads(download_dict, data_source):
 # ---------------------------------------------------------------------------
 
 def update_records(conn, download_dict, successful_downloads, cfg):
-    """Update tiles and vrt_utm tables after successful downloads.
+    """Update ``tiles`` and ``vrt_utm`` tables after successful downloads.
 
-    Uses file_slots to build SQL dynamically — no file_layout branching.
-    Verified flags are stored as integer 1.
+    For each successfully downloaded tile, sets disk paths and verified
+    flags in ``tiles``, ensures a ``vrt_utm`` row exists for the
+    affected UTM zone, and resets all build flags so ``build_vrt``
+    will rebuild affected zones.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Database connection.
+    download_dict : dict[str, dict]
+        Download plans keyed by tilename.
+    successful_downloads : list[str]
+        Tilenames that downloaded successfully.
+    cfg : dict
+        Data source configuration.
     """
     slots = cfg["file_slots"]
 
@@ -553,13 +641,27 @@ def update_records(conn, download_dict, successful_downloads, cfg):
 # ---------------------------------------------------------------------------
 
 def insert_new(conn, tiles, cfg):
-    """Insert newly discovered tile names into the tiles table.
+    """Insert newly discovered tile names into the ``tiles`` table.
 
-    Tiles are filtered to include only those with valid delivery data.
-    Geopackage field names are mapped to standard names using
-    cfg["gpkg_fields"] and file_slots.
+    Tiles are filtered to include only those with a valid tile name,
+    delivery date, and links in all file slots.  Geopackage field names
+    are mapped to DB column names using ``cfg["gpkg_fields"]`` and
+    ``cfg["file_slots"]``.
 
-    Returns the number of tiles that passed the filter.
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Database connection.
+    tiles : list[dict]
+        Tile records from geometry intersection, using geopackage field names.
+    cfg : dict
+        Data source configuration.
+
+    Returns
+    -------
+    int
+        Number of tiles that passed the filter and were submitted for
+        insertion (some may already exist due to ``ON CONFLICT DO NOTHING``).
     """
     cursor = conn.cursor()
     gpkg_fields = cfg["gpkg_fields"]
@@ -596,9 +698,22 @@ def insert_new(conn, tiles, cfg):
 def upsert_tiles(conn, project_dir, tile_scheme, cfg):
     """Synchronize tile records with the latest tilescheme deliveries.
 
-    For every tile already in the DB, compares delivered_date against
-    the tilescheme.  If newer, clears old files and upserts the record
-    with updated links, checksums, and delivery date.
+    For every tile already in the DB, compares ``delivered_date`` against
+    the tilescheme geopackage.  If the geopackage has a newer date, old
+    files are removed from disk and the record is upserted with updated
+    links, checksums, and delivery date (disk/verified fields are cleared
+    so the tile will be re-downloaded).
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        Database connection.
+    project_dir : str
+        Absolute path to the project directory.
+    tile_scheme : str
+        Path to the tile-scheme geopackage file.
+    cfg : dict
+        Data source configuration.
     """
     gpkg_fields = cfg["gpkg_fields"]
     slots = cfg["file_slots"]
@@ -659,6 +774,9 @@ def upsert_tiles(conn, project_dir, tile_scheme, cfg):
                     f"Please contact NBS or update BlueTopo.\n{debug_info}")
             _date_validated = True
 
+        # String comparison works chronologically for YYYY-MM-DD [HH:MM:SS] format.
+        # Tiles with no stored date are always updated; tiles with a newer
+        # geopackage date trigger re-download (old files removed, record upserted).
         if (db_tile["delivered_date"] is None) or (delivered_date > db_tile["delivered_date"]):
             # Remove old files
             try:

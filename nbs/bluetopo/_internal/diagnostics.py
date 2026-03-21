@@ -18,7 +18,7 @@ import traceback
 
 
 def _safe(fn):
-    """Run fn, return result or error string."""
+    """Call *fn* and return its result, or an ``'ERROR: ...'`` string on failure."""
     try:
         return fn()
     except Exception as e:
@@ -29,6 +29,17 @@ class DebugReport:
     """Collects diagnostic information and writes a structured report file."""
 
     def __init__(self, project_dir, data_source, cfg):
+        """Initialize a debug report.
+
+        Parameters
+        ----------
+        project_dir : str
+            Absolute path to the project directory.
+        data_source : str
+            Canonical data source name (e.g. ``"BlueTopo"``).
+        cfg : dict
+            Data source configuration dict.
+        """
         self.project_dir = project_dir
         self.data_source = data_source
         self.cfg = cfg
@@ -38,7 +49,7 @@ class DebugReport:
         self.result_text = None
 
     def set_conn(self, conn):
-        """Set the DB connection (available after connect())."""
+        """Store the DB connection for schema/summary introspection during write()."""
         self.conn = conn
 
     def capture_exception(self):
@@ -46,7 +57,7 @@ class DebugReport:
         self.exception_text = traceback.format_exc()
 
     def add_result(self, result):
-        """Capture the FetchResult or BuildResult."""
+        """Capture the ``FetchResult`` or ``BuildResult`` for inclusion in the report."""
         if result is None:
             return
         lines = []
@@ -63,7 +74,7 @@ class DebugReport:
         self.result_text = "\n".join(lines)
 
     def write(self):
-        """Write the report file to the project directory."""
+        """Assemble all sections and write the report to a timestamped log file."""
         # Collect all sections in order
         self._collect_environment()
         self._collect_config()
@@ -117,6 +128,7 @@ class DebugReport:
     # ------------------------------------------------------------------
 
     def _collect_environment(self):
+        """Section 1: BlueTopo version, Python version, GDAL version, platform."""
         from nbs.bluetopo import __version__
         gdal_version = _safe(lambda: __import__("osgeo").gdal.VersionInfo())
         self.sections.append("\n".join([
@@ -130,6 +142,7 @@ class DebugReport:
         ]))
 
     def _collect_config(self):
+        """Section 2: active data source settings, file slots, gpkg field mappings."""
         cfg = self.cfg
         slots = ", ".join(
             f"{s['name']} (gpkg: {s['gpkg_link']})"
@@ -155,6 +168,7 @@ class DebugReport:
         ]))
 
     def _collect_filesystem(self):
+        """Section 3: existence and size of registry DB, tile folder, VRT folder."""
         pd = self.project_dir
         ds = self.data_source
         db_path = os.path.join(pd, f"{ds.lower()}_registry.db")
@@ -186,6 +200,7 @@ class DebugReport:
         ]))
 
     def _collect_db_schema(self):
+        """Section 4: column definitions for tiles, vrt_utm, and catalog tables."""
         try:
             cursor = self.conn.cursor()
             lines = [
@@ -204,6 +219,7 @@ class DebugReport:
             self.sections.append(f"  4. DATABASE SCHEMA\n  ERROR: {e}")
 
     def _collect_db_summary(self):
+        """Section 5: tile counts (verified, unverified, pending) and UTM build status."""
         try:
             cursor = self.conn.cursor()
             from nbs.bluetopo._internal.config import (
@@ -252,6 +268,7 @@ class DebugReport:
             self.sections.append(f"  5. DATABASE SUMMARY\n  ERROR: {e}")
 
     def _collect_tile_details(self):
+        """Section 6: per-tile anomalies (missing links, missing files, unverified)."""
         try:
             cursor = self.conn.cursor()
             from nbs.bluetopo._internal.config import get_disk_fields, get_verified_fields
@@ -323,6 +340,7 @@ class DebugReport:
             self.sections.append(f"  6. TILE DETAILS\n  ERROR: {e}")
 
     def _collect_utm_details(self):
+        """Section 7: VRT/OVR paths and build status per UTM zone."""
         try:
             cursor = self.conn.cursor()
             from nbs.bluetopo._internal.config import (

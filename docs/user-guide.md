@@ -182,22 +182,6 @@ BlueTopo_VRT_4m_8m_tr8m/
 
 > **Note:** Parameterized builds never touch the default VRT directory. If you have both `BlueTopo_VRT/` and `BlueTopo_VRT_4m_8m/`, `build_vrt` will note the other directory's existence but won't modify it.
 
-## Local directory sources
-
-Instead of downloading from S3, you can point `data_source` to a local directory path containing a tile scheme geopackage:
-
-```python
-result = fetch_tiles('/path/to/project',
-                     geometry='aoi.gpkg',
-                     data_source='/path/to/local/tiles')
-```
-
-The directory must contain a `*_Tile_Scheme*.gpkg` file. BlueTopo extracts the source type from the filename prefix (e.g. `HSD_Tile_Scheme_2024.gpkg` resolves to the HSD configuration). If the prefix doesn't match a known source, it falls back to the BlueTopo configuration with an extended RAT field set.
-
-S3 operations are bypassed — tile files are copied from the local directory instead of downloaded.
-
-> **Note:** Local-only source names like `hsd` cannot be passed as the `data_source` argument directly — you must pass the directory path. See [Data Sources — Local sources](data-sources.md#local-sources) for details.
-
 ## Debug mode
 
 Pass `debug=True` (or `--debug` on the CLI) to generate a diagnostic report:

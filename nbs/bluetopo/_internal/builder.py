@@ -85,7 +85,7 @@ def build_vrt(project_dir: str, data_source: str = None,
     tile_resolution_filter : list | None
         Only include tiles at these resolutions (meters).
     hillshade : bool
-        If True, build hillshade VRTs.
+        If True, generate a hillshade GeoTIFF from the elevation band.
     debug : bool
         If True, writes a diagnostic report to the project directory.
 
@@ -168,7 +168,13 @@ def build_vrt(project_dir: str, data_source: str = None,
 def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                vrt_resolution_target, result, report=None,
                tile_resolution_filter=None, hillshade=False):
-    """Core build pipeline. Separated to allow debug wrapper."""
+    """Core build pipeline, separated so the debug wrapper in build_vrt()
+    can handle report lifecycle without re-indenting the main logic.
+
+    Steps: connect DB → seed parameterized rows (if needed) → detect
+    missing VRTs → build per-UTM VRTs with overviews and RATs →
+    optionally generate hillshade GeoTIFFs.
+    """
     start = datetime.datetime.now()
     print(f"[{_timestamp()}] {data_source}: Beginning work in project folder: {project_dir}\n")
 
@@ -224,6 +230,9 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                 built_entry = {"utm": ub_utm["utm"]}
 
                 if cfg["subdatasets"]:
+                    # Multi-subdataset path (S102V22, S102V30):
+                    # Build one VRT per subdataset, then combine into a
+                    # single multi-band VRT with bands stacked via -separate.
                     sd_vrt_paths = []
                     fields = {"utm": ub_utm["utm"], "params_key": params_key}
                     for sd_idx, sd in enumerate(cfg["subdatasets"]):
@@ -251,6 +260,7 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                                 f"Overview failed to create for utm{ub_utm['utm']}. "
                                 "Please try again. If error persists, please contact NBS.")
 
+                    # Combine per-subdataset VRTs into a single multi-band VRT
                     rel_combined = os.path.join(vrt_dir_name,
                                                 f"{data_source}_Fetched_UTM{ub_utm['utm']}{params_key}.vrt")
                     utm_combined_vrt = os.path.join(project_dir, rel_combined)
@@ -274,6 +284,8 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                     built_entry["vrt"] = os.path.join(project_dir, rel_combined)
                     built_entry["ovr"] = None
                 else:
+                    # Single-dataset path (BlueTopo, Modeling, BAG, S102V21):
+                    # Build one VRT directly from all source tiles.
                     tile_paths = build_tile_paths(tiles, project_dir, cfg)
                     if not tile_paths:
                         continue

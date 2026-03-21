@@ -154,7 +154,12 @@ def fetch_tiles(
 def _run_fetch(project_dir, geometry, cfg, data_source,
                geom_prefix, bucket, local_dir, result, report=None,
                tile_resolution_filter=None):
-    """Core fetch pipeline. Separated to allow debug wrapper without re-indenting."""
+    """Core fetch pipeline, separated so the debug wrapper in fetch_tiles()
+    can handle report lifecycle without re-indenting the main logic.
+
+    Steps: connect DB → download XML/tessellation → discover tiles via
+    geometry → upsert delivery dates → classify → download → update records.
+    """
     start = datetime.datetime.now()
     print(f"[{_timestamp()}] {data_source}: Beginning work in project folder: {project_dir}")
     if tile_resolution_filter:

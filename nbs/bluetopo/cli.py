@@ -8,6 +8,25 @@ from nbs.bluetopo._internal.fetcher import fetch_tiles
 
 
 def str_to_bool(value):
+    """Convert a string to a boolean for argparse type coercion.
+
+    Accepts common truthy (``yes``, ``true``, ``t``, ``y``, ``1``) and
+    falsy (``no``, ``false``, ``f``, ``n``, ``0``) strings, case-insensitive.
+
+    Parameters
+    ----------
+    value : str | bool
+        The value to convert.
+
+    Returns
+    -------
+    bool
+
+    Raises
+    ------
+    ArgumentTypeError
+        If the string is not a recognized boolean representation.
+    """
     if isinstance(value, bool):
         return value
     if value.lower() in ("yes", "true", "t", "y", "1"):
