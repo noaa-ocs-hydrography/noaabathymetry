@@ -17,8 +17,8 @@ fetch_tiles(
     project_dir: str,
     geometry: str = None,
     data_source: str = None,
-    debug: bool = False,
     tile_resolution_filter: list = None,
+    debug: bool = False,
 ) -> FetchResult
 ```
 
@@ -31,8 +31,8 @@ Discover, download, and update NBS tiles.
 | `project_dir` | `str` | *required* | Absolute path to the project directory. Created if it does not exist. |
 | `geometry` | `str \| None` | `None` | Geometry input defining the area of interest. Accepts a file path, bounding box (`xmin,ymin,xmax,ymax`), WKT, or GeoJSON string. String inputs assume EPSG:4326. Pass `None` to skip tile discovery (useful for re-downloading existing tiles). |
 | `data_source` | `str \| None` | `None` | An S3 source name (e.g. `"bluetopo"`, `"bag"`, `"s102v30"`), a local directory path containing a tile scheme geopackage, or `None` (defaults to `"bluetopo"`). |
-| `debug` | `bool` | `False` | If `True`, writes a diagnostic report to the project directory. |
 | `tile_resolution_filter` | `list[int] \| None` | `None` | Only fetch tiles at these resolutions (meters). Example: `[4, 8]`. |
+| `debug` | `bool` | `False` | If `True`, writes a diagnostic report to the project directory. |
 
 **Returns:** [`FetchResult`](#fetchresult)
 
@@ -75,8 +75,9 @@ build_vrt(
     data_source: str = None,
     relative_to_vrt: bool = True,
     vrt_resolution_target: float = None,
-    debug: bool = False,
     tile_resolution_filter: list = None,
+    hillshade: bool = False,
+    debug: bool = False,
 ) -> BuildResult
 ```
 
@@ -90,8 +91,9 @@ Build a flat GDAL VRT per UTM zone from all source tiles.
 | `data_source` | `str \| None` | `None` | A known source name, a local directory path, or `None` (defaults to `"bluetopo"`). |
 | `relative_to_vrt` | `bool` | `True` | Store referenced file paths as relative to the VRT's directory. Set to `False` for absolute paths. |
 | `vrt_resolution_target` | `float \| None` | `None` | Force output pixel size in meters. Must be a positive number. |
-| `debug` | `bool` | `False` | If `True`, writes a diagnostic report to the project directory. |
 | `tile_resolution_filter` | `list[int] \| None` | `None` | Only include tiles at these resolutions (meters). Outputs to a separate VRT directory. |
+| `hillshade` | `bool` | `False` | If `True`, build hillshade VRTs. |
+| `debug` | `bool` | `False` | If `True`, writes a diagnostic report to the project directory. |
 
 **Returns:** [`BuildResult`](#buildresult)
 

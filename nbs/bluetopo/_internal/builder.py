@@ -67,9 +67,9 @@ class BuildResult:
 def build_vrt(project_dir: str, data_source: str = None,
               relative_to_vrt: bool = True,
               vrt_resolution_target: float = None,
-              debug: bool = False,
               tile_resolution_filter: list = None,
-              hillshade: bool = False) -> BuildResult:
+              hillshade: bool = False,
+              debug: bool = False) -> BuildResult:
     """Build a flat GDAL VRT per UTM zone from all source tiles.
 
     Parameters
@@ -82,6 +82,10 @@ def build_vrt(project_dir: str, data_source: str = None,
         Store referenced file paths as relative to the VRT's directory.
     vrt_resolution_target : float | None
         Force output pixel size (in meters).  Must be a positive number.
+    tile_resolution_filter : list | None
+        Only include tiles at these resolutions (meters).
+    hillshade : bool
+        If True, build hillshade VRTs.
     debug : bool
         If True, writes a diagnostic report to the project directory.
 

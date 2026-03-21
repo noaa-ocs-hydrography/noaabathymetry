@@ -67,8 +67,8 @@ def fetch_tiles(
     project_dir: str,
     geometry: str = None,
     data_source: str = None,
-    debug: bool = False,
     tile_resolution_filter: list = None,
+    debug: bool = False,
 ) -> FetchResult:
     """Discover, download, and update NBS tiles.
 
@@ -91,6 +91,8 @@ def fetch_tiles(
     data_source : str | None
         A known source name (e.g. ``"bluetopo"``, ``"bag"``, ``"s102v30"``),
         a local directory path, or None (defaults to ``"bluetopo"``).
+    tile_resolution_filter : list | None
+        Only fetch tiles at these resolutions (meters).
     debug : bool
         If True, writes a diagnostic report to the project directory.
 
