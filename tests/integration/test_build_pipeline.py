@@ -20,6 +20,7 @@ from nbs.bluetopo._internal.db import connect as connect_to_survey_registry
 from nbs.bluetopo._internal.vrt import (
     create_vrt,
     add_vrt_rat,
+    generate_hillshade,
     update_utm,
     select_unbuilt_utms,
     select_tiles_by_utm,
@@ -209,6 +210,28 @@ class TestBluetopoPipeline:
         field_names = [rat.GetNameOfCol(i) for i in range(rat.GetColumnCount())]
         for expected_field in cfg["rat_fields"]:
             assert expected_field in field_names
+        ds = None
+
+    def test_hillshade_generated(self, pipeline_env):
+        conn, project_dir, cfg, tiles_info = pipeline_env
+
+        tiles = select_tiles_by_utm(project_dir, conn, "19", cfg)
+        tile_paths = build_tile_paths(tiles, project_dir, cfg)
+        factors = compute_overview_factors(tile_paths, overview_levels=cfg["overview_levels"])
+
+        vrt_dir = os.path.join(project_dir, "BlueTopo_VRT")
+        os.makedirs(vrt_dir, exist_ok=True)
+        utm_vrt = os.path.join(project_dir, "BlueTopo_VRT", "BlueTopo_Fetched_UTM19.vrt")
+        create_vrt(tile_paths, utm_vrt, factors or None, True, cfg["band_descriptions"])
+
+        hs_path = utm_vrt.replace(".vrt", "_hillshade.tif")
+        generate_hillshade(utm_vrt, hs_path)
+
+        assert os.path.isfile(hs_path)
+        ds = gdal.Open(hs_path)
+        assert ds.RasterCount == 1
+        assert ds.GetRasterBand(1).DataType == gdal.GDT_Byte
+        assert ds.GetRasterBand(1).GetOverviewCount() > 0
         ds = None
 
 

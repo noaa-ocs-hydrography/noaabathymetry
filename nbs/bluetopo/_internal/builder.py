@@ -31,6 +31,7 @@ from nbs.bluetopo._internal.vrt import (
     compute_overview_factors,
     create_vrt,
     ensure_params_rows,
+    generate_hillshade,
     missing_utms,
     select_tiles_by_utm,
     select_unbuilt_utms,
@@ -67,7 +68,8 @@ def build_vrt(project_dir: str, data_source: str = None,
               relative_to_vrt: bool = True,
               vrt_resolution_target: float = None,
               debug: bool = False,
-              tile_resolution_filter: list = None) -> BuildResult:
+              tile_resolution_filter: list = None,
+              hillshade: bool = False) -> BuildResult:
     """Build a flat GDAL VRT per UTM zone from all source tiles.
 
     Parameters
@@ -142,7 +144,8 @@ def build_vrt(project_dir: str, data_source: str = None,
     try:
         result = _run_build(project_dir, cfg, data_source, relative_to_vrt,
                             vrt_resolution_target, result, report,
-                            tile_resolution_filter=tile_resolution_filter)
+                            tile_resolution_filter=tile_resolution_filter,
+                            hillshade=hillshade)
     except Exception:
         if report:
             report.capture_exception()
@@ -160,7 +163,7 @@ def build_vrt(project_dir: str, data_source: str = None,
 
 def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                vrt_resolution_target, result, report=None,
-               tile_resolution_filter=None):
+               tile_resolution_filter=None, hillshade=False):
     """Core build pipeline. Separated to allow debug wrapper."""
     start = datetime.datetime.now()
     print(f"[{_timestamp()}] {data_source}: Beginning work in project folder: {project_dir}\n")
@@ -257,6 +260,12 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                     if cfg["has_rat"]:
                         add_vrt_rat(conn, ub_utm["utm"], project_dir, utm_combined_vrt, cfg)
 
+                    built_entry["hillshade"] = None
+                    if hillshade:
+                        hs_path = utm_combined_vrt.replace(".vrt", "_hillshade.tif")
+                        generate_hillshade(utm_combined_vrt, hs_path)
+                        built_entry["hillshade"] = hs_path
+
                     update_utm(conn, fields, cfg)
                     built_entry["vrt"] = os.path.join(project_dir, rel_combined)
                     built_entry["ovr"] = None
@@ -277,6 +286,12 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
 
                     if cfg["has_rat"]:
                         add_vrt_rat(conn, ub_utm["utm"], project_dir, utm_vrt, cfg)
+
+                    built_entry["hillshade"] = None
+                    if hillshade:
+                        hs_path = utm_vrt.replace(".vrt", "_hillshade.tif")
+                        generate_hillshade(utm_vrt, hs_path)
+                        built_entry["hillshade"] = hs_path
 
                     fields = {"utm_vrt": rel_path, "utm_ovr": None,
                               "utm": ub_utm["utm"], "params_key": params_key}

@@ -79,6 +79,21 @@ def create_vrt(files, vrt_path, levels, relative_to_vrt,
         vrt = None
 
 
+def generate_hillshade(vrt_path, hillshade_path):
+    """Generate a hillshade GeoTIFF from band 1 (Elevation) of a VRT."""
+    if os.path.isfile(hillshade_path):
+        os.remove(hillshade_path)
+    opts = gdal.DEMProcessingOptions(
+        options="-az 315 -alt 45 -z 4 -compute_edges "
+                "-of GTiff -co COMPRESS=DEFLATE -co TILED=YES"
+    )
+    gdal.DEMProcessing(hillshade_path, vrt_path, "hillshade", options=opts)
+    ds = gdal.Open(hillshade_path, 0)
+    ds.BuildOverviews("BILINEAR", [16, 32, 64])
+    ds = None
+    return hillshade_path
+
+
 def compute_overview_factors(tile_paths, vrt_resolution_target=None,
                              overview_levels=None, filter_coarsest=True):
     """Compute overview factors from source tile resolutions.

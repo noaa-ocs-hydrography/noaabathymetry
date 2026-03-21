@@ -6,7 +6,7 @@ import pytest
 from osgeo import gdal
 
 from nbs.bluetopo._internal.config import get_config
-from nbs.bluetopo._internal.vrt import create_vrt, compute_overview_factors, select_tiles_by_utm
+from nbs.bluetopo._internal.vrt import create_vrt, compute_overview_factors, generate_hillshade, select_tiles_by_utm
 
 
 # ---------------------------------------------------------------------------
@@ -398,5 +398,57 @@ class TestSelectTilesByUtmResolution:
         conn, project_dir, cfg = self._setup(registry_db, make_geotiff, tmp_path)
         result = select_tiles_by_utm(project_dir, conn, "19", cfg, tile_resolution_filter=None)
         assert len(result) == 3
+
+
+# ---------------------------------------------------------------------------
+# generate_hillshade
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateHillshade:
+    def _make_vrt(self, make_geotiff, tmp_path):
+        """Helper: create a single-band elevation VRT."""
+        t1 = make_geotiff("elev.tif", bands=1, width=16, height=16)
+        vrt_path = str(tmp_path / "elev.vrt")
+        create_vrt([t1], vrt_path, None, False, ["Elevation"])
+        return vrt_path
+
+    def test_output_exists_and_is_geotiff(self, make_geotiff, tmp_path):
+        vrt_path = self._make_vrt(make_geotiff, tmp_path)
+        hs_path = str(tmp_path / "hillshade.tif")
+        result = generate_hillshade(vrt_path, hs_path)
+        assert result == hs_path
+        assert os.path.isfile(hs_path)
+        ds = gdal.Open(hs_path)
+        assert ds.GetDriver().ShortName == "GTiff"
+        ds = None
+
+    def test_single_band_byte(self, make_geotiff, tmp_path):
+        vrt_path = self._make_vrt(make_geotiff, tmp_path)
+        hs_path = str(tmp_path / "hillshade.tif")
+        generate_hillshade(vrt_path, hs_path)
+        ds = gdal.Open(hs_path)
+        assert ds.RasterCount == 1
+        assert ds.GetRasterBand(1).DataType == gdal.GDT_Byte
+        ds = None
+
+    def test_has_overviews(self, make_geotiff, tmp_path):
+        vrt_path = self._make_vrt(make_geotiff, tmp_path)
+        hs_path = str(tmp_path / "hillshade.tif")
+        generate_hillshade(vrt_path, hs_path)
+        ds = gdal.Open(hs_path)
+        assert ds.GetRasterBand(1).GetOverviewCount() > 0
+        ds = None
+
+    def test_idempotent(self, make_geotiff, tmp_path):
+        vrt_path = self._make_vrt(make_geotiff, tmp_path)
+        hs_path = str(tmp_path / "hillshade.tif")
+        generate_hillshade(vrt_path, hs_path)
+        mtime1 = os.path.getmtime(hs_path)
+        generate_hillshade(vrt_path, hs_path)
+        assert os.path.isfile(hs_path)
+        # File was regenerated (old removed, new created)
+        mtime2 = os.path.getmtime(hs_path)
+        assert mtime2 >= mtime1
 
 

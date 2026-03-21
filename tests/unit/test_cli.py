@@ -56,6 +56,7 @@ class TestBuildVrtCommand:
                     vrt_resolution_target=None,
                     debug=False,
                     tile_resolution_filter=None,
+                    hillshade=False,
                 )
 
     def test_default_source(self):

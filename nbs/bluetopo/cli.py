@@ -55,6 +55,10 @@ def build_vrt_command():
         "--debug", action="store_true",
         help="Write a diagnostic report to the project directory.",
     )
+    parser.add_argument(
+        "--hillshade", action="store_true",
+        help="Generate a hillshade GeoTIFF from the elevation band.",
+    )
     args = parser.parse_args()
     build_vrt(
         project_dir=args.dir,
@@ -63,6 +67,7 @@ def build_vrt_command():
         vrt_resolution_target=args.vrt_resolution_target,
         debug=args.debug,
         tile_resolution_filter=args.tile_resolution_filter,
+        hillshade=args.hillshade,
     )
 
 
