@@ -26,6 +26,17 @@ gdal.SetConfigOption("COMPRESS_OVERVIEW", "DEFLATE")
 gdal.SetConfigOption("GDAL_TIFF_OVR_BLOCKSIZE", "512")
 gdal.SetConfigOption("GDAL_NUM_THREADS", "ALL_CPUS")
 
+# Bump GDAL block cache to 15% of physical memory (if higher than default).
+# Reduces tile re-reads during large warp and overview operations.
+try:
+    _phys_mem = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    _target_cache = int(_phys_mem * 0.15)
+    if _target_cache > gdal.GetCacheMax():
+        gdal.SetCacheMax(_target_cache)
+        print(f"GDAL cache max: {gdal.GetCacheMax() / 1024**3:.1f} GB")
+except (AttributeError, ValueError, OSError):
+    pass  # Windows or unsupported platform — keep GDAL's default
+
 
 # ---------------------------------------------------------------------------
 # VRT creation
@@ -102,22 +113,82 @@ def create_vrt(files, vrt_path, levels, relative_to_vrt,
 
 
 def generate_hillshade(vrt_path, hillshade_path):
-    """Generate a hillshade GeoTIFF from band 1 (Elevation) of a VRT.
+    """Generate a hillshade GeoTIFF from band 1 (Elevation) of a source raster.
+
+    Builds from a 16m downsampled view of the source for speed while
+    preserving good terrain detail. Uses an in-memory VRT with
+    resolution override so GDAL reads from the source's existing
+    overviews instead of full resolution.
 
     Uses azimuth 315, altitude 45, vertical exaggeration 4x, and
-    builds BILINEAR overviews at factors 16/32/64.
+    builds BILINEAR overviews at factors 2/4/8.
     """
     if os.path.isfile(hillshade_path):
         os.remove(hillshade_path)
+    # Create an in-memory VRT at 16m resolution. GDAL reads from the
+    # source's overview levels instead of full resolution.
+    mem_vrt = "/vsimem/_hillshade_input.vrt"
+    gdal.Translate(mem_vrt, vrt_path, format="VRT", xRes=16, yRes=16)
     opts = gdal.DEMProcessingOptions(
         options="-az 315 -alt 45 -z 4 -compute_edges "
-                "-of GTiff -co COMPRESS=DEFLATE -co TILED=YES"
+                "-of GTiff -co COMPRESS=DEFLATE -co TILED=YES -co BIGTIFF=YES"
     )
-    gdal.DEMProcessing(hillshade_path, vrt_path, "hillshade", options=opts)
+    gdal.DEMProcessing(hillshade_path, mem_vrt, "hillshade", options=opts)
+    gdal.Unlink(mem_vrt)
     ds = gdal.Open(hillshade_path, 0)
-    ds.BuildOverviews("BILINEAR", [16, 32, 64])
+    ds.BuildOverviews("BILINEAR", [2, 4, 8])
     ds = None
     return hillshade_path
+
+
+def reproject_to_web_mercator(vrt_path, output_path, overview_factors=None):
+    """Reproject a VRT to an EPSG:3857 GeoTIFF using gdal.Warp.
+
+    Produces a GeoTIFF with DEFLATE compression and 512x512 tiling.
+    Uses nearest neighbor resampling to preserve categorical Contributor
+    band values for RAT compatibility.
+
+    The RAT is not preserved through Warp. Call ``add_vrt_rat()`` on the
+    output file after this function to attach the aggregated RAT.
+
+    Parameters
+    ----------
+    vrt_path : str
+        Path to the source VRT (in UTM projection).
+    output_path : str
+        Path for the output GeoTIFF (will be in EPSG:3857).
+    overview_factors : list[int] | None
+        Overview factors from ``compute_overview_factors()``.  If None
+        or empty, no overviews are built.
+
+    Returns
+    -------
+    str
+        The *output_path*.
+    """
+    if os.path.isfile(output_path):
+        os.remove(output_path)
+    opts = gdal.WarpOptions(
+        dstSRS="EPSG:3857",
+        format="GTiff",
+        resampleAlg="near",
+        multithread=True,
+        warpOptions=["NUM_THREADS=ALL_CPUS"],
+        creationOptions=[
+            "COMPRESS=DEFLATE",
+            "TILED=YES",
+            "BLOCKXSIZE=512",
+            "BLOCKYSIZE=512",
+            "BIGTIFF=YES",
+            "NUM_THREADS=ALL_CPUS",
+        ],
+    )
+    gdal.Warp(output_path, vrt_path, options=opts)
+    if overview_factors:
+        ds = gdal.Open(output_path, 0)
+        ds.BuildOverviews("NEAREST", overview_factors)
+        ds = None
+    return output_path
 
 
 def compute_overview_factors(tile_paths, vrt_resolution_target=None,

@@ -54,9 +54,11 @@ class TestBuildVrtCommand:
                     data_source="bluetopo",
                     relative_to_vrt=True,
                     vrt_resolution_target=None,
-                    debug=False,
                     tile_resolution_filter=None,
                     hillshade=False,
+                    workers=None,
+                    reproject=False,
+                    debug=False,
                 )
 
     def test_default_source(self):

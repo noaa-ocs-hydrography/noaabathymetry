@@ -182,6 +182,28 @@ BlueTopo_VRT_4m_8m_tr8m/
 
 > **Note:** Parameterized builds never touch the default VRT directory. If you have both `BlueTopo_VRT/` and `BlueTopo_VRT_4m_8m/`, `build_vrt` will note the other directory's existence but won't modify it.
 
+## Web Mercator reprojection
+
+Pass `reproject=True` (or `--reproject` on the CLI) to produce EPSG:3857 (Web Mercator) GeoTIFFs instead of native UTM VRTs. This is useful for serving tiles through GeoServer or other web mapping platforms that require a single CRS across UTM zone boundaries.
+
+```python
+vrt_result = build_vrt('/path/to/project', reproject=True)
+```
+
+```
+build_vrt -d /path/to/project --reproject
+```
+
+The 3857 output is stored in a separate directory (e.g. `BlueTopo_VRT_3857/`) and tracked independently from the default UTM VRTs. Only UTM zones with new or updated tiles are reprojected on subsequent runs.
+
+This can be combined with resolution filtering:
+
+```python
+vrt_result = build_vrt('/path/to/project', tile_resolution_filter=[4, 8], reproject=True)
+```
+
+Output directory: `BlueTopo_VRT_4m_8m_3857/`
+
 ## Debug mode
 
 Pass `debug=True` (or `--debug` on the CLI) to generate a diagnostic report:

@@ -71,12 +71,20 @@ def build_vrt_command():
         type=int, nargs="+", dest="tile_resolution_filter", default=None,
     )
     parser.add_argument(
-        "--debug", action="store_true",
-        help="Write a diagnostic report to the project directory.",
-    )
-    parser.add_argument(
         "--hillshade", action="store_true",
         help="Generate a hillshade GeoTIFF from the elevation band.",
+    )
+    parser.add_argument(
+        "--workers", type=int, default=None,
+        help="Number of parallel worker processes for building UTM zones.",
+    )
+    parser.add_argument(
+        "--reproject", action="store_true",
+        help="Reproject to EPSG:3857 (Web Mercator) GeoTIFFs instead of native UTM VRTs.",
+    )
+    parser.add_argument(
+        "--debug", action="store_true",
+        help="Write a diagnostic report to the project directory.",
     )
     args = parser.parse_args()
     build_vrt(
@@ -84,9 +92,11 @@ def build_vrt_command():
         data_source=args.source,
         relative_to_vrt=args.relative_to_vrt,
         vrt_resolution_target=args.vrt_resolution_target,
-        debug=args.debug,
         tile_resolution_filter=args.tile_resolution_filter,
         hillshade=args.hillshade,
+        workers=args.workers,
+        reproject=args.reproject,
+        debug=args.debug,
     )
 
 

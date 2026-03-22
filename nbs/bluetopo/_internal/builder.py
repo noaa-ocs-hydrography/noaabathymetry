@@ -8,10 +8,12 @@ Thin orchestrator that coordinates:
 4. RAT aggregation for sources that support it
 """
 
+import concurrent.futures
 import datetime
 import glob
 import os
 import platform
+import sqlite3
 from dataclasses import dataclass, field
 
 from osgeo import gdal
@@ -33,10 +35,190 @@ from nbs.bluetopo._internal.vrt import (
     ensure_params_rows,
     generate_hillshade,
     missing_utms,
+    reproject_to_web_mercator,
     select_tiles_by_utm,
     select_unbuilt_utms,
     update_utm,
 )
+
+
+def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
+                     vrt_dir_name, params_key, relative_to_vrt,
+                     vrt_resolution_target, tile_resolution_filter,
+                     hillshade):
+    """Build one UTM zone VRT.  Designed to run in a worker process.
+
+    Opens a read-only DB connection for tile selection and RAT
+    aggregation (schema migration is already done by the main process).
+    Returns a result dict for the main process to handle DB updates.
+    """
+    db_path = os.path.join(project_dir, f"{cfg['canonical_name'].lower()}_registry.db")
+    worker_conn = sqlite3.connect(db_path)
+    worker_conn.row_factory = sqlite3.Row
+    try:
+        tiles = select_tiles_by_utm(project_dir, worker_conn, utm, cfg,
+                                    tile_resolution_filter=tile_resolution_filter)
+        if not tiles:
+            return None
+
+        if cfg["subdatasets"]:
+            # Multi-subdataset path (S102V22, S102V30)
+            sd_vrt_paths = []
+            fields = {"utm": utm, "params_key": params_key}
+            for sd_idx, sd in enumerate(cfg["subdatasets"]):
+                suffix_label = f"_subdataset{sd_idx + 1}"
+                tile_paths = build_tile_paths(tiles, project_dir, cfg, sd)
+                if not tile_paths:
+                    continue
+                factors = compute_overview_factors(
+                    tile_paths, vrt_resolution_target,
+                    overview_levels=cfg.get("overview_levels"),
+                    filter_coarsest=cfg.get("overview_filter_coarsest", True),
+                )
+                rel_path = os.path.join(vrt_dir_name,
+                                        f"{data_source}_Fetched_UTM{utm}{sd['suffix']}{params_key}.vrt")
+                utm_sd_vrt = os.path.join(project_dir, rel_path)
+                create_vrt(tile_paths, utm_sd_vrt, factors or None, relative_to_vrt,
+                           sd["band_descriptions"], vrt_resolution_target=vrt_resolution_target)
+                sd_vrt_paths.append(utm_sd_vrt)
+                fields[f"utm{suffix_label}_vrt"] = rel_path
+                fields[f"utm{suffix_label}_ovr"] = None
+                if os.path.isfile(os.path.join(project_dir, rel_path + ".ovr")):
+                    fields[f"utm{suffix_label}_ovr"] = rel_path + ".ovr"
+                elif factors:
+                    raise RuntimeError(
+                        f"Overview failed to create for utm{utm}. "
+                        "Please try again. If error persists, please contact NBS.")
+
+            rel_combined = os.path.join(vrt_dir_name,
+                                        f"{data_source}_Fetched_UTM{utm}{params_key}.vrt")
+            utm_combined_vrt = os.path.join(project_dir, rel_combined)
+            combined_bands = []
+            for sd in cfg["subdatasets"]:
+                combined_bands.extend(sd["band_descriptions"])
+            create_vrt(sd_vrt_paths, utm_combined_vrt, None, relative_to_vrt,
+                       combined_bands, separate=True)
+            fields["utm_combined_vrt"] = rel_combined
+
+            if cfg["has_rat"]:
+                add_vrt_rat(worker_conn, utm, project_dir, utm_combined_vrt, cfg)
+
+            result = {"utm": utm, "fields": fields,
+                      "vrt": os.path.join(project_dir, rel_combined), "ovr": None}
+
+            if hillshade:
+                hs_path = utm_combined_vrt.replace(".vrt", "_hillshade.tif")
+                generate_hillshade(utm_combined_vrt, hs_path)
+                result["hillshade"] = hs_path
+        else:
+            # Single-dataset path (BlueTopo, Modeling, BAG, S102V21)
+            tile_paths = build_tile_paths(tiles, project_dir, cfg)
+            if not tile_paths:
+                return None
+            factors = compute_overview_factors(
+                tile_paths, vrt_resolution_target,
+                overview_levels=cfg.get("overview_levels"),
+                filter_coarsest=cfg.get("overview_filter_coarsest", True),
+            )
+            rel_path = os.path.join(vrt_dir_name,
+                                    f"{data_source}_Fetched_UTM{utm}{params_key}.vrt")
+            utm_vrt = os.path.join(project_dir, rel_path)
+            create_vrt(tile_paths, utm_vrt, factors or None, relative_to_vrt,
+                       cfg["band_descriptions"], vrt_resolution_target=vrt_resolution_target)
+
+            if cfg["has_rat"]:
+                add_vrt_rat(worker_conn, utm, project_dir, utm_vrt, cfg)
+
+            fields = {"utm_vrt": rel_path, "utm_ovr": None,
+                      "utm": utm, "params_key": params_key}
+            ovr_path = os.path.join(project_dir, rel_path + ".ovr")
+            if os.path.isfile(ovr_path):
+                fields["utm_ovr"] = rel_path + ".ovr"
+            elif factors:
+                raise RuntimeError(
+                    f"Overview failed to create for utm{utm}. "
+                    "Please try again. If error persists, please contact NBS.")
+
+            result = {"utm": utm, "fields": fields,
+                      "vrt": utm_vrt, "ovr": fields.get("utm_ovr")}
+
+            if hillshade:
+                hs_path = utm_vrt.replace(".vrt", "_hillshade.tif")
+                generate_hillshade(utm_vrt, hs_path)
+                result["hillshade"] = hs_path
+
+        return result
+    finally:
+        worker_conn.close()
+
+
+def _reproject_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
+                         vrt_dir_name, params_key, relative_to_vrt,
+                         tile_resolution_filter, hillshade):
+    """Reproject one UTM zone to EPSG:3857.  Designed to run in a worker process.
+
+    Opens a read-only DB connection for tile selection and RAT
+    aggregation (schema migration is already done by the main process).
+    Returns a result dict for the main process to handle DB updates.
+    """
+    db_path = os.path.join(project_dir, f"{cfg['canonical_name'].lower()}_registry.db")
+    worker_conn = sqlite3.connect(db_path)
+    worker_conn.row_factory = sqlite3.Row
+    try:
+        tiles = select_tiles_by_utm(project_dir, worker_conn, utm, cfg,
+                                    tile_resolution_filter=tile_resolution_filter)
+        if not tiles:
+            return None
+
+        tile_paths = build_tile_paths(tiles, project_dir, cfg)
+        if not tile_paths:
+            return None
+
+        band_descs = cfg.get("band_descriptions")
+        if cfg["subdatasets"]:
+            band_descs = []
+            for sd in cfg["subdatasets"]:
+                band_descs.extend(sd["band_descriptions"])
+
+        # Build temporary VRT (no overviews) for multi-resolution ordering
+        temp_vrt = os.path.join(vrt_dir, f"_temp_UTM{utm}.vrt")
+        create_vrt(tile_paths, temp_vrt, None, relative_to_vrt, band_descs)
+
+        # Compute overview factors
+        factors = compute_overview_factors(
+            tile_paths, None,
+            overview_levels=[16, 32, 64, 128, 256],
+            filter_coarsest=False,
+        )
+
+        # Warp to EPSG:3857
+        rel_path = os.path.join(vrt_dir_name,
+                                f"{data_source}_Fetched_UTM{utm}{params_key}.tif")
+        output_3857 = os.path.join(project_dir, rel_path)
+        reproject_to_web_mercator(temp_vrt, output_3857,
+                                  overview_factors=factors or None)
+
+        # Add RAT
+        if cfg["has_rat"]:
+            add_vrt_rat(worker_conn, utm, project_dir, output_3857, cfg)
+
+        # Clean up temp VRT
+        try:
+            os.remove(temp_vrt)
+        except OSError:
+            pass
+
+        result = {"utm": utm, "rel_path": rel_path, "output_path": output_3857}
+
+        # Hillshade
+        if hillshade:
+            hs_path = output_3857.replace(".tif", "_hillshade.tif")
+            generate_hillshade(output_3857, hs_path)
+            result["hillshade"] = hs_path
+
+        return result
+    finally:
+        worker_conn.close()
 
 
 @dataclass
@@ -50,6 +232,9 @@ class BuildResult:
         plus ``ovr`` (str or None) for the overview file path.
     skipped : list[str]
         UTM zones that were already up to date.
+    failed : list[dict]
+        UTM zones that failed during parallel builds. Each dict has
+        ``utm`` (str) and ``reason`` (str) keys.
     missing_reset : int
         Number of UTM zones that were reset due to missing VRT files on disk.
     tile_resolution_filter : list[int] | None
@@ -59,6 +244,7 @@ class BuildResult:
     """
     built: list = field(default_factory=list)
     skipped: list = field(default_factory=list)
+    failed: list = field(default_factory=list)
     missing_reset: int = 0
     tile_resolution_filter: list = None
     vrt_resolution_target: float = None
@@ -69,6 +255,8 @@ def build_vrt(project_dir: str, data_source: str = None,
               vrt_resolution_target: float = None,
               tile_resolution_filter: list = None,
               hillshade: bool = False,
+              workers: int = None,
+              reproject: bool = False,
               debug: bool = False) -> BuildResult:
     """Build a flat GDAL VRT per UTM zone from all source tiles.
 
@@ -86,6 +274,14 @@ def build_vrt(project_dir: str, data_source: str = None,
         Only include tiles at these resolutions (meters).
     hillshade : bool
         If True, generate a hillshade GeoTIFF from the elevation band.
+    workers : int | None
+        Number of parallel worker processes for building UTM zones.
+        None or 1 = sequential.  Must be a positive integer at most
+        ``os.cpu_count()``.
+    reproject : bool
+        If True, reproject to EPSG:3857 (Web Mercator) GeoTIFFs instead
+        of building native UTM VRTs.  Uses a temporary VRT as an
+        intermediary for correct multi-resolution tile ordering.
     debug : bool
         If True, writes a diagnostic report to the project directory.
 
@@ -94,6 +290,15 @@ def build_vrt(project_dir: str, data_source: str = None,
     BuildResult
         Structured result with built, skipped, and missing_reset counts.
     """
+    if workers is not None:
+        if isinstance(workers, bool) or not isinstance(workers, int) or workers < 1:
+            raise ValueError(
+                f"workers must be a positive integer, got {workers!r}")
+        max_cpus = os.cpu_count() or 1
+        if workers > max_cpus:
+            raise ValueError(
+                f"workers ({workers}) exceeds available CPUs ({max_cpus})")
+
     project_dir = os.path.expanduser(project_dir)
     if not os.path.isabs(project_dir):
         msg = "Please use an absolute path for your project folder."
@@ -138,6 +343,13 @@ def build_vrt(project_dir: str, data_source: str = None,
     if vrt_resolution_target is not None:
         validate_vrt_resolution_target(vrt_resolution_target)
 
+    if reproject and vrt_resolution_target is not None:
+        raise ValueError(
+            "vrt_resolution_target cannot be used with reproject=True. "
+            "The output resolution is auto-determined from source tile "
+            "resolutions when reprojecting to EPSG:3857."
+        )
+
     report = None
     if debug:
         from nbs.bluetopo._internal.diagnostics import DebugReport
@@ -149,7 +361,8 @@ def build_vrt(project_dir: str, data_source: str = None,
         result = _run_build(project_dir, cfg, data_source, relative_to_vrt,
                             vrt_resolution_target, result, report,
                             tile_resolution_filter=tile_resolution_filter,
-                            hillshade=hillshade)
+                            hillshade=hillshade, workers=workers,
+                            reproject=reproject)
     except Exception:
         if report:
             report.capture_exception()
@@ -167,13 +380,18 @@ def build_vrt(project_dir: str, data_source: str = None,
 
 def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                vrt_resolution_target, result, report=None,
-               tile_resolution_filter=None, hillshade=False):
+               tile_resolution_filter=None, hillshade=False,
+               workers=None, reproject=False):
     """Core build pipeline, separated so the debug wrapper in build_vrt()
     can handle report lifecycle without re-indenting the main logic.
 
     Steps: connect DB → seed parameterized rows (if needed) → detect
     missing VRTs → build per-UTM VRTs with overviews and RATs →
     optionally generate hillshade GeoTIFFs.
+
+    When reproject=True, runs an alternative path: builds a temporary
+    UTM VRT (no overviews) as an intermediary, then warps to EPSG:3857
+    GeoTIFF with overviews and RAT.
     """
     start = datetime.datetime.now()
     print(f"[{_timestamp()}] {data_source}: Beginning work in project folder: {project_dir}\n")
@@ -183,9 +401,9 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
         report.set_conn(conn)
     try:
         vrt_dir_name = make_vrt_dir_name(data_source, tile_resolution_filter,
-                                         vrt_resolution_target)
+                                         vrt_resolution_target, reproject)
         params_key = make_params_key(data_source, tile_resolution_filter,
-                                     vrt_resolution_target)
+                                     vrt_resolution_target, reproject)
 
         if params_key:
             if tile_resolution_filter:
@@ -193,6 +411,8 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                       f"{make_resolution_label(tile_resolution_filter)}")
             if vrt_resolution_target is not None:
                 print(f"VRT resolution target: {vrt_resolution_target:g}m")
+            if reproject:
+                print("Reprojecting to EPSG:3857 (Web Mercator)")
             ensure_params_rows(conn, cfg, params_key)
 
         result.missing_reset = missing_utms(project_dir, conn, cfg, params_key)
@@ -217,116 +437,110 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
             print()
 
         if utms_to_build:
-            print(f"Building {len(utms_to_build)} utm vrt(s). This may take minutes "
-                  "or hours depending on the amount of tiles.")
-            for ub_utm in utms_to_build:
-                utm_start = datetime.datetime.now()
-                tiles = select_tiles_by_utm(project_dir, conn, ub_utm["utm"], cfg,
-                                            tile_resolution_filter=tile_resolution_filter)
-                if not tiles:
-                    continue
+            # Select the worker function and label based on mode
+            if reproject:
+                worker_fn = _reproject_utm_zone
+                label = "Reprojecting"
+                worker_args = lambda utm: (
+                    project_dir, cfg, data_source, utm, vrt_dir,
+                    vrt_dir_name, params_key, relative_to_vrt,
+                    tile_resolution_filter, hillshade)
+            else:
+                worker_fn = _build_utm_zone
+                label = "Building"
+                worker_args = lambda utm: (
+                    project_dir, cfg, data_source, utm, vrt_dir,
+                    vrt_dir_name, params_key, relative_to_vrt,
+                    vrt_resolution_target, tile_resolution_filter,
+                    hillshade)
 
-                print(f"Building utm{ub_utm['utm']} from {len(tiles)} source tile(s)...")
-                built_entry = {"utm": ub_utm["utm"]}
+            num_zones = len(utms_to_build)
+            use_parallel = workers is not None and workers > 1 and num_zones > 1
+            actual_workers = min(workers, num_zones) if use_parallel else 1
 
-                if cfg["subdatasets"]:
-                    # Multi-subdataset path (S102V22, S102V30):
-                    # Build one VRT per subdataset, then combine into a
-                    # single multi-band VRT with bands stacked via -separate.
-                    sd_vrt_paths = []
-                    fields = {"utm": ub_utm["utm"], "params_key": params_key}
-                    for sd_idx, sd in enumerate(cfg["subdatasets"]):
-                        suffix_label = f"_subdataset{sd_idx + 1}"
-                        tile_paths = build_tile_paths(tiles, project_dir, cfg, sd)
-                        if not tile_paths:
-                            continue
-                        factors = compute_overview_factors(
-                            tile_paths, vrt_resolution_target,
-                            overview_levels=cfg.get("overview_levels"),
-                            filter_coarsest=cfg.get("overview_filter_coarsest", True),
-                        )
-                        rel_path = os.path.join(vrt_dir_name,
-                                                f"{data_source}_Fetched_UTM{ub_utm['utm']}{sd['suffix']}{params_key}.vrt")
-                        utm_sd_vrt = os.path.join(project_dir, rel_path)
-                        create_vrt(tile_paths, utm_sd_vrt, factors or None, relative_to_vrt,
-                                   sd["band_descriptions"], vrt_resolution_target=vrt_resolution_target)
-                        sd_vrt_paths.append(utm_sd_vrt)
-                        fields[f"utm{suffix_label}_vrt"] = rel_path
-                        fields[f"utm{suffix_label}_ovr"] = None
-                        if os.path.isfile(os.path.join(project_dir, rel_path + ".ovr")):
-                            fields[f"utm{suffix_label}_ovr"] = rel_path + ".ovr"
-                        elif factors:
-                            raise RuntimeError(
-                                f"Overview failed to create for utm{ub_utm['utm']}. "
-                                "Please try again. If error persists, please contact NBS.")
+            print(f"{label} {num_zones} utm zone(s). "
+                  "This may take minutes or hours depending on the amount of tiles."
+                  + (f" Using {actual_workers} workers." if use_parallel else ""))
 
-                    # Combine per-subdataset VRTs into a single multi-band VRT
-                    rel_combined = os.path.join(vrt_dir_name,
-                                                f"{data_source}_Fetched_UTM{ub_utm['utm']}{params_key}.vrt")
-                    utm_combined_vrt = os.path.join(project_dir, rel_combined)
-                    combined_bands = []
-                    for sd in cfg["subdatasets"]:
-                        combined_bands.extend(sd["band_descriptions"])
-                    create_vrt(sd_vrt_paths, utm_combined_vrt, None, relative_to_vrt,
-                               combined_bands, separate=True)
-                    fields["utm_combined_vrt"] = rel_combined
+            if use_parallel:
+                zone_results = []
+                with concurrent.futures.ProcessPoolExecutor(
+                        max_workers=actual_workers) as executor:
+                    futures = {}
+                    for ub_utm in utms_to_build:
+                        print(f"  Submitting utm{ub_utm['utm']}...")
+                        future = executor.submit(
+                            worker_fn, *worker_args(ub_utm["utm"]))
+                        futures[future] = ub_utm["utm"]
 
-                    if cfg["has_rat"]:
-                        add_vrt_rat(conn, ub_utm["utm"], project_dir, utm_combined_vrt, cfg)
+                    for future in concurrent.futures.as_completed(futures):
+                        utm = futures[future]
+                        try:
+                            zone_result = future.result()
+                            if zone_result is not None:
+                                zone_results.append(zone_result)
+                                print(f"  utm{utm} complete")
+                        except Exception as e:
+                            result.failed.append({"utm": utm, "reason": str(e)})
+                            print(f"  utm{utm} FAILED: {e}")
 
-                    built_entry["hillshade"] = None
-                    if hillshade:
-                        hs_path = utm_combined_vrt.replace(".vrt", "_hillshade.tif")
-                        generate_hillshade(utm_combined_vrt, hs_path)
-                        built_entry["hillshade"] = hs_path
-
+                # DB updates sequentially (SQLite single-writer)
+                for zone_result in zone_results:
+                    if reproject:
+                        fields = {"utm_vrt": zone_result["rel_path"],
+                                  "utm_ovr": None,
+                                  "utm": zone_result["utm"],
+                                  "params_key": params_key}
+                    else:
+                        fields = zone_result["fields"]
                     update_utm(conn, fields, cfg)
-                    built_entry["vrt"] = os.path.join(project_dir, rel_combined)
-                    built_entry["ovr"] = None
-                else:
-                    # Single-dataset path (BlueTopo, Modeling, BAG, S102V21):
-                    # Build one VRT directly from all source tiles.
-                    tile_paths = build_tile_paths(tiles, project_dir, cfg)
-                    if not tile_paths:
+
+                    built_entry = {
+                        "utm": zone_result["utm"],
+                        "vrt": zone_result.get("vrt") or zone_result.get("output_path"),
+                        "ovr": zone_result.get("ovr"),
+                        "hillshade": zone_result.get("hillshade"),
+                    }
+                    result.built.append(built_entry)
+
+                if result.failed:
+                    failed_names = ", ".join(
+                        f"utm{entry['utm']}" for entry in result.failed)
+                    print(f"\n{len(result.failed)} zone(s) failed: {failed_names}")
+            else:
+                # Sequential processing
+                for ub_utm in utms_to_build:
+                    utm_start = datetime.datetime.now()
+                    utm = ub_utm["utm"]
+                    print(f"  {label} utm{utm}...")
+
+                    zone_result = worker_fn(*worker_args(utm))
+                    if zone_result is None:
                         continue
-                    factors = compute_overview_factors(
-                        tile_paths, vrt_resolution_target,
-                        overview_levels=cfg.get("overview_levels"),
-                        filter_coarsest=cfg.get("overview_filter_coarsest", True),
-                    )
-                    rel_path = os.path.join(vrt_dir_name,
-                                            f"{data_source}_Fetched_UTM{ub_utm['utm']}{params_key}.vrt")
-                    utm_vrt = os.path.join(project_dir, rel_path)
-                    create_vrt(tile_paths, utm_vrt, factors or None, relative_to_vrt,
-                               cfg["band_descriptions"], vrt_resolution_target=vrt_resolution_target)
 
-                    if cfg["has_rat"]:
-                        add_vrt_rat(conn, ub_utm["utm"], project_dir, utm_vrt, cfg)
-
-                    built_entry["hillshade"] = None
-                    if hillshade:
-                        hs_path = utm_vrt.replace(".vrt", "_hillshade.tif")
-                        generate_hillshade(utm_vrt, hs_path)
-                        built_entry["hillshade"] = hs_path
-
-                    fields = {"utm_vrt": rel_path, "utm_ovr": None,
-                              "utm": ub_utm["utm"], "params_key": params_key}
-                    built_entry["ovr"] = None
-                    ovr_path = os.path.join(project_dir, rel_path + ".ovr")
-                    if os.path.isfile(ovr_path):
-                        fields["utm_ovr"] = rel_path + ".ovr"
-                        built_entry["ovr"] = ovr_path
-                    elif factors:
-                        raise RuntimeError(
-                            f"Overview failed to create for utm{ub_utm['utm']}. "
-                            "Please try again. If error persists, please contact NBS.")
+                    # DB update immediately in sequential mode
+                    if reproject:
+                        fields = {"utm_vrt": zone_result["rel_path"],
+                                  "utm_ovr": None,
+                                  "utm": zone_result["utm"],
+                                  "params_key": params_key}
+                    else:
+                        fields = zone_result["fields"]
                     update_utm(conn, fields, cfg)
-                    built_entry["vrt"] = utm_vrt
 
-                result.built.append(built_entry)
-                print(f"utm{ub_utm['utm']} complete after {datetime.datetime.now() - utm_start}")
+                    built_entry = {
+                        "utm": zone_result["utm"],
+                        "vrt": zone_result.get("vrt") or zone_result.get("output_path"),
+                        "ovr": zone_result.get("ovr"),
+                        "hillshade": zone_result.get("hillshade"),
+                    }
+                    result.built.append(built_entry)
+                    print(f"  utm{utm} complete after "
+                          f"{datetime.datetime.now() - utm_start}")
         else:
-            print("UTM vrt(s) appear up to date with the most recently "
+            up_to_date_label = ("EPSG:3857 output(s)" if reproject
+                                else "UTM vrt(s)")
+            print(f"{up_to_date_label} appear up to date with the most recently "
                   f"fetched tiles.\nNote: deleting the {vrt_dir_name} folder will "
                   "allow you to recreate from scratch if necessary")
 
@@ -335,7 +549,8 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
             "SELECT utm FROM vrt_utm WHERE params_key = ?", (params_key,))
         all_utm_names = {row["utm"] for row in all_utms_cursor.fetchall()}
         built_utm_names = {e["utm"] for e in result.built}
-        result.skipped = sorted(all_utm_names - built_utm_names)
+        failed_utm_names = {f["utm"] for f in result.failed}
+        result.skipped = sorted(all_utm_names - built_utm_names - failed_utm_names)
 
         print(f"[{_timestamp()}] {data_source}: Operation complete after {datetime.datetime.now() - start}")
     finally:

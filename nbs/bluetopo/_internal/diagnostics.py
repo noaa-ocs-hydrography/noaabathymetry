@@ -16,6 +16,13 @@ import platform
 import sys
 import traceback
 
+from nbs.bluetopo._internal.config import (
+    get_built_flags,
+    get_disk_fields,
+    get_utm_file_columns,
+    get_verified_fields,
+)
+
 
 def _safe(fn):
     """Call *fn* and return its result, or an ``'ERROR: ...'`` string on failure."""
@@ -222,9 +229,6 @@ class DebugReport:
         """Section 5: tile counts (verified, unverified, pending) and UTM build status."""
         try:
             cursor = self.conn.cursor()
-            from nbs.bluetopo._internal.config import (
-                get_disk_fields, get_verified_fields, get_built_flags,
-            )
             disk_fields = get_disk_fields(self.cfg)
             verified_fields = get_verified_fields(self.cfg)
             built_flags = get_built_flags(self.cfg)
@@ -271,7 +275,6 @@ class DebugReport:
         """Section 6: per-tile anomalies (missing links, missing files, unverified)."""
         try:
             cursor = self.conn.cursor()
-            from nbs.bluetopo._internal.config import get_disk_fields, get_verified_fields
             disk_fields = get_disk_fields(self.cfg)
             verified_fields = get_verified_fields(self.cfg)
 
@@ -343,9 +346,6 @@ class DebugReport:
         """Section 7: VRT/OVR paths and build status per UTM zone."""
         try:
             cursor = self.conn.cursor()
-            from nbs.bluetopo._internal.config import (
-                get_utm_file_columns, get_built_flags,
-            )
             utm_cols = get_utm_file_columns(self.cfg)
             built_flags = get_built_flags(self.cfg)
 

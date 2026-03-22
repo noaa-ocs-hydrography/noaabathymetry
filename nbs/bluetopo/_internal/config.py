@@ -156,7 +156,7 @@ DATA_SOURCES = {
         },
         "rat_zero_fields": [],
         # Overviews
-        "overview_levels": [8, 16, 32, 64, 128],
+        "overview_levels": [8, 16, 32, 64, 128, 256],
         "overview_filter_coarsest": True,
     },
     # -------------------------------------------------------------------------
@@ -211,7 +211,7 @@ DATA_SOURCES = {
         },
         "rat_zero_fields": [],
         # Overviews
-        "overview_levels": [8, 16, 32, 64, 128],
+        "overview_levels": [8, 16, 32, 64, 128, 256],
         "overview_filter_coarsest": True,
     },
     # -------------------------------------------------------------------------
@@ -244,7 +244,7 @@ DATA_SOURCES = {
         "rat_fields": None,
         "rat_zero_fields": [],
         # Overviews
-        "overview_levels": [8, 16, 32, 64, 128],
+        "overview_levels": [8, 16, 32, 64, 128, 256],
         "overview_filter_coarsest": False,
     },
     # -------------------------------------------------------------------------
@@ -277,7 +277,7 @@ DATA_SOURCES = {
         "rat_fields": None,
         "rat_zero_fields": [],
         # Overviews
-        "overview_levels": [8, 16, 32, 64, 128],
+        "overview_levels": [8, 16, 32, 64, 128, 256],
         "overview_filter_coarsest": False,
     },
     # -------------------------------------------------------------------------
@@ -339,7 +339,7 @@ DATA_SOURCES = {
         },
         "rat_zero_fields": ["feature_size_var", "bathymetric_uncertainty_type"],
         # Overviews
-        "overview_levels": [8, 16, 32, 64, 128],
+        "overview_levels": [8, 16, 32, 64, 128, 256],
         "overview_filter_coarsest": False,
     },
     # -------------------------------------------------------------------------
@@ -402,7 +402,7 @@ DATA_SOURCES = {
         },
         "rat_zero_fields": ["feature_size_var", "type_of_bathymetric_estimation_uncertainty"],
         # Overviews
-        "overview_levels": [8, 16, 32, 64, 128],
+        "overview_levels": [8, 16, 32, 64, 128, 256],
         "overview_filter_coarsest": False,
     },
     # -------------------------------------------------------------------------
@@ -461,7 +461,7 @@ DATA_SOURCES = {
         },
         "rat_zero_fields": [],
         # Overviews
-        "overview_levels": [8, 16, 32, 64, 128],
+        "overview_levels": [8, 16, 32, 64, 128, 256],
         "overview_filter_coarsest": True,
     },
 }
@@ -526,7 +526,8 @@ def make_resolution_label(resolutions):
     return "_".join(f"{r}m" for r in sorted(resolutions))
 
 
-def make_vrt_dir_name(data_source, tile_resolution_filter=None, vrt_resolution_target=None):
+def make_vrt_dir_name(data_source, tile_resolution_filter=None,
+                      vrt_resolution_target=None, reproject=False):
     """Build the VRT output directory name from build parameters.
 
     Parameters
@@ -537,12 +538,14 @@ def make_vrt_dir_name(data_source, tile_resolution_filter=None, vrt_resolution_t
         Active resolution filter, appended as ``_4m_8m``.
     vrt_resolution_target : float | None
         Target pixel size, appended as ``_tr8m``.
+    reproject : bool
+        If True, appended as ``_3857`` for Web Mercator output.
 
     Returns
     -------
     str
         Directory name, e.g. ``'BlueTopo_VRT'``, ``'BlueTopo_VRT_4m_8m'``,
-        ``'BlueTopo_VRT_tr8m'``, ``'BlueTopo_VRT_4m_8m_tr8m'``.
+        ``'BlueTopo_VRT_3857'``, ``'BlueTopo_VRT_4m_8m_3857'``.
     """
     name = f"{data_source}_VRT"
     if tile_resolution_filter:
@@ -550,18 +553,21 @@ def make_vrt_dir_name(data_source, tile_resolution_filter=None, vrt_resolution_t
     if vrt_resolution_target is not None:
         res_str = f"{vrt_resolution_target:g}".replace(".", "p")
         name += f"_tr{res_str}m"
+    if reproject:
+        name += "_3857"
     return name
 
 
-def make_params_key(data_source, tile_resolution_filter=None, vrt_resolution_target=None):
+def make_params_key(data_source, tile_resolution_filter=None,
+                    vrt_resolution_target=None, reproject=False):
     """Derive the ``params_key`` string used to partition ``vrt_utm`` rows.
 
     The key is the suffix portion of the VRT directory name. Default
     (unparameterized) builds use ``""``; parameterized builds get a key
-    like ``"_4m_8m"`` or ``"_4m_8m_tr8m"``.
+    like ``"_4m_8m"`` or ``"_4m_8m_tr8m"`` or ``"_3857"``.
     """
     dir_name = make_vrt_dir_name(data_source, tile_resolution_filter,
-                                 vrt_resolution_target)
+                                 vrt_resolution_target, reproject)
     return dir_name.removeprefix(f"{data_source}_VRT")
 
 

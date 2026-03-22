@@ -77,6 +77,8 @@ build_vrt(
     vrt_resolution_target: float = None,
     tile_resolution_filter: list = None,
     hillshade: bool = False,
+    workers: int = None,
+    reproject: bool = False,
     debug: bool = False,
 ) -> BuildResult
 ```
@@ -93,6 +95,8 @@ Build a flat GDAL VRT per UTM zone from all source tiles.
 | `vrt_resolution_target` | `float \| None` | `None` | Force output pixel size in meters. Must be a positive number. |
 | `tile_resolution_filter` | `list[int] \| None` | `None` | Only include tiles at these resolutions (meters). Outputs to a separate VRT directory. |
 | `hillshade` | `bool` | `False` | If `True`, generate a hillshade GeoTIFF from the elevation band. |
+| `workers` | `int \| None` | `None` | Number of parallel worker processes for building UTM zones. `None` or `1` = sequential. Must not exceed `os.cpu_count()`. |
+| `reproject` | `bool` | `False` | If `True`, reproject to EPSG:3857 (Web Mercator) GeoTIFFs instead of native UTM VRTs. Outputs to a separate directory (e.g. `BlueTopo_VRT_3857/`). |
 | `debug` | `bool` | `False` | If `True`, writes a diagnostic report to the project directory. |
 
 **Returns:** [`BuildResult`](#buildresult)
@@ -170,6 +174,7 @@ Dataclass returned by `build_vrt`.
 |---|---|---|
 | `built` | `list[dict]` | UTM zones that were built. Each dict has `utm` (str), `vrt` (str), and `ovr` (str or None) keys. |
 | `skipped` | `list[str]` | UTM zone identifiers that were already up to date. |
+| `failed` | `list[dict]` | UTM zones that failed during parallel builds. Each dict has `utm` (str) and `reason` (str) keys. |
 | `missing_reset` | `int` | Number of UTM zones reset due to VRT files missing on disk. |
 | `tile_resolution_filter` | `list[int] \| None` | Resolution filter that was active, or `None` if unfiltered. |
 | `vrt_resolution_target` | `float \| None` | VRT pixel size override that was active, or `None` for native resolution. |
@@ -188,6 +193,7 @@ print(result)
 #          'ovr': '/home/user/bathymetry/BlueTopo_VRT/BlueTopo_Fetched_UTM19.vrt.ovr'}
 #     ],
 #     skipped=['17'],
+#     failed=[],
 #     missing_reset=0,
 #     tile_resolution_filter=None,
 #     vrt_resolution_target=None
@@ -234,7 +240,7 @@ fetch_tiles -d /home/user/bathymetry
 ### build_vrt command
 
 ```
-build_vrt -d DIR [-s SOURCE] [-r BOOL] [-t RESOLUTION] [--tile-resolution-filter N [N ...]] [--hillshade] [--debug]
+build_vrt -d DIR [-s SOURCE] [-r BOOL] [-t RESOLUTION] [--tile-resolution-filter N [N ...]] [--hillshade] [--workers N] [--reproject] [--debug]
 ```
 
 | Flag | Long form | Description |
@@ -245,6 +251,8 @@ build_vrt -d DIR [-s SOURCE] [-r BOOL] [-t RESOLUTION] [--tile-resolution-filter
 | `-t` | `--vrt-resolution-target` | Force output pixel size in meters (any positive number). |
 | | `--tile-resolution-filter` | Only include tiles at these resolutions (meters). Multiple values allowed. |
 | | `--hillshade` | Generate a hillshade GeoTIFF from the elevation band. |
+| | `--workers` | Number of parallel worker processes for building UTM zones. |
+| | `--reproject` | Reproject to EPSG:3857 (Web Mercator) GeoTIFFs instead of native UTM VRTs. |
 | | `--debug` | Write a diagnostic report to the project directory. |
 | `-v` | `--version` | Show version and exit. |
 
