@@ -38,13 +38,33 @@ except (AttributeError, ValueError, OSError):
     pass  # Windows or unsupported platform — keep GDAL's default
 
 
+def configure_gdal_for_worker(total_workers):
+    """Scale GDAL thread count and cache size for a multiprocessing worker.
+
+    When multiple worker processes each run GDAL operations, the default
+    ``ALL_CPUS`` thread setting causes oversubscription (N workers ×
+    cpu_count threads).  This function scales both thread count and
+    cache size proportionally.
+    """
+    cpus = os.cpu_count() or 1
+    threads = max(1, cpus // total_workers)
+    gdal.SetConfigOption("GDAL_NUM_THREADS", str(threads))
+    try:
+        phys_mem = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+        target = int(phys_mem * 0.15 / total_workers)
+        if target > 0:
+            gdal.SetCacheMax(target)
+    except (AttributeError, ValueError, OSError):
+        pass
+
+
 # ---------------------------------------------------------------------------
 # VRT creation
 # ---------------------------------------------------------------------------
 
 def create_vrt(files, vrt_path, levels, relative_to_vrt,
                band_descriptions=None, separate=False,
-               vrt_resolution_target=None):
+               vrt_resolution_target=None, resolution="highest"):
     """Build a single GDAL VRT file with optional overviews.
 
     Any existing VRT and ``.ovr`` at *vrt_path* are removed first.
@@ -66,8 +86,10 @@ def create_vrt(files, vrt_path, levels, relative_to_vrt,
     separate : bool
         If True, stack inputs as separate bands (used for combined VRTs).
     vrt_resolution_target : float | None
-        Force output pixel size in meters.  Uses ``-resolution highest``
-        when None.
+        Force output pixel size in meters.  Overrides *resolution* when set.
+    resolution : str
+        GDAL resolution strategy (``"highest"``, ``"lowest"``, ``"average"``).
+        Used when *vrt_resolution_target* is None.
     """
     files = copy.deepcopy(files)
     try:
@@ -83,7 +105,7 @@ def create_vrt(files, vrt_path, levels, relative_to_vrt,
         validate_vrt_resolution_target(vrt_resolution_target)
         opts_str += f' -resolution user -tr {vrt_resolution_target} {vrt_resolution_target}'
     else:
-        opts_str += ' -resolution highest'
+        opts_str += f' -resolution {resolution}'
     opts_str += ' -r near'
     vrt_options = gdal.BuildVRTOptions(options=opts_str)
     # BuildVRT resolves relative paths from cwd, so we chdir to the VRT's
@@ -169,19 +191,20 @@ def reproject_to_web_mercator(vrt_path, output_path, overview_factors=None):
     """
     if os.path.isfile(output_path):
         os.remove(output_path)
+    thread_str = gdal.GetConfigOption("GDAL_NUM_THREADS") or "ALL_CPUS"
     opts = gdal.WarpOptions(
         dstSRS="EPSG:3857",
         format="GTiff",
         resampleAlg="near",
         multithread=True,
-        warpOptions=["NUM_THREADS=ALL_CPUS"],
+        warpOptions=[f"NUM_THREADS={thread_str}", "SOURCE_EXTRA=5"],
         creationOptions=[
             "COMPRESS=DEFLATE",
             "TILED=YES",
             "BLOCKXSIZE=512",
             "BLOCKYSIZE=512",
             "BIGTIFF=YES",
-            "NUM_THREADS=ALL_CPUS",
+            f"NUM_THREADS={thread_str}",
         ],
     )
     gdal.Warp(output_path, vrt_path, options=opts)
@@ -192,14 +215,15 @@ def reproject_to_web_mercator(vrt_path, output_path, overview_factors=None):
     return output_path
 
 
-def compute_overview_factors(tile_paths, vrt_resolution_target=None,
+def compute_overview_factors(resolutions, vrt_resolution_target=None,
                              overview_levels=None, filter_coarsest=True):
     """Compute overview factors from source tile resolutions.
 
     Parameters
     ----------
-    tile_paths : list[str]
-        Paths to source raster files.
+    resolutions : set[int]
+        Tile resolutions in meters (from DB ``resolution`` column via
+        ``parse_resolution``).
     vrt_resolution_target : float | None
         Override native resolution for factor calculation.
     overview_levels : list[int]
@@ -210,13 +234,6 @@ def compute_overview_factors(tile_paths, vrt_resolution_target=None,
     """
     if overview_levels is None:
         raise ValueError("overview_levels must be provided")
-
-    resolutions = set()
-    for path in tile_paths:
-        ds = gdal.Open(path)
-        gt = ds.GetGeoTransform()
-        resolutions.add(round(abs(gt[1])))
-        ds = None
 
     if not resolutions:
         return []
@@ -347,29 +364,36 @@ def build_tile_paths(tiles, project_dir, cfg, subdataset=None):
 
 
 # ---------------------------------------------------------------------------
-# RAT aggregation (split into discovery / read / write)
+# RAT aggregation
 # ---------------------------------------------------------------------------
 
-def _discover_rat_fields(tiles, project_dir, cfg, expected_fields):
-    """Pass 1: determine common RAT field subset across all tiles.
+def _discover_and_read_rat_data_direct(tiles, project_dir, cfg, expected_fields):
+    """Discover common RAT fields and read data in a single pass (direct method).
 
-    Only used for the ``"direct"`` RAT open method.  Intersects the
-    expected field set with the actual columns found in each tile's RAT,
-    so the aggregated output only contains fields present in *all* tiles.
+    Opens each tile exactly once: caches column names and row data,
+    progressively intersects ``expected_fields`` with actual columns,
+    then reads cached data using the finalized field mapping.
 
     Returns
     -------
-    tuple[dict, set[str]]
-        ``(filtered_expected_fields, dropped_field_names)``
+    tuple[dict, set[str], list[list]]
+        ``(filtered_expected_fields, dropped_field_names, survey_rows)``
     """
     rat_band = cfg.get("rat_band", 3)
     disk_fields = get_disk_fields(cfg)
     dropped = set()
 
+    # Phase 1: open each tile once, cache RAT data, intersect fields
+    tile_cache = []  # list of (actual_names, rows)
     for tile in tiles:
         if any(tile.get(df) is None or not os.path.isfile(os.path.join(project_dir, tile[df]))
                for df in disk_fields):
-            continue
+            missing = [df for df in disk_fields
+                       if tile.get(df) is None or not os.path.isfile(os.path.join(project_dir, tile[df]))]
+            raise FileNotFoundError(
+                f"Tile '{tile.get('tilename', '?')}' is missing file(s) for "
+                f"field(s) {missing}. Tiles must be filtered for disk existence "
+                f"before RAT aggregation.")
         gtiff = os.path.join(project_dir, tile[disk_fields[0]])
         ds = gdal.Open(gtiff)
         contrib = ds.GetRasterBand(rat_band)
@@ -377,26 +401,61 @@ def _discover_rat_fields(tiles, project_dir, cfg, expected_fields):
         if rat_n is None:
             ds = None
             continue
-        actual_set = set(
+        actual_names = [
             rat_n.GetNameOfCol(i).lower()
             for i in range(rat_n.GetColumnCount())
-        )
+        ]
+        rows = [
+            [rat_n.GetValueAsString(r, c) for c in range(len(actual_names))]
+            for r in range(rat_n.GetRowCount())
+        ]
         ds = None
+
+        actual_set = set(actual_names)
         before = set(expected_fields.keys())
         expected_fields = {
             k: v for k, v in expected_fields.items() if k in actual_set
         }
         dropped |= before - set(expected_fields.keys())
 
-    return expected_fields, dropped
+        tile_cache.append((actual_names, rows))
+
+    # Phase 2: read cached data with finalized field mapping
+    exp_fields = list(expected_fields.keys())
+    rat_zero_fields = cfg.get("rat_zero_fields", [])
+    zero_indices = {i for i, name in enumerate(exp_fields) if name in rat_zero_fields}
+
+    surveys = []
+    survey_index = {}  # value column -> index into surveys list
+    for actual_names, rows in tile_cache:
+        if not exp_fields:
+            continue
+        col_map = [actual_names.index(name) for name in exp_fields]
+        for row in rows:
+            key = row[col_map[0]]
+            if key in survey_index:
+                idx = survey_index[key]
+                surveys[idx][1] = int(surveys[idx][1]) + int(row[col_map[1]])
+                if surveys[idx][1] > 2147483647:
+                    surveys[idx][1] = 2147483647
+                continue
+            curr = []
+            for out_idx, mapped_col in enumerate(col_map):
+                entry_val = row[mapped_col]
+                if out_idx in zero_indices:
+                    entry_val = 0
+                curr.append(entry_val)
+            survey_index[key] = len(surveys)
+            surveys.append(curr)
+
+    return expected_fields, dropped, surveys
 
 
-def _read_rat_data(tiles, project_dir, cfg, exp_fields, expected_fields):
-    """Pass 2: read RAT data from all tiles using finalized field mapping.
+def _read_rat_data_s102(tiles, project_dir, cfg, exp_fields, expected_fields):
+    """Read RAT data from S102 tiles using positional column mapping.
 
-    Deduplicates surveys by the ``value`` column (first field).  For
-    the ``"direct"`` method, duplicate rows have their ``count`` field
-    summed (capped at INT32_MAX).
+    Deduplicates surveys by the ``value`` column (first field).
+    Duplicate rows are skipped (no count summing — S102 has no count column).
 
     Parameters
     ----------
@@ -416,56 +475,38 @@ def _read_rat_data(tiles, project_dir, cfg, exp_fields, expected_fields):
     list[list]
         Survey rows, each a list of values matching *exp_fields* order.
     """
-    rat_open_method = cfg["rat_open_method"]
-    rat_band = cfg.get("rat_band", 3)
     rat_zero_fields = cfg.get("rat_zero_fields", [])
     zero_indices = {i for i, name in enumerate(expected_fields) if name in rat_zero_fields}
     disk_fields = get_disk_fields(cfg)
+
+    quality_sd = next(sd for sd in cfg["subdatasets"] if sd.get("s102_protocol"))
+    quality_name = quality_sd["name"]
 
     surveys = []
     survey_index = {}  # value column -> index into surveys list
     for tile in tiles:
         if any(tile.get(df) is None or not os.path.isfile(os.path.join(project_dir, tile[df]))
                for df in disk_fields):
+            missing = [df for df in disk_fields
+                       if tile.get(df) is None or not os.path.isfile(os.path.join(project_dir, tile[df]))]
+            raise FileNotFoundError(
+                f"Tile '{tile.get('tilename', '?')}' is missing file(s) for "
+                f"field(s) {missing}. Tiles must be filtered for disk existence "
+                f"before RAT aggregation.")
+        gtiff = os.path.join(project_dir, tile[disk_fields[0]]).replace('\\', '/')
+        ds = gdal.Open(f'S102:"{gtiff}":{quality_name}')
+        contrib = ds.GetRasterBand(1)
+        rat_n = contrib.GetDefaultRAT()
+        if rat_n is None:
+            ds = None
             continue
-
-        if rat_open_method == "direct":
-            gtiff = os.path.join(project_dir, tile[disk_fields[0]])
-            ds = gdal.Open(gtiff)
-            contrib = ds.GetRasterBand(rat_band)
-            rat_n = contrib.GetDefaultRAT()
-            if rat_n is None:
-                ds = None
-                continue
-            actual_names = [
-                rat_n.GetNameOfCol(i).lower()
-                for i in range(rat_n.GetColumnCount())
-            ]
-            col_map = [actual_names.index(name) for name in exp_fields]
-        elif rat_open_method == "s102_quality":
-            quality_sd = next(sd for sd in cfg["subdatasets"] if sd.get("s102_protocol"))
-            quality_name = quality_sd["name"]
-            gtiff = os.path.join(project_dir, tile[disk_fields[0]]).replace('\\', '/')
-            ds = gdal.Open(f'S102:"{gtiff}":{quality_name}')
-            contrib = ds.GetRasterBand(1)
-            rat_n = contrib.GetDefaultRAT()
-            if rat_n is None:
-                ds = None
-                continue
-            actual_count = rat_n.GetColumnCount()
-            usable = min(actual_count, len(exp_fields))
-            col_map = list(range(usable))
-        else:
-            continue
+        actual_count = rat_n.GetColumnCount()
+        usable = min(actual_count, len(exp_fields))
+        col_map = list(range(usable))
 
         for row in range(rat_n.GetRowCount()):
             key = rat_n.GetValueAsString(row, col_map[0])
             if key in survey_index:
-                if rat_open_method == "direct":
-                    idx = survey_index[key]
-                    surveys[idx][1] = int(surveys[idx][1]) + rat_n.GetValueAsInt(row, col_map[1])
-                    if surveys[idx][1] > 2147483647:
-                        surveys[idx][1] = 2147483647
                 continue
             curr = []
             for out_idx, mapped_col in enumerate(col_map):
@@ -529,12 +570,23 @@ def _write_rat(vrt_path, surveys, expected_fields, rat_band):
     vrt_ds = None
 
 
-def add_vrt_rat(conn, utm, project_dir, vrt_path, cfg):
-    """Build and attach an aggregated RAT to a UTM VRT from per-tile RATs.
+def add_vrt_rat(tiles, project_dir, vrt_path, cfg):
+    """Build and attach an aggregated RAT to a VRT from per-tile RATs.
 
-    Runs the three-pass RAT pipeline: discover common fields, read data
-    from all tiles, write combined RAT.  No-op if ``cfg["has_rat"]`` is
-    False.
+    Runs the RAT pipeline: discover common fields, read data from all
+    tiles, write combined RAT.  No-op if ``cfg["has_rat"]`` is False.
+
+    Parameters
+    ----------
+    tiles : list[dict]
+        Tile rows already filtered for disk existence (from
+        ``select_tiles_by_utm``).
+    project_dir : str
+        Absolute path to the project directory.
+    vrt_path : str
+        Path to the VRT file to attach the RAT to.
+    cfg : dict
+        Data source configuration.
     """
     if not cfg["has_rat"]:
         return
@@ -542,31 +594,29 @@ def add_vrt_rat(conn, utm, project_dir, vrt_path, cfg):
     rat_open_method = cfg["rat_open_method"]
     rat_band = cfg.get("rat_band", 3)
 
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM tiles WHERE utm = ?", (utm,))
-    tiles = [dict(row) for row in cursor.fetchall()]
-
-    # Pass 1: discover common fields (direct method only)
-    dropped_fields = set()
     if rat_open_method == "direct":
-        expected_fields, dropped_fields = _discover_rat_fields(
-            tiles, project_dir, cfg, expected_fields)
-    exp_fields = list(expected_fields.keys())
+        expected_fields, dropped_fields, surveys = \
+            _discover_and_read_rat_data_direct(
+                tiles, project_dir, cfg, expected_fields)
+    else:
+        # s102_quality: single pass, no field discovery needed
+        dropped_fields = set()
+        exp_fields = list(expected_fields.keys())
+        surveys = _read_rat_data_s102(
+            tiles, project_dir, cfg, exp_fields, expected_fields)
 
-    # Pass 2: read RAT data
-    surveys = _read_rat_data(tiles, project_dir, cfg, exp_fields, expected_fields)
-
-    # Trim expected_fields if surveys are narrower (s102_quality safety)
-    if surveys:
-        survey_width = len(surveys[0])
-        if survey_width < len(expected_fields):
-            expected_fields = dict(list(expected_fields.items())[:survey_width])
+        # Trim expected_fields if surveys are narrower (s102_quality safety)
+        if surveys:
+            survey_width = len(surveys[0])
+            if survey_width < len(expected_fields):
+                expected_fields = dict(
+                    list(expected_fields.items())[:survey_width])
 
     if dropped_fields:
         print(f"Warning: RAT field(s) {sorted(dropped_fields)} were not present "
               f"in all tiles and have been excluded from the aggregated RAT.")
 
-    # Pass 3: write RAT
+    # Write RAT
     _write_rat(vrt_path, surveys, expected_fields, rat_band)
 
 

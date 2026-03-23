@@ -22,6 +22,7 @@ from nbs.bluetopo._internal.config import (
     make_resolution_label,
     make_vrt_dir_name,
     make_params_key,
+    parse_resolution,
     validate_vrt_resolution_target,
     _timestamp,
     resolve_data_source,
@@ -31,6 +32,7 @@ from nbs.bluetopo._internal.vrt import (
     add_vrt_rat,
     build_tile_paths,
     compute_overview_factors,
+    configure_gdal_for_worker,
     create_vrt,
     ensure_params_rows,
     generate_hillshade,
@@ -45,13 +47,15 @@ from nbs.bluetopo._internal.vrt import (
 def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
                      vrt_dir_name, params_key, relative_to_vrt,
                      vrt_resolution_target, tile_resolution_filter,
-                     hillshade):
+                     hillshade, total_workers=1):
     """Build one UTM zone VRT.  Designed to run in a worker process.
 
     Opens a read-only DB connection for tile selection and RAT
     aggregation (schema migration is already done by the main process).
     Returns a result dict for the main process to handle DB updates.
     """
+    if total_workers > 1:
+        configure_gdal_for_worker(total_workers)
     db_path = os.path.join(project_dir, f"{cfg['canonical_name'].lower()}_registry.db")
     worker_conn = sqlite3.connect(db_path)
     worker_conn.row_factory = sqlite3.Row
@@ -61,8 +65,18 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
         if not tiles:
             return None
 
+        tile_resolutions = {parse_resolution(t.get("resolution")) for t in tiles}
+        tile_resolutions.discard(None)
+
         if cfg["subdatasets"]:
             # Multi-subdataset path (S102V22, S102V30)
+            # Compute overview factors once — all subdatasets share the same grid resolution.
+            factors = compute_overview_factors(
+                resolutions=tile_resolutions,
+                vrt_resolution_target=vrt_resolution_target,
+                overview_levels=cfg.get("overview_levels"),
+                filter_coarsest=cfg.get("overview_filter_coarsest", True),
+            )
             sd_vrt_paths = []
             fields = {"utm": utm, "params_key": params_key}
             for sd_idx, sd in enumerate(cfg["subdatasets"]):
@@ -70,11 +84,6 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
                 tile_paths = build_tile_paths(tiles, project_dir, cfg, sd)
                 if not tile_paths:
                     continue
-                factors = compute_overview_factors(
-                    tile_paths, vrt_resolution_target,
-                    overview_levels=cfg.get("overview_levels"),
-                    filter_coarsest=cfg.get("overview_filter_coarsest", True),
-                )
                 rel_path = os.path.join(vrt_dir_name,
                                         f"{data_source}_Fetched_UTM{utm}{sd['suffix']}{params_key}.vrt")
                 utm_sd_vrt = os.path.join(project_dir, rel_path)
@@ -101,7 +110,7 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
             fields["utm_combined_vrt"] = rel_combined
 
             if cfg["has_rat"]:
-                add_vrt_rat(worker_conn, utm, project_dir, utm_combined_vrt, cfg)
+                add_vrt_rat(tiles, project_dir, utm_combined_vrt, cfg)
 
             result = {"utm": utm, "fields": fields,
                       "vrt": os.path.join(project_dir, rel_combined), "ovr": None}
@@ -116,7 +125,8 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
             if not tile_paths:
                 return None
             factors = compute_overview_factors(
-                tile_paths, vrt_resolution_target,
+                resolutions=tile_resolutions,
+                vrt_resolution_target=vrt_resolution_target,
                 overview_levels=cfg.get("overview_levels"),
                 filter_coarsest=cfg.get("overview_filter_coarsest", True),
             )
@@ -127,7 +137,7 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
                        cfg["band_descriptions"], vrt_resolution_target=vrt_resolution_target)
 
             if cfg["has_rat"]:
-                add_vrt_rat(worker_conn, utm, project_dir, utm_vrt, cfg)
+                add_vrt_rat(tiles, project_dir, utm_vrt, cfg)
 
             fields = {"utm_vrt": rel_path, "utm_ovr": None,
                       "utm": utm, "params_key": params_key}
@@ -154,13 +164,16 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
 
 def _reproject_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
                          vrt_dir_name, params_key, relative_to_vrt,
-                         tile_resolution_filter, hillshade):
+                         tile_resolution_filter, hillshade,
+                         total_workers=1):
     """Reproject one UTM zone to EPSG:3857.  Designed to run in a worker process.
 
     Opens a read-only DB connection for tile selection and RAT
     aggregation (schema migration is already done by the main process).
     Returns a result dict for the main process to handle DB updates.
     """
+    if total_workers > 1:
+        configure_gdal_for_worker(total_workers)
     db_path = os.path.join(project_dir, f"{cfg['canonical_name'].lower()}_registry.db")
     worker_conn = sqlite3.connect(db_path)
     worker_conn.row_factory = sqlite3.Row
@@ -173,6 +186,9 @@ def _reproject_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
         tile_paths = build_tile_paths(tiles, project_dir, cfg)
         if not tile_paths:
             return None
+
+        tile_resolutions = {parse_resolution(t.get("resolution")) for t in tiles}
+        tile_resolutions.discard(None)
 
         band_descs = cfg.get("band_descriptions")
         if cfg["subdatasets"]:
@@ -188,7 +204,7 @@ def _reproject_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
 
         # Compute overview factors
         factors = compute_overview_factors(
-            tile_paths, None,
+            resolutions=tile_resolutions,
             overview_levels=[16, 32, 64, 128, 256],
             filter_coarsest=False,
         )
@@ -202,7 +218,7 @@ def _reproject_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
 
         # Add RAT
         if cfg["has_rat"]:
-            add_vrt_rat(worker_conn, utm, project_dir, output_3857, cfg)
+            add_vrt_rat(tiles, project_dir, output_3857, cfg)
 
         # Clean up temp VRT
         try:
@@ -446,7 +462,7 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                 worker_args = lambda utm: (
                     project_dir, cfg, data_source, utm, vrt_dir,
                     vrt_dir_name, params_key, relative_to_vrt,
-                    tile_resolution_filter, hillshade)
+                    tile_resolution_filter, hillshade, actual_workers)
             else:
                 worker_fn = _build_utm_zone
                 label = "Building"
@@ -454,7 +470,7 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                     project_dir, cfg, data_source, utm, vrt_dir,
                     vrt_dir_name, params_key, relative_to_vrt,
                     vrt_resolution_target, tile_resolution_filter,
-                    hillshade)
+                    hillshade, actual_workers)
 
             num_zones = len(utms_to_build)
             use_parallel = workers is not None and workers > 1 and num_zones > 1

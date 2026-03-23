@@ -99,137 +99,113 @@ class TestCreateVrt:
 class TestComputeOverviewFactors:
     LEVELS = [8, 16, 32, 64, 128, 256]
 
-    def test_mixed_resolutions(self, make_geotiff, tmp_path):
+    def test_mixed_resolutions(self):
         """2m + 16m tiles: targets above coarsest (16m) = 32, 64, 128, 256.
 
         Factors relative to native 2m: 32/2=16, 64/2=32, 128/2=64, 256/2=128.
         """
-        t_2m = make_geotiff("tile_2m.tif", bands=1, pixel_size=2)
-        t_16m = make_geotiff("tile_16m.tif", bands=1, pixel_size=16)
-        factors = compute_overview_factors([t_2m, t_16m],
-                                          overview_levels=self.LEVELS)
+        factors = compute_overview_factors({2, 16}, overview_levels=self.LEVELS)
         assert factors == [16, 32, 64, 128]
 
-    def test_mixed_4m_16m(self, make_geotiff, tmp_path):
+    def test_mixed_4m_16m(self):
         """4m + 16m tiles: targets above coarsest (16m) = 32, 64, 128, 256.
 
         Factors relative to native 4m: 32/4=8, 64/4=16, 128/4=32, 256/4=64.
         """
-        t_4m = make_geotiff("tile_4m.tif", bands=1, pixel_size=4)
-        t_16m = make_geotiff("tile_16m.tif", bands=1, pixel_size=16)
-        factors = compute_overview_factors([t_4m, t_16m],
-                                          overview_levels=self.LEVELS)
+        factors = compute_overview_factors({4, 16}, overview_levels=self.LEVELS)
         assert factors == [8, 16, 32, 64]
 
-    def test_all_4m_tiles(self, make_geotiff, tmp_path):
+    def test_all_4m_tiles(self):
         """All 4m tiles: coarsest is 4m, targets above = 8, 16, 32, 64, 128, 256.
 
         Factors relative to 4m: 2, 4, 8, 16, 32, 64.
         """
-        t1 = make_geotiff("tile_a.tif", bands=1, pixel_size=4)
-        t2 = make_geotiff("tile_b.tif", bands=1, pixel_size=4)
-        factors = compute_overview_factors([t1, t2],
-                                          overview_levels=self.LEVELS)
+        factors = compute_overview_factors({4}, overview_levels=self.LEVELS)
         assert factors == [2, 4, 8, 16, 32, 64]
 
-    def test_same_resolution_16m(self, make_geotiff, tmp_path):
+    def test_same_resolution_16m(self):
         """All 16m tiles: targets above coarsest (16m) = 32, 64, 128, 256.
 
         Factors relative to 16m: 2, 4, 8, 16.
         """
-        t1 = make_geotiff("tile_a.tif", bands=1, pixel_size=16)
-        t2 = make_geotiff("tile_b.tif", bands=1, pixel_size=16)
-        factors = compute_overview_factors([t1, t2],
-                                          overview_levels=self.LEVELS)
+        factors = compute_overview_factors({16}, overview_levels=self.LEVELS)
         assert factors == [2, 4, 8, 16]
 
-    def test_vrt_resolution_target_override(self, make_geotiff, tmp_path):
+    def test_vrt_resolution_target_override(self):
         """vrt_resolution_target=8 with 2m+16m tiles.
 
         Targets above coarsest (16m): 32, 64, 128, 256.
         Factors relative to native=8: 32/8=4, 64/8=8, 128/8=16, 256/8=32.
         """
-        t_2m = make_geotiff("tile_2m.tif", bands=1, pixel_size=2)
-        t_16m = make_geotiff("tile_16m.tif", bands=1, pixel_size=16)
-        factors = compute_overview_factors([t_2m, t_16m], vrt_resolution_target=8,
+        factors = compute_overview_factors({2, 16}, vrt_resolution_target=8,
                                           overview_levels=self.LEVELS)
         assert factors == [4, 8, 16, 32]
 
-    def test_empty_tile_list(self):
-        """Empty tile list returns empty factors."""
-        factors = compute_overview_factors([], overview_levels=self.LEVELS)
+    def test_empty_resolutions(self):
+        """Empty resolutions returns empty factors."""
+        factors = compute_overview_factors(set(), overview_levels=self.LEVELS)
         assert factors == []
 
     def test_none_overview_levels_raises(self):
         """overview_levels=None raises ValueError."""
         with pytest.raises(ValueError, match="overview_levels must be provided"):
-            compute_overview_factors([])
+            compute_overview_factors(set())
 
-    def test_filtered(self, make_geotiff, tmp_path):
+    def test_filtered(self):
         """filter_coarsest=True with 4m+16m: targets above 16m = [32,64,128,256].
 
         Factors relative to 4m: 32/4=8, 64/4=16, 128/4=32, 256/4=64.
         """
-        t_4m = make_geotiff("tile_4m.tif", bands=1, pixel_size=4)
-        t_16m = make_geotiff("tile_16m.tif", bands=1, pixel_size=16)
         factors = compute_overview_factors(
-            [t_4m, t_16m],
+            {4, 16},
             overview_levels=self.LEVELS,
             filter_coarsest=True,
         )
         assert factors == [8, 16, 32, 64]
 
-    def test_unfiltered(self, make_geotiff, tmp_path):
+    def test_unfiltered(self):
         """filter_coarsest=False with 4m+16m: all levels are candidates.
 
         Factors relative to 4m: 8/4=2, 16/4=4, 32/4=8, 64/4=16, 128/4=32, 256/4=64.
         """
-        t_4m = make_geotiff("tile_4m.tif", bands=1, pixel_size=4)
-        t_16m = make_geotiff("tile_16m.tif", bands=1, pixel_size=16)
         factors = compute_overview_factors(
-            [t_4m, t_16m],
+            {4, 16},
             overview_levels=self.LEVELS,
             filter_coarsest=False,
         )
         assert factors == [2, 4, 8, 16, 32, 64]
 
-    def test_filtered_single_res(self, make_geotiff, tmp_path):
+    def test_filtered_single_res(self):
         """filter_coarsest=True with all 4m: targets above 4m = [8,16,32,64,128,256].
 
         Factors relative to 4m: 2, 4, 8, 16, 32, 64.
         """
-        t1 = make_geotiff("tile_a.tif", bands=1, pixel_size=4)
-        t2 = make_geotiff("tile_b.tif", bands=1, pixel_size=4)
         factors = compute_overview_factors(
-            [t1, t2],
+            {4},
             overview_levels=self.LEVELS,
             filter_coarsest=True,
         )
         assert factors == [2, 4, 8, 16, 32, 64]
 
-    def test_filtered_only_16m(self, make_geotiff, tmp_path):
+    def test_filtered_only_16m(self):
         """filter_coarsest=True with all 16m: targets above 16m = [32,64,128,256].
 
         Factors relative to 16m: 2, 4, 8, 16.
         """
-        t1 = make_geotiff("tile_a.tif", bands=1, pixel_size=16)
-        t2 = make_geotiff("tile_b.tif", bands=1, pixel_size=16)
         factors = compute_overview_factors(
-            [t1, t2],
+            {16},
             overview_levels=self.LEVELS,
             filter_coarsest=True,
         )
         assert factors == [2, 4, 8, 16]
 
-    def test_unfiltered_only_16m(self, make_geotiff, tmp_path):
+    def test_unfiltered_only_16m(self):
         """filter_coarsest=False with all 16m: all levels, but factor < 2 filtered.
 
         Factors relative to 16m: 8/16<1(skip), 16/16=1(skip), 32/16=2, 64/16=4, 128/16=8, 256/16=16.
         """
-        t1 = make_geotiff("tile_a.tif", bands=1, pixel_size=16)
-        t2 = make_geotiff("tile_b.tif", bands=1, pixel_size=16)
         factors = compute_overview_factors(
-            [t1, t2],
+            {16},
             overview_levels=self.LEVELS,
             filter_coarsest=False,
         )

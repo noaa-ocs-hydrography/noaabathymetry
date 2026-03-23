@@ -6,7 +6,6 @@ import pytest
 from osgeo import gdal
 
 from nbs.bluetopo._internal.config import get_config, get_local_config, KNOWN_RAT_FIELDS
-from nbs.bluetopo._internal.db import connect as connect_to_survey_registry
 from nbs.bluetopo._internal.vrt import add_vrt_rat, create_vrt
 
 # Minimal RAT fields for testing (subset of BlueTopo)
@@ -26,13 +25,12 @@ def _make_bt_cfg():
 
 
 class TestAddVrtRat:
-    def test_noop_when_no_rat(self, registry_db):
+    def test_noop_when_no_rat(self):
         cfg = get_config("bag")
-        conn, project_dir = registry_db(cfg)
         # Should return immediately without error
-        add_vrt_rat(conn, "19", project_dir, "dummy.vrt", cfg)
+        add_vrt_rat([], "/dummy", "dummy.vrt", cfg)
 
-    def test_direct_method_writes_rat(self, make_geotiff, tmp_path, registry_db):
+    def test_direct_method_writes_rat(self, make_geotiff, tmp_path):
         cfg = _make_bt_cfg()
         project_dir = str(tmp_path)
         rat_entries = [
@@ -44,17 +42,15 @@ class TestAddVrtRat:
             rat_entries=rat_entries, rat_fields=MINI_RAT_FIELDS, rat_band=3,
         )
         rel_tif = os.path.relpath(tif, project_dir)
-
-        conn, _ = registry_db(cfg, tiles=[
+        tiles = [
             {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel_tif, "rat_disk": rel_tif},
-        ])
+        ]
 
-        # Create a VRT that we can write the RAT to
         vrt_path = str(tmp_path / "utm19.vrt")
         create_vrt([tif], vrt_path, None, False, ["Elevation", "Uncertainty", "Contributor"])
 
-        add_vrt_rat(conn, "19", project_dir, vrt_path, cfg)
+        add_vrt_rat(tiles, project_dir, vrt_path, cfg)
 
         ds = gdal.Open(vrt_path, 0)
         band = ds.GetRasterBand(3)
@@ -64,7 +60,7 @@ class TestAddVrtRat:
         assert rat.GetColumnCount() == len(MINI_RAT_FIELDS)
         ds = None
 
-    def test_survey_dedup_sums_counts(self, make_geotiff, tmp_path, registry_db):
+    def test_survey_dedup_sums_counts(self, make_geotiff, tmp_path):
         cfg = _make_bt_cfg()
         project_dir = str(tmp_path)
 
@@ -82,18 +78,17 @@ class TestAddVrtRat:
         )
         rel1 = os.path.relpath(tif1, project_dir)
         rel2 = os.path.relpath(tif2, project_dir)
-
-        conn, _ = registry_db(cfg, tiles=[
+        tiles = [
             {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel1, "rat_disk": rel1},
             {"tilename": "T2", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel2, "rat_disk": rel2},
-        ])
+        ]
 
         vrt_path = str(tmp_path / "utm19.vrt")
         create_vrt([tif1, tif2], vrt_path, None, False,
                    ["Elevation", "Uncertainty", "Contributor"])
-        add_vrt_rat(conn, "19", project_dir, vrt_path, cfg)
+        add_vrt_rat(tiles, project_dir, vrt_path, cfg)
 
         ds = gdal.Open(vrt_path, 0)
         band = ds.GetRasterBand(3)
@@ -103,7 +98,7 @@ class TestAddVrtRat:
         assert rat.GetValueAsInt(0, 1) == 250
         ds = None
 
-    def test_pixel_count_cap(self, make_geotiff, tmp_path, registry_db):
+    def test_pixel_count_cap(self, make_geotiff, tmp_path):
         cfg = _make_bt_cfg()
         project_dir = str(tmp_path)
         max_int = 2147483647
@@ -121,18 +116,17 @@ class TestAddVrtRat:
         )
         rel1 = os.path.relpath(tif1, project_dir)
         rel2 = os.path.relpath(tif2, project_dir)
-
-        conn, _ = registry_db(cfg, tiles=[
+        tiles = [
             {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel1, "rat_disk": rel1},
             {"tilename": "T2", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel2, "rat_disk": rel2},
-        ])
+        ]
 
         vrt_path = str(tmp_path / "utm19.vrt")
         create_vrt([tif1, tif2], vrt_path, None, False,
                    ["Elevation", "Uncertainty", "Contributor"])
-        add_vrt_rat(conn, "19", project_dir, vrt_path, cfg)
+        add_vrt_rat(tiles, project_dir, vrt_path, cfg)
 
         ds = gdal.Open(vrt_path, 0)
         band = ds.GetRasterBand(3)
@@ -140,7 +134,7 @@ class TestAddVrtRat:
         assert rat.GetValueAsInt(0, 1) == max_int
         ds = None
 
-    def test_column_types(self, make_geotiff, tmp_path, registry_db):
+    def test_column_types(self, make_geotiff, tmp_path):
         cfg = _make_bt_cfg()
         project_dir = str(tmp_path)
         rat_entries = [[1, 100, "SURVEY_A", 80]]
@@ -149,16 +143,15 @@ class TestAddVrtRat:
             rat_entries=rat_entries, rat_fields=MINI_RAT_FIELDS, rat_band=3,
         )
         rel = os.path.relpath(tif, project_dir)
-
-        conn, _ = registry_db(cfg, tiles=[
+        tiles = [
             {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel, "rat_disk": rel},
-        ])
+        ]
 
         vrt_path = str(tmp_path / "utm19.vrt")
         create_vrt([tif], vrt_path, None, False,
                    ["Elevation", "Uncertainty", "Contributor"])
-        add_vrt_rat(conn, "19", project_dir, vrt_path, cfg)
+        add_vrt_rat(tiles, project_dir, vrt_path, cfg)
 
         ds = gdal.Open(vrt_path, 0)
         band = ds.GetRasterBand(3)
@@ -169,27 +162,21 @@ class TestAddVrtRat:
         assert rat.GetTypeOfCol(3) == gdal.GFT_Integer   # coverage
         ds = None
 
-    def test_missing_tile_files_skipped(self, make_geotiff, tmp_path, registry_db):
+    def test_missing_tile_files_raises(self, make_geotiff, tmp_path):
+        """Tiles with missing files raise FileNotFoundError."""
         cfg = _make_bt_cfg()
         project_dir = str(tmp_path)
-        conn, _ = registry_db(cfg, tiles=[
+        tiles = [
             {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": "missing.tif", "rat_disk": "missing.aux"},
-        ])
-        # Create a valid VRT to open (using a real GeoTIFF as source)
+        ]
         dummy = make_geotiff("dummy.tif", bands=3, width=4, height=4)
         vrt_path = os.path.join(project_dir, "utm19.vrt")
         create_vrt([dummy], vrt_path, None, False,
                    ["Elevation", "Uncertainty", "Contributor"])
 
-        # Should not raise - just skip missing tiles, RAT has 0 rows
-        add_vrt_rat(conn, "19", project_dir, vrt_path, cfg)
-
-        ds = gdal.Open(vrt_path, 0)
-        band = ds.GetRasterBand(3)
-        rat = band.GetDefaultRAT()
-        assert rat.GetRowCount() == 0
-        ds = None
+        with pytest.raises(FileNotFoundError, match="T1"):
+            add_vrt_rat(tiles, project_dir, vrt_path, cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -198,9 +185,8 @@ class TestAddVrtRat:
 
 
 class TestRatZeroFields:
-    def test_zero_fields_forced(self, make_geotiff, tmp_path, registry_db):
+    def test_zero_fields_forced(self, make_geotiff, tmp_path):
         """Fields in rat_zero_fields are forced to 0 during aggregation."""
-        # Use a config with zero_fields
         cfg = get_config("bluetopo")
         rat_fields = {
             "value": [int, gdal.GFU_MinMax],
@@ -220,16 +206,15 @@ class TestRatZeroFields:
             rat_entries=rat_entries, rat_fields=rat_fields, rat_band=3,
         )
         rel_tif = os.path.relpath(tif, project_dir)
-
-        conn, _ = registry_db(cfg, tiles=[
+        tiles = [
             {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel_tif, "rat_disk": rel_tif},
-        ])
+        ]
 
         vrt_path = str(tmp_path / "utm19.vrt")
         create_vrt([tif], vrt_path, None, False,
                    ["Elevation", "Uncertainty", "Contributor"])
-        add_vrt_rat(conn, "19", project_dir, vrt_path, cfg)
+        add_vrt_rat(tiles, project_dir, vrt_path, cfg)
 
         ds = gdal.Open(vrt_path, 0)
         band = ds.GetRasterBand(3)
@@ -246,7 +231,7 @@ class TestRatZeroFields:
 
 
 class TestRatMultipleSurveys:
-    def test_different_surveys_not_deduped(self, make_geotiff, tmp_path, registry_db):
+    def test_different_surveys_not_deduped(self, make_geotiff, tmp_path):
         """Different survey IDs across tiles are kept separate."""
         cfg = _make_bt_cfg()
         project_dir = str(tmp_path)
@@ -264,18 +249,17 @@ class TestRatMultipleSurveys:
         )
         rel1 = os.path.relpath(tif1, project_dir)
         rel2 = os.path.relpath(tif2, project_dir)
-
-        conn, _ = registry_db(cfg, tiles=[
+        tiles = [
             {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel1, "rat_disk": rel1},
             {"tilename": "T2", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel2, "rat_disk": rel2},
-        ])
+        ]
 
         vrt_path = str(tmp_path / "utm19.vrt")
         create_vrt([tif1, tif2], vrt_path, None, False,
                    ["Elevation", "Uncertainty", "Contributor"])
-        add_vrt_rat(conn, "19", project_dir, vrt_path, cfg)
+        add_vrt_rat(tiles, project_dir, vrt_path, cfg)
 
         ds = gdal.Open(vrt_path, 0)
         band = ds.GetRasterBand(3)
@@ -283,7 +267,7 @@ class TestRatMultipleSurveys:
         assert rat.GetRowCount() == 2
         ds = None
 
-    def test_no_rat_on_file_skipped_gracefully(self, make_geotiff, tmp_path, registry_db):
+    def test_no_rat_on_file_skipped_gracefully(self, make_geotiff, tmp_path):
         """Tile GeoTIFF without a RAT -> GetDefaultRAT() returns None.
 
         The tile should be skipped gracefully, producing an empty RAT.
@@ -296,17 +280,16 @@ class TestRatMultipleSurveys:
             "tile1.tif", bands=3, width=16, height=16,
         )
         rel = os.path.relpath(tif, project_dir)
-
-        conn, _ = registry_db(cfg, tiles=[
+        tiles = [
             {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel, "rat_disk": rel},
-        ])
+        ]
 
         vrt_path = str(tmp_path / "utm19.vrt")
         create_vrt([tif], vrt_path, None, False,
                    ["Elevation", "Uncertainty", "Contributor"])
 
-        add_vrt_rat(conn, "19", project_dir, vrt_path, cfg)
+        add_vrt_rat(tiles, project_dir, vrt_path, cfg)
 
         ds = gdal.Open(vrt_path, 0)
         band = ds.GetRasterBand(3)
@@ -314,8 +297,8 @@ class TestRatMultipleSurveys:
         assert rat.GetRowCount() == 0
         ds = None
 
-    def test_no_tiles_in_utm(self, make_geotiff, tmp_path, registry_db):
-        """No tiles for the given UTM -> RAT has 0 rows."""
+    def test_no_tiles(self, make_geotiff, tmp_path):
+        """Empty tiles list -> RAT has 0 rows."""
         cfg = _make_bt_cfg()
         project_dir = str(tmp_path)
         dummy = make_geotiff("dummy.tif", bands=3, width=4, height=4)
@@ -323,8 +306,7 @@ class TestRatMultipleSurveys:
         create_vrt([dummy], vrt_path, None, False,
                    ["Elevation", "Uncertainty", "Contributor"])
 
-        conn, _ = registry_db(cfg)
-        add_vrt_rat(conn, "99", project_dir, vrt_path, cfg)
+        add_vrt_rat([], project_dir, vrt_path, cfg)
 
         ds = gdal.Open(vrt_path, 0)
         band = ds.GetRasterBand(3)
@@ -353,7 +335,7 @@ HSD_RAT_FIELDS = {
 
 
 class TestDynamicFieldDetection:
-    def test_mixed_schemas_uses_common_subset(self, make_geotiff, tmp_path, registry_db, capsys):
+    def test_mixed_schemas_uses_common_subset(self, make_geotiff, tmp_path, capsys):
         """Tile1 has 4 fields (BT), tile2 has 5 fields (HSD) -> VRT RAT uses 4 common fields."""
         cfg = _make_bt_cfg()
         # Give config the full HSD superset so it must be trimmed
@@ -373,18 +355,17 @@ class TestDynamicFieldDetection:
         )
         rel1 = os.path.relpath(tif1, project_dir)
         rel2 = os.path.relpath(tif2, project_dir)
-
-        conn, _ = registry_db(cfg, tiles=[
+        tiles = [
             {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel1, "rat_disk": rel1},
             {"tilename": "T2", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel2, "rat_disk": rel2},
-        ])
+        ]
 
         vrt_path = str(tmp_path / "utm19.vrt")
         create_vrt([tif1, tif2], vrt_path, None, False,
                    ["Elevation", "Uncertainty", "Contributor"])
-        add_vrt_rat(conn, "19", project_dir, vrt_path, cfg)
+        add_vrt_rat(tiles, project_dir, vrt_path, cfg)
 
         ds = gdal.Open(vrt_path, 0)
         band = ds.GetRasterBand(3)
@@ -397,7 +378,7 @@ class TestDynamicFieldDetection:
         assert "catzoc" in captured.out
         assert "Warning" in captured.out
 
-    def test_master_config_with_bluetopo_tiles_trims_to_match(self, make_geotiff, tmp_path, registry_db):
+    def test_master_config_with_bluetopo_tiles_trims_to_match(self, make_geotiff, tmp_path):
         """Master config (5 fields) with BlueTopo tiles (4 mini fields) -> trims to 4."""
         cfg = get_local_config("TestSource")
         cfg["rat_fields"] = dict(HSD_RAT_FIELDS)  # 5 fields
@@ -409,16 +390,15 @@ class TestDynamicFieldDetection:
             rat_entries=bt_entries, rat_fields=MINI_RAT_FIELDS, rat_band=3,
         )
         rel = os.path.relpath(tif, project_dir)
-
-        conn, _ = registry_db(cfg, tiles=[
+        tiles = [
             {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel, "rat_disk": rel},
-        ])
+        ]
 
         vrt_path = str(tmp_path / "utm19.vrt")
         create_vrt([tif], vrt_path, None, False,
                    ["Elevation", "Uncertainty", "Contributor"])
-        add_vrt_rat(conn, "19", project_dir, vrt_path, cfg)
+        add_vrt_rat(tiles, project_dir, vrt_path, cfg)
 
         ds = gdal.Open(vrt_path, 0)
         band = ds.GetRasterBand(3)
@@ -427,7 +407,7 @@ class TestDynamicFieldDetection:
         assert rat.GetRowCount() == 1
         ds = None
 
-    def test_exact_config_match_no_trimming(self, make_geotiff, tmp_path, registry_db, capsys):
+    def test_exact_config_match_no_trimming(self, make_geotiff, tmp_path, capsys):
         """Config fields exactly match tile fields -> no trimming, no warning."""
         cfg = _make_bt_cfg()
         project_dir = str(tmp_path)
@@ -438,16 +418,15 @@ class TestDynamicFieldDetection:
             rat_entries=rat_entries, rat_fields=MINI_RAT_FIELDS, rat_band=3,
         )
         rel = os.path.relpath(tif, project_dir)
-
-        conn, _ = registry_db(cfg, tiles=[
+        tiles = [
             {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel, "rat_disk": rel},
-        ])
+        ]
 
         vrt_path = str(tmp_path / "utm19.vrt")
         create_vrt([tif], vrt_path, None, False,
                    ["Elevation", "Uncertainty", "Contributor"])
-        add_vrt_rat(conn, "19", project_dir, vrt_path, cfg)
+        add_vrt_rat(tiles, project_dir, vrt_path, cfg)
 
         ds = gdal.Open(vrt_path, 0)
         band = ds.GetRasterBand(3)
@@ -458,7 +437,7 @@ class TestDynamicFieldDetection:
         captured = capsys.readouterr()
         assert "Warning" not in captured.out
 
-    def test_unknown_extra_fields_in_tile_ignored(self, make_geotiff, tmp_path, registry_db):
+    def test_unknown_extra_fields_in_tile_ignored(self, make_geotiff, tmp_path):
         """Tile has config fields + extra unknown fields -> unknown fields ignored."""
         cfg = _make_bt_cfg()
         project_dir = str(tmp_path)
@@ -473,16 +452,15 @@ class TestDynamicFieldDetection:
             rat_entries=rat_entries, rat_fields=extended_fields, rat_band=3,
         )
         rel = os.path.relpath(tif, project_dir)
-
-        conn, _ = registry_db(cfg, tiles=[
+        tiles = [
             {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel, "rat_disk": rel},
-        ])
+        ]
 
         vrt_path = str(tmp_path / "utm19.vrt")
         create_vrt([tif], vrt_path, None, False,
                    ["Elevation", "Uncertainty", "Contributor"])
-        add_vrt_rat(conn, "19", project_dir, vrt_path, cfg)
+        add_vrt_rat(tiles, project_dir, vrt_path, cfg)
 
         ds = gdal.Open(vrt_path, 0)
         band = ds.GetRasterBand(3)
@@ -491,7 +469,7 @@ class TestDynamicFieldDetection:
         assert rat.GetRowCount() == 1
         ds = None
 
-    def test_minimal_value_count_only(self, make_geotiff, tmp_path, registry_db):
+    def test_minimal_value_count_only(self, make_geotiff, tmp_path):
         """Tile with only value+count (2 of 4 config fields) -> VRT RAT has 2 columns."""
         cfg = _make_bt_cfg()
         project_dir = str(tmp_path)
@@ -507,16 +485,15 @@ class TestDynamicFieldDetection:
             rat_entries=rat_entries, rat_fields=minimal_fields, rat_band=3,
         )
         rel = os.path.relpath(tif, project_dir)
-
-        conn, _ = registry_db(cfg, tiles=[
+        tiles = [
             {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel, "rat_disk": rel},
-        ])
+        ]
 
         vrt_path = str(tmp_path / "utm19.vrt")
         create_vrt([tif], vrt_path, None, False,
                    ["Elevation", "Uncertainty", "Contributor"])
-        add_vrt_rat(conn, "19", project_dir, vrt_path, cfg)
+        add_vrt_rat(tiles, project_dir, vrt_path, cfg)
 
         ds = gdal.Open(vrt_path, 0)
         band = ds.GetRasterBand(3)
@@ -525,7 +502,7 @@ class TestDynamicFieldDetection:
         assert rat.GetRowCount() == 1
         ds = None
 
-    def test_dedup_still_works_with_col_map(self, make_geotiff, tmp_path, registry_db):
+    def test_dedup_still_works_with_col_map(self, make_geotiff, tmp_path):
         """Dedup by value (col 0) and count summing (col 1) works with col_map."""
         cfg = _make_bt_cfg()
         cfg["rat_fields"] = dict(HSD_RAT_FIELDS)  # 5 fields in config
@@ -545,18 +522,17 @@ class TestDynamicFieldDetection:
         )
         rel1 = os.path.relpath(tif1, project_dir)
         rel2 = os.path.relpath(tif2, project_dir)
-
-        conn, _ = registry_db(cfg, tiles=[
+        tiles = [
             {"tilename": "T1", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel1, "rat_disk": rel1},
             {"tilename": "T2", "utm": "19",
              "resolution": "2m", "geotiff_disk": rel2, "rat_disk": rel2},
-        ])
+        ]
 
         vrt_path = str(tmp_path / "utm19.vrt")
         create_vrt([tif1, tif2], vrt_path, None, False,
                    ["Elevation", "Uncertainty", "Contributor"])
-        add_vrt_rat(conn, "19", project_dir, vrt_path, cfg)
+        add_vrt_rat(tiles, project_dir, vrt_path, cfg)
 
         ds = gdal.Open(vrt_path, 0)
         band = ds.GetRasterBand(3)

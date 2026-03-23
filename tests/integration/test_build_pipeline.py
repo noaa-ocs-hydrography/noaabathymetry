@@ -15,6 +15,7 @@ from nbs.bluetopo._internal.config import (
     get_config,
     get_built_flags,
     get_utm_file_columns,
+    parse_resolution,
 )
 from nbs.bluetopo._internal.db import connect as connect_to_survey_registry
 from nbs.bluetopo._internal.vrt import (
@@ -116,8 +117,9 @@ class TestBluetopoPipeline:
         conn, project_dir, cfg, tiles_info = pipeline_env
 
         tiles = select_tiles_by_utm(project_dir, conn, "19", cfg)
-        paths = build_tile_paths(tiles, project_dir, cfg)
-        factors = compute_overview_factors(paths, overview_levels=cfg["overview_levels"])
+        resolutions = {parse_resolution(t.get("resolution")) for t in tiles}
+        resolutions.discard(None)
+        factors = compute_overview_factors(resolutions, overview_levels=cfg["overview_levels"])
         assert isinstance(factors, list)
 
     def test_utm_vrt_created(self, pipeline_env):
@@ -131,7 +133,9 @@ class TestBluetopoPipeline:
         tile_paths = build_tile_paths(tiles, project_dir, cfg)
 
         # Compute overview factors
-        factors = compute_overview_factors(tile_paths, overview_levels=cfg["overview_levels"])
+        resolutions = {parse_resolution(t.get("resolution")) for t in tiles}
+        resolutions.discard(None)
+        factors = compute_overview_factors(resolutions, overview_levels=cfg["overview_levels"])
 
         # Create UTM VRT directly from source tiles
         vrt_dir = os.path.join(project_dir, "BlueTopo_VRT")
@@ -147,7 +151,9 @@ class TestBluetopoPipeline:
 
         tiles = select_tiles_by_utm(project_dir, conn, "19", cfg)
         tile_paths = build_tile_paths(tiles, project_dir, cfg)
-        factors = compute_overview_factors(tile_paths, overview_levels=cfg["overview_levels"])
+        resolutions = {parse_resolution(t.get("resolution")) for t in tiles}
+        resolutions.discard(None)
+        factors = compute_overview_factors(resolutions, overview_levels=cfg["overview_levels"])
 
         vrt_dir = os.path.join(project_dir, "BlueTopo_VRT")
         os.makedirs(vrt_dir, exist_ok=True)
@@ -167,7 +173,9 @@ class TestBluetopoPipeline:
         # Build UTM VRT
         tiles = select_tiles_by_utm(project_dir, conn, "19", cfg)
         tile_paths = build_tile_paths(tiles, project_dir, cfg)
-        factors = compute_overview_factors(tile_paths, overview_levels=cfg["overview_levels"])
+        resolutions = {parse_resolution(t.get("resolution")) for t in tiles}
+        resolutions.discard(None)
+        factors = compute_overview_factors(resolutions, overview_levels=cfg["overview_levels"])
 
         vrt_dir = os.path.join(project_dir, "BlueTopo_VRT")
         os.makedirs(vrt_dir, exist_ok=True)
@@ -191,7 +199,9 @@ class TestBluetopoPipeline:
         # Build UTM VRT
         tiles = select_tiles_by_utm(project_dir, conn, "19", cfg)
         tile_paths = build_tile_paths(tiles, project_dir, cfg)
-        factors = compute_overview_factors(tile_paths, overview_levels=cfg["overview_levels"])
+        resolutions = {parse_resolution(t.get("resolution")) for t in tiles}
+        resolutions.discard(None)
+        factors = compute_overview_factors(resolutions, overview_levels=cfg["overview_levels"])
 
         vrt_dir = os.path.join(project_dir, "BlueTopo_VRT")
         os.makedirs(vrt_dir, exist_ok=True)
@@ -199,7 +209,7 @@ class TestBluetopoPipeline:
         create_vrt(tile_paths, utm_vrt, factors or None, True, cfg["band_descriptions"])
 
         # Add RAT
-        add_vrt_rat(conn, "19", project_dir, utm_vrt, cfg)
+        add_vrt_rat(tiles, project_dir, utm_vrt, cfg)
 
         ds = gdal.Open(utm_vrt, 0)
         band = ds.GetRasterBand(cfg["rat_band"])
@@ -217,7 +227,9 @@ class TestBluetopoPipeline:
 
         tiles = select_tiles_by_utm(project_dir, conn, "19", cfg)
         tile_paths = build_tile_paths(tiles, project_dir, cfg)
-        factors = compute_overview_factors(tile_paths, overview_levels=cfg["overview_levels"])
+        resolutions = {parse_resolution(t.get("resolution")) for t in tiles}
+        resolutions.discard(None)
+        factors = compute_overview_factors(resolutions, overview_levels=cfg["overview_levels"])
 
         vrt_dir = os.path.join(project_dir, "BlueTopo_VRT")
         os.makedirs(vrt_dir, exist_ok=True)
