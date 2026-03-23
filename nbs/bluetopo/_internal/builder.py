@@ -164,9 +164,14 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
 
 def _reproject_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
                          vrt_dir_name, params_key, relative_to_vrt,
-                         tile_resolution_filter, hillshade,
-                         total_workers=1):
+                         vrt_resolution_target, tile_resolution_filter,
+                         hillshade, total_workers=1):
     """Reproject one UTM zone to EPSG:3857.  Designed to run in a worker process.
+
+    Builds per-resolution VRTs (instant — each has a perfectly aligned
+    pixel grid) and warps them together into a single GeoTIFF at the
+    coarsest source resolution.  Coarsest-first ordering ensures finer
+    data overlays coarser in the output.
 
     Opens a read-only DB connection for tile selection and RAT
     aggregation (schema migration is already done by the main process).
@@ -183,10 +188,6 @@ def _reproject_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
         if not tiles:
             return None
 
-        tile_paths = build_tile_paths(tiles, project_dir, cfg)
-        if not tile_paths:
-            return None
-
         tile_resolutions = {parse_resolution(t.get("resolution")) for t in tiles}
         tile_resolutions.discard(None)
 
@@ -196,39 +197,91 @@ def _reproject_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
             for sd in cfg["subdatasets"]:
                 band_descs.extend(sd["band_descriptions"])
 
-        # Build temporary VRT (no overviews) for multi-resolution ordering.
-        # Uses disk (not /vsimem/) because create_vrt does os.chdir to the
-        # VRT's directory for relative path handling.
-        temp_vrt = os.path.join(vrt_dir, f"_temp_UTM{utm}.vrt")
-        create_vrt(tile_paths, temp_vrt, None, relative_to_vrt, band_descs)
+        # Two levels of in-memory VRTs feed into a single warp to GeoTIFF.
+        # VRTs are XML metadata with no pixel computation — the warp does
+        # all the work in one pass.
+        #
+        # Level 1 — Per-resolution VRTs: group tiles by resolution so each
+        #   VRT has a perfectly aligned pixel grid (no fractional-pixel gaps
+        #   between same-resolution tiles).
+        # Level 2 — Combined VRT: merges per-resolution VRTs at the coarsest
+        #   resolution with finer data overlaying coarser (source order).
+        #   This composites all resolutions onto one aligned grid BEFORE
+        #   reprojection, which preserves more fine-resolution data than
+        #   warping multiple sources independently (where CRS transform
+        #   shifts resolution boundaries and loses edge pixels).
+        #
+        # The warp then reprojects this single combined VRT to EPSG:3857
+        # and writes the GeoTIFF with overviews.
+        res_groups = {}
+        for tile in tiles:
+            res = parse_resolution(tile.get("resolution"))
+            res_groups.setdefault(res, []).append(tile)
 
-        # Compute overview factors
+        vsimem_files = []
+        res_vrts = []
+        for res in sorted(res_groups, reverse=True):  # coarsest first
+            group_paths = build_tile_paths(res_groups[res], project_dir, cfg)
+            if not group_paths:
+                continue
+            vrt_path = f"/vsimem/_reproject_UTM{utm}_{res}m.vrt"
+            vrt_opts = gdal.BuildVRTOptions(
+                options="-allow_projection_difference -resolution highest -r near")
+            vrt = gdal.BuildVRT(vrt_path, group_paths, options=vrt_opts)
+            if band_descs:
+                for i, desc in enumerate(band_descs):
+                    vrt.GetRasterBand(i + 1).SetDescription(desc)
+            vrt = None
+            res_vrts.append(vrt_path)
+            vsimem_files.append(vrt_path)
+
+        if not res_vrts:
+            return None
+
+        # Combine per-resolution VRTs into a single VRT at the coarsest
+        # resolution.  Sources are continuous rasters (not individual
+        # tiles), so the combined grid won't straddle tile boundaries.
+        target_res = vrt_resolution_target if vrt_resolution_target is not None else max(tile_resolutions)
+        combined_vrt = f"/vsimem/_reproject_UTM{utm}_combined.vrt"
+        combined_opts = gdal.BuildVRTOptions(
+            options=f"-allow_projection_difference -resolution user "
+                    f"-tr {target_res} {target_res} -r near")
+        vrt = gdal.BuildVRT(combined_vrt, res_vrts, options=combined_opts)
+        if band_descs:
+            for i, desc in enumerate(band_descs):
+                vrt.GetRasterBand(i + 1).SetDescription(desc)
+        vrt = None
+        vsimem_files.append(combined_vrt)
+
+        # Warp single combined VRT to EPSG:3857.
+        # Overview factors are computed relative to the output resolution
+        # (coarsest source) so the 2x overview is included.
         factors = compute_overview_factors(
             resolutions=tile_resolutions,
-            overview_levels=[16, 32, 64, 128, 256],
+            vrt_resolution_target=target_res,
+            overview_levels=[16, 32, 64, 128, 256, 512],
             filter_coarsest=False,
         )
-
-        # Warp to EPSG:3857
         rel_path = os.path.join(vrt_dir_name,
                                 f"{data_source}_Fetched_UTM{utm}{params_key}.tif")
         output_3857 = os.path.join(project_dir, rel_path)
-        reproject_to_web_mercator(temp_vrt, output_3857,
-                                  overview_factors=factors or None)
+        reproject_to_web_mercator(combined_vrt, output_3857,
+                                  overview_factors=factors or None,
+                                  target_resolution=target_res)
 
         # Add RAT
         if cfg["has_rat"]:
             add_vrt_rat(tiles, project_dir, output_3857, cfg)
 
-        # Clean up temp VRT
-        try:
-            os.remove(temp_vrt)
-        except OSError:
-            pass
+        # Clean up /vsimem/ VRTs
+        for f in vsimem_files:
+            try:
+                gdal.Unlink(f)
+            except RuntimeError:
+                pass
 
         result = {"utm": utm, "rel_path": rel_path, "output_path": output_3857}
 
-        # Hillshade
         if hillshade:
             hs_path = output_3857.replace(".tif", "_hillshade.tif")
             generate_hillshade(output_3857, hs_path)
@@ -361,13 +414,6 @@ def build_vrt(project_dir: str, data_source: str = None,
     if vrt_resolution_target is not None:
         validate_vrt_resolution_target(vrt_resolution_target)
 
-    if reproject and vrt_resolution_target is not None:
-        raise ValueError(
-            "vrt_resolution_target cannot be used with reproject=True. "
-            "The output resolution is auto-determined from source tile "
-            "resolutions when reprojecting to EPSG:3857."
-        )
-
     report = None
     if debug:
         from nbs.bluetopo._internal.diagnostics import DebugReport
@@ -462,7 +508,8 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                 worker_args = lambda utm: (
                     project_dir, cfg, data_source, utm, vrt_dir,
                     vrt_dir_name, params_key, relative_to_vrt,
-                    tile_resolution_filter, hillshade, actual_workers)
+                    vrt_resolution_target, tile_resolution_filter,
+                    hillshade, actual_workers)
             else:
                 worker_fn = _build_utm_zone
                 label = "Building"

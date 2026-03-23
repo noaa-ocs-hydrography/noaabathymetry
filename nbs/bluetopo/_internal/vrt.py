@@ -164,35 +164,44 @@ def generate_hillshade(vrt_path, hillshade_path):
     return hillshade_path
 
 
-def reproject_to_web_mercator(vrt_path, output_path, overview_factors=None):
-    """Reproject a VRT to an EPSG:3857 GeoTIFF using gdal.Warp.
+def reproject_to_web_mercator(sources, output_path, overview_factors=None,
+                              target_resolution=None):
+    """Reproject source raster(s) to an EPSG:3857 GeoTIFF using gdal.Warp.
 
     Produces a GeoTIFF with DEFLATE compression and 512x512 tiling.
     Uses nearest neighbor resampling to preserve categorical Contributor
     band values for RAT compatibility.
+
+    When multiple sources are provided, they are mosaicked in order
+    (later sources overlay earlier ones).
 
     The RAT is not preserved through Warp. Call ``add_vrt_rat()`` on the
     output file after this function to attach the aggregated RAT.
 
     Parameters
     ----------
-    vrt_path : str
-        Path to the source VRT (in UTM projection).
+    sources : str | list[str]
+        Path(s) to source raster(s) (VRTs or GeoTIFFs) in UTM projection.
     output_path : str
         Path for the output GeoTIFF (will be in EPSG:3857).
     overview_factors : list[int] | None
-        Overview factors from ``compute_overview_factors()``.  If None
+        Overview factors (e.g. ``[2, 4, 8, 16]``).  If None
         or empty, no overviews are built.
+    target_resolution : float | None
+        Output pixel size in EPSG:3857 meters.  When None, GDAL
+        auto-determines from the source(s).
 
     Returns
     -------
     str
         The *output_path*.
     """
+    if isinstance(sources, str):
+        sources = [sources]
     if os.path.isfile(output_path):
         os.remove(output_path)
     thread_str = gdal.GetConfigOption("GDAL_NUM_THREADS") or "ALL_CPUS"
-    opts = gdal.WarpOptions(
+    warp_kwargs = dict(
         dstSRS="EPSG:3857",
         format="GTiff",
         resampleAlg="near",
@@ -207,7 +216,12 @@ def reproject_to_web_mercator(vrt_path, output_path, overview_factors=None):
             f"NUM_THREADS={thread_str}",
         ],
     )
-    gdal.Warp(output_path, vrt_path, options=opts)
+    if target_resolution is not None:
+        warp_kwargs["xRes"] = target_resolution
+        warp_kwargs["yRes"] = target_resolution
+        warp_kwargs["targetAlignedPixels"] = True
+    opts = gdal.WarpOptions(**warp_kwargs)
+    gdal.Warp(output_path, sources, options=opts)
     if overview_factors:
         ds = gdal.Open(output_path, 0)
         ds.BuildOverviews("NEAREST", overview_factors)
