@@ -84,7 +84,8 @@ def create_vrt(files, vrt_path, levels, relative_to_vrt,
         opts_str += f' -resolution user -tr {vrt_resolution_target} {vrt_resolution_target}'
     else:
         opts_str += ' -resolution highest'
-    vrt_options = gdal.BuildVRTOptions(options=opts_str, resampleAlg="near")
+    opts_str += ' -r near'
+    vrt_options = gdal.BuildVRTOptions(options=opts_str)
     # BuildVRT resolves relative paths from cwd, so we chdir to the VRT's
     # directory to ensure the stored references are correct.
     cwd = os.getcwd()

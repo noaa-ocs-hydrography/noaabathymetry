@@ -180,7 +180,9 @@ def _reproject_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
             for sd in cfg["subdatasets"]:
                 band_descs.extend(sd["band_descriptions"])
 
-        # Build temporary VRT (no overviews) for multi-resolution ordering
+        # Build temporary VRT (no overviews) for multi-resolution ordering.
+        # Uses disk (not /vsimem/) because create_vrt does os.chdir to the
+        # VRT's directory for relative path handling.
         temp_vrt = os.path.join(vrt_dir, f"_temp_UTM{utm}.vrt")
         create_vrt(tile_paths, temp_vrt, None, relative_to_vrt, band_descs)
 
