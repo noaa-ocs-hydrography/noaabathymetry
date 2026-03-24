@@ -43,7 +43,7 @@ Install conda (If you have not already): [conda installation](https://docs.conda
 In the command line, create an environment with the required packages:
 
 ```
-conda create -n bluetopo_env -c conda-forge 'gdal>=3.4' libgdal-hdf5
+conda create -n bluetopo_env -c conda-forge 'gdal>=3.9' libgdal-hdf5
 ```
 
 ```
@@ -115,9 +115,9 @@ For most usecases, reusing the commands above to stay up to date in your area of
 
 ## Notes
 
-In addition to BlueTopo, modeling data is available. You can work with modeling data using the `source` argument in the CLI commands or the `data_source` argument if you're calling the function directly.
+In addition to BlueTopo, several other data sources are available: **Modeling**, **BAG**, **S102 v2.1**, **S102 v2.2**, and **S102 v3.0**. Use the `source` argument in the CLI commands or the `data_source` argument in the Python API (e.g. `data_source='bag'`, `data_source='s102v30'`).
 
-The primary difference between BlueTopo and modeling data is the vertical datum. Modeling data is on a low water datum.
+The primary difference between BlueTopo and Modeling data is the vertical datum — Modeling data is on a low water datum. BAG and S102 sources provide navigation-grade bathymetry. S102 sources require GDAL 3.9+ with HDF5 support (`libgdal-hdf5`). See the [data sources reference](https://noaa-ocs-hydrography.github.io/BlueTopo/data-sources.html) for details.
 
 ## Authors
 

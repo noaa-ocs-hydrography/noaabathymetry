@@ -110,6 +110,7 @@ Build a flat GDAL VRT per UTM zone from all source tiles.
 | `ValueError` | Registry database not found (`fetch_tiles` must run first). |
 | `ValueError` | Tile downloads folder not found (`fetch_tiles` must run first). |
 | `ValueError` | `vrt_resolution_target` is not positive. |
+| `ValueError` | `workers` is not a positive integer or exceeds `os.cpu_count()`. |
 | `RuntimeError` | GDAL version is too old for the data source. |
 | `RuntimeError` | GDAL is missing required drivers (e.g. S102, BAG). |
 
@@ -172,7 +173,7 @@ Dataclass returned by `build_vrt`.
 
 | Attribute | Type | Description |
 |---|---|---|
-| `built` | `list[dict]` | UTM zones that were built. Each dict has `utm` (str), `vrt` (str), and `ovr` (str or None) keys. |
+| `built` | `list[dict]` | UTM zones that were built. Each dict has `utm` (str), `vrt` (str), `ovr` (str or None), and `hillshade` (str or None) keys. |
 | `skipped` | `list[str]` | UTM zone identifiers that were already up to date. |
 | `failed` | `list[dict]` | UTM zones that failed during parallel builds. Each dict has `utm` (str) and `reason` (str) keys. |
 | `missing_reset` | `int` | Number of UTM zones reset due to VRT files missing on disk. |
@@ -188,9 +189,11 @@ print(result)
 # BuildResult(
 #     built=[
 #         {'utm': '18', 'vrt': '/home/user/bathymetry/BlueTopo_VRT/BlueTopo_Fetched_UTM18.vrt',
-#          'ovr': '/home/user/bathymetry/BlueTopo_VRT/BlueTopo_Fetched_UTM18.vrt.ovr'},
+#          'ovr': '/home/user/bathymetry/BlueTopo_VRT/BlueTopo_Fetched_UTM18.vrt.ovr',
+#          'hillshade': None},
 #         {'utm': '19', 'vrt': '/home/user/bathymetry/BlueTopo_VRT/BlueTopo_Fetched_UTM19.vrt',
-#          'ovr': '/home/user/bathymetry/BlueTopo_VRT/BlueTopo_Fetched_UTM19.vrt.ovr'}
+#          'ovr': '/home/user/bathymetry/BlueTopo_VRT/BlueTopo_Fetched_UTM19.vrt.ovr',
+#          'hillshade': None}
 #     ],
 #     skipped=['17'],
 #     failed=[],
@@ -216,7 +219,7 @@ fetch_tiles -d DIR [-g GEOMETRY] [-s SOURCE] [--tile-resolution-filter N [N ...]
 |---|---|---|
 | `-d` | `--dir`, `--directory` | **Required.** Absolute path to the project directory. |
 | `-g` | `--geom`, `--geometry` | Geometry input (file path, bounding box, WKT, or GeoJSON). String inputs assume EPSG:4326. |
-| `-s` | `--source` | Data source identifier. Default: `bluetopo`. |
+| `-s` | `--source`, `--data-source` | Data source identifier. Default: `bluetopo`. |
 | | `--tile-resolution-filter` | Only fetch tiles at these resolutions (meters). Multiple values allowed. |
 | | `--debug` | Write a diagnostic report to the project directory. |
 | `-v` | `--version` | Show version and exit. |
@@ -246,7 +249,7 @@ build_vrt -d DIR [-s SOURCE] [-r BOOL] [-t RESOLUTION] [--tile-resolution-filter
 | Flag | Long form | Description |
 |---|---|---|
 | `-d` | `--dir`, `--directory` | **Required.** Absolute path to the project directory. |
-| `-s` | `--source` | Data source identifier. Default: `bluetopo`. |
+| `-s` | `--source`, `--data-source` | Data source identifier. Default: `bluetopo`. |
 | `-r` | `--rel`, `--relative_to_vrt` | Store VRT file paths as relative. Default: `true`. |
 | `-t` | `--vrt-resolution-target` | Force output pixel size in meters (any positive number). |
 | | `--tile-resolution-filter` | Only include tiles at these resolutions (meters). Multiple values allowed. |
@@ -267,6 +270,12 @@ build_vrt -d /home/user/bathymetry -t 8
 
 # Build only from 4m tiles
 build_vrt -d /home/user/bathymetry --tile-resolution-filter 4
+
+# Build with 4 parallel workers
+build_vrt -d /home/user/bathymetry --workers 4
+
+# Build with hillshade generation
+build_vrt -d /home/user/bathymetry --hillshade
 
 # Build Modeling VRTs
 build_vrt -d /home/user/bathymetry -s modeling

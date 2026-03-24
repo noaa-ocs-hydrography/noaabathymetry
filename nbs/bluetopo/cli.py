@@ -48,7 +48,7 @@ def build_vrt_command():
         type=str, dest="dir", required=True,
     )
     parser.add_argument(
-        "-s", "--source",
+        "-s", "--source", "--data-source",
         help="Data source identifier. BlueTopo is the default.",
         default="bluetopo", dest="source", nargs="?",
     )
@@ -118,7 +118,7 @@ def fetch_tiles_command():
         type=str, dest="geom", nargs="?",
     )
     parser.add_argument(
-        "-s", "--source",
+        "-s", "--source", "--data-source",
         help="Data source identifier. BlueTopo is the default.",
         default="bluetopo", dest="source", nargs="?",
     )

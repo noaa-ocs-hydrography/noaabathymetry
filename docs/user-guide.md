@@ -18,7 +18,11 @@ After running `fetch_tiles` and `build_vrt`, your project directory will contain
 ├── BlueTopo_VRT/                  # Built VRT files
 │   ├── BlueTopo_Fetched_UTM18.vrt
 │   ├── BlueTopo_Fetched_UTM18.vrt.ovr
+│   ├── BlueTopo_Fetched_UTM18_hillshade.tif   # Optional (--hillshade)
 │   ├── BlueTopo_Fetched_UTM19.vrt
+│   └── ...
+├── BlueTopo_VRT_3857/             # Optional (--reproject)
+│   ├── BlueTopo_Fetched_UTM18.tif
 │   └── ...
 └── bluetopo_registry.db           # SQLite tracking database
 ```
@@ -194,15 +198,52 @@ vrt_result = build_vrt('/path/to/project', reproject=True)
 build_vrt -d /path/to/project --reproject
 ```
 
-The 3857 output is stored in a separate directory (e.g. `BlueTopo_VRT_3857/`) and tracked independently from the default UTM VRTs. Only UTM zones with new or updated tiles are reprojected on subsequent runs.
+The 3857 output is stored in a separate directory (e.g. `BlueTopo_VRT_3857/`) and tracked independently from the default UTM VRTs. The output is a GeoTIFF (`.tif`) rather than a VRT, since the reprojection requires pixel computation. Only UTM zones with new or updated tiles are reprojected on subsequent runs.
 
-This can be combined with resolution filtering:
+This can be combined with other parameters:
 
 ```python
+# With resolution filtering
 vrt_result = build_vrt('/path/to/project', tile_resolution_filter=[4, 8], reproject=True)
+
+# With a target resolution, parallel workers, and hillshade
+vrt_result = build_vrt('/path/to/project', reproject=True,
+                       vrt_resolution_target=16, workers=3, hillshade=True)
 ```
 
-Output directory: `BlueTopo_VRT_4m_8m_3857/`
+```
+build_vrt -d /path/to/project --reproject -t 16 --workers 3 --hillshade
+```
+
+Output directories follow the same naming pattern: `BlueTopo_VRT_4m_8m_3857/`, `BlueTopo_VRT_tr16m_3857/`, etc.
+
+## Parallel processing
+
+By default, `build_vrt` processes UTM zones sequentially. Pass `workers` to build multiple zones in parallel:
+
+```python
+result = build_vrt('/path/to/project', workers=4)
+```
+
+```
+build_vrt -d /path/to/project --workers 4
+```
+
+The maximum is `os.cpu_count()`. Each worker loads tile data into RAM independently, so memory usage scales with the number of workers. **Run with the default (1 worker) first to gauge memory usage before scaling up.** If a zone fails during parallel builds, other zones continue and the failure is reported in `BuildResult.failed`.
+
+## Hillshade generation
+
+Pass `hillshade=True` (or `--hillshade` on the CLI) to generate a hillshade GeoTIFF alongside each VRT:
+
+```python
+result = build_vrt('/path/to/project', hillshade=True)
+```
+
+```
+build_vrt -d /path/to/project --hillshade
+```
+
+This produces a `_hillshade.tif` file next to each VRT, built from band 1 (Elevation) at 16m resolution with azimuth 315°, altitude 45°, and 4× vertical exaggeration. The hillshade includes BILINEAR overviews for efficient display.
 
 ## Debug mode
 

@@ -380,6 +380,11 @@ def build_vrt(project_dir: str, data_source: str = None,
     cfg, _ = resolve_data_source(data_source)
     data_source = cfg["canonical_name"]
 
+    if reproject and data_source != "BlueTopo":
+        raise ValueError(
+            "reproject is currently only supported for the BlueTopo data source."
+        )
+
     if int(gdal.VersionInfo()) < cfg["min_gdal_version"]:
         min_ver = cfg["min_gdal_version"]
         raise RuntimeError(
