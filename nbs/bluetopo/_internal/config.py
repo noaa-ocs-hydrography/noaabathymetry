@@ -156,7 +156,7 @@ DATA_SOURCES = {
         },
         "rat_zero_fields": [],
         # Overviews
-        "overview_levels": [8, 16, 32, 64, 128, 256],
+        "overview_levels": [8, 16, 32, 64, 128, 256, 512],
         "overview_filter_coarsest": True,
     },
     # -------------------------------------------------------------------------
@@ -211,7 +211,7 @@ DATA_SOURCES = {
         },
         "rat_zero_fields": [],
         # Overviews
-        "overview_levels": [8, 16, 32, 64, 128, 256],
+        "overview_levels": [8, 16, 32, 64, 128, 256, 512],
         "overview_filter_coarsest": True,
     },
     # -------------------------------------------------------------------------
@@ -244,7 +244,7 @@ DATA_SOURCES = {
         "rat_fields": None,
         "rat_zero_fields": [],
         # Overviews
-        "overview_levels": [8, 16, 32, 64, 128, 256],
+        "overview_levels": [8, 16, 32, 64, 128, 256, 512],
         "overview_filter_coarsest": False,
     },
     # -------------------------------------------------------------------------
@@ -277,7 +277,7 @@ DATA_SOURCES = {
         "rat_fields": None,
         "rat_zero_fields": [],
         # Overviews
-        "overview_levels": [8, 16, 32, 64, 128, 256],
+        "overview_levels": [8, 16, 32, 64, 128, 256, 512],
         "overview_filter_coarsest": False,
     },
     # -------------------------------------------------------------------------
@@ -339,7 +339,7 @@ DATA_SOURCES = {
         },
         "rat_zero_fields": ["feature_size_var", "bathymetric_uncertainty_type"],
         # Overviews
-        "overview_levels": [8, 16, 32, 64, 128, 256],
+        "overview_levels": [8, 16, 32, 64, 128, 256, 512],
         "overview_filter_coarsest": False,
     },
     # -------------------------------------------------------------------------
@@ -402,7 +402,7 @@ DATA_SOURCES = {
         },
         "rat_zero_fields": ["feature_size_var", "type_of_bathymetric_estimation_uncertainty"],
         # Overviews
-        "overview_levels": [8, 16, 32, 64, 128, 256],
+        "overview_levels": [8, 16, 32, 64, 128, 256, 512],
         "overview_filter_coarsest": False,
     },
     # -------------------------------------------------------------------------
@@ -461,7 +461,7 @@ DATA_SOURCES = {
         },
         "rat_zero_fields": [],
         # Overviews
-        "overview_levels": [8, 16, 32, 64, 128, 256],
+        "overview_levels": [8, 16, 32, 64, 128, 256, 512],
         "overview_filter_coarsest": True,
     },
 }

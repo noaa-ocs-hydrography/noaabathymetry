@@ -2,6 +2,8 @@
 
 This package simplifies downloading bathymetric tiles from NOAA's public S3 bucket and assembling them into per-UTM-zone GDAL Virtual Rasters for use in GIS applications. It supports six S3-hosted data sources (BlueTopo, Modeling, BAG, S-102 v2.1/v2.2/v3.0).
 
+> **Note:** The S-102 data available through this package are for test and evaluation and should not be used for navigation. For official S-102 data, see the [data](https://noaa-s102-pds.s3.amazonaws.com/index.html) available from [Precision Marine Navigation](https://oceanservice.noaa.gov/navigation/precision-navigation/).
+
 ## Who this package is for
 
 This package gives you a straightforward way to get high-resolution bathymetric data from NOAA's National Bathymetric Source.
