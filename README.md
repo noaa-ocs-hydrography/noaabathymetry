@@ -3,14 +3,14 @@
 ---
 
 <p align="center">
-    <a href="https://noaa-ocs-hydrography.github.io/BlueTopo/">Documentation</a> •
     <a href="#background">Background</a> •
     <a href="#requirements">Requirements</a> •
     <a href="#installation">Installation</a> •
     <a href="#quickstart">Quickstart</a> •
     <a href="#cli">CLI</a> •
     <a href="#notes">Notes</a> •
-    <a href="#authors">Contact</a>
+    <a href="#authors">Contact</a> •
+    <a href="https://noaa-ocs-hydrography.github.io/BlueTopo/">Documentation</a>
 </p>
 
 ## Overview
@@ -115,9 +115,9 @@ For most usecases, reusing the commands above to stay up to date in your area of
 
 ## Notes
 
-In addition to BlueTopo, several other data sources are available: **Modeling**, **BAG**, **S102 v2.1**, **S102 v2.2**, and **S102 v3.0**. Use the `source` argument in the CLI commands or the `data_source` argument in the Python API (e.g. `data_source='bag'`, `data_source='s102v30'`).
+In addition to BlueTopo, Modeling data is also available. You can work with Modeling data using the `source` argument in the CLI commands or the `data_source` argument in the Python API (e.g. `data_source='modeling'`).
 
-The primary difference between BlueTopo and Modeling data is the vertical datum — Modeling data is on a low water datum. BAG and S102 sources provide navigation-grade bathymetry. S102 sources require GDAL 3.9+ with HDF5 support (`libgdal-hdf5`). See the [data sources reference](https://noaa-ocs-hydrography.github.io/BlueTopo/data-sources.html) for details.
+The primary difference between BlueTopo and Modeling data is the vertical datum. Modeling data is on a low water datum.
 
 ## Authors
 
