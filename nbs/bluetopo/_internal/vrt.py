@@ -730,7 +730,7 @@ def missing_utms(project_dir, conn, cfg, params_key=""):
     return missing_utm_count
 
 
-def ensure_params_rows(conn, cfg, params_key):
+def ensure_params_rows(conn, cfg, params_key, output_dir=None):
     """Seed ``vrt_utm`` rows for a parameterized build partition.
 
     Copies UTM zones from the default partition (``params_key=''``) into
@@ -738,6 +738,9 @@ def ensure_params_rows(conn, cfg, params_key):
     flags to 0 and VRT/OVR paths to NULL.  This allows parameterized
     builds (e.g. resolution-filtered) to track state independently
     from the default build.
+
+    When *output_dir* is provided, it is stored in the ``output_dir``
+    column of each new row.
     """
     built_flags = get_built_flags(cfg)
     utm_cols = get_utm_file_columns(cfg)
@@ -753,7 +756,7 @@ def ensure_params_rows(conn, cfg, params_key):
     if not new_utms:
         return
 
-    col_names = ["utm", "params_key"] + utm_cols + built_flags
+    col_names = ["utm", "params_key", "output_dir"] + utm_cols + built_flags
     if cfg["subdatasets"]:
         col_names.append("built_combined")
 
@@ -762,7 +765,7 @@ def ensure_params_rows(conn, cfg, params_key):
 
     rows = []
     for utm in new_utms:
-        values = [utm, params_key]
+        values = [utm, params_key, output_dir]
         values.extend([None] * len(utm_cols))
         values.extend([0] * len(built_flags))
         if cfg["subdatasets"]:

@@ -97,6 +97,7 @@ Build a flat GDAL VRT per UTM zone from all source tiles.
 | `hillshade` | `bool` | `False` | If `True`, generate a hillshade GeoTIFF from the elevation band. |
 | `workers` | `int \| None` | `None` | Number of parallel worker processes for building UTM zones. `None` or `1` = sequential. Must not exceed `os.cpu_count()`. |
 | `reproject` | `bool` | `False` | If `True`, reproject to EPSG:3857 (Web Mercator) GeoTIFFs instead of native UTM VRTs. Outputs to a separate directory (e.g. `BlueTopo_VRT_3857/`). |
+| `output_dir` | `str \| None` | `None` | Custom output directory name within the project directory. Overrides the auto-generated name. Each directory can only be used by one build configuration. |
 | `debug` | `bool` | `False` | If `True`, writes a diagnostic report to the project directory. |
 
 **Returns:** [`BuildResult`](#buildresult)
@@ -256,6 +257,7 @@ build_vrt -d DIR [-s SOURCE] [-r BOOL] [-t RESOLUTION] [--tile-resolution-filter
 | | `--hillshade` | Generate a hillshade GeoTIFF from the elevation band. |
 | | `--workers` | Number of parallel worker processes for building UTM zones. |
 | | `--reproject` | Reproject to EPSG:3857 (Web Mercator) GeoTIFFs instead of native UTM VRTs. |
+| `-o` | `--output-dir` | Custom output directory name within the project directory. |
 | | `--debug` | Write a diagnostic report to the project directory. |
 | `-v` | `--version` | Show version and exit. |
 
@@ -276,6 +278,9 @@ build_vrt -d /home/user/bathymetry --workers 4
 
 # Build with hillshade generation
 build_vrt -d /home/user/bathymetry --hillshade
+
+# Build into a custom output directory
+build_vrt -d /home/user/bathymetry -o my_custom_vrts
 
 # Build Modeling VRTs
 build_vrt -d /home/user/bathymetry -s modeling

@@ -173,7 +173,7 @@ if result.not_found:
 
 **Cause:** When using `--workers N`, individual UTM zones can fail while others succeed. Common causes include insufficient RAM (each worker loads tile data independently), disk space exhaustion, or GDAL errors on specific tile combinations.
 
-**Fix:** Check your system's available memory. Each worker can consume significant RAM depending on the number and size of tiles in the UTM zone. Run with the default (no `--workers` flag) first to gauge memory usage for a single zone, then scale up. Failed zones can be retried by running `build_vrt` again — only the failed zones will be rebuilt.
+**Fix:** Check your system's available memory. Each worker can consume significant RAM depending on the number and size of tiles in the UTM zone. Run with the default (no `--workers` flag) first to gauge memory usage for a single zone, then scale up. Failed zones can be retried by running `build_vrt` again. Only the failed zones will be rebuilt.
 
 ```python
 result = build_vrt('/path/to/project', workers=4)

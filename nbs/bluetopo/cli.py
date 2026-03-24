@@ -83,6 +83,11 @@ def build_vrt_command():
         help="Reproject to EPSG:3857 (Web Mercator) GeoTIFFs instead of native UTM VRTs.",
     )
     parser.add_argument(
+        "-o", "--output-dir",
+        help="Custom output directory name within the project directory.",
+        type=str, dest="output_dir", default=None,
+    )
+    parser.add_argument(
         "--debug", action="store_true",
         help="Write a diagnostic report to the project directory.",
     )
@@ -96,6 +101,7 @@ def build_vrt_command():
         hillshade=args.hillshade,
         workers=args.workers,
         reproject=args.reproject,
+        output_dir=args.output_dir,
         debug=args.debug,
     )
 

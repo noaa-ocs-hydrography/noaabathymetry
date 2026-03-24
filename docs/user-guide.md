@@ -97,9 +97,9 @@ BlueTopo operates in two distinct steps.
 
 The `geometry` parameter controls **tile discovery**, not downloading. When you pass a geometry, `fetch_tiles` intersects it with the tile scheme and adds any overlapping tiles to a persistent tracking list in the project database.
 
-This tracking is additive — tiles are never removed from tracking. Passing a new geometry adds new tiles without affecting previously tracked ones. All tracked tiles are downloaded and kept up to date on every `fetch_tiles` run, regardless of whether a geometry is provided.
+This tracking is additive. Tiles are never removed from tracking. Passing a new geometry adds new tiles without affecting previously tracked ones. All tracked tiles are downloaded and kept up to date on every `fetch_tiles` run, regardless of whether a geometry is provided.
 
-You only need to pass a geometry when you want to expand your area of interest. Omitting it still updates all previously tracked tiles — if NBS updates a tracked tile (new delivery date, revised data), the next `fetch_tiles` run picks up the change automatically. However, if NBS publishes *entirely new* tiles in your area — tiles that didn't exist in the tile scheme when you first ran — they won't be discovered unless you run with the geometry again. Re-running with your geometry periodically ensures newly published tiles in your area of interest are picked up.
+You only need to pass a geometry when you want to expand your area of interest. Omitting it still updates all previously tracked tiles. If NBS updates a tracked tile (new delivery date, revised data), the next `fetch_tiles` run picks up the change automatically. However, if NBS publishes *entirely new* tiles in your area that didn't exist in the tile scheme when you first ran, they won't be discovered unless you run with the geometry again. Re-running with your geometry periodically ensures newly published tiles in your area of interest are picked up.
 
 ## Re-fetch and update behavior
 
@@ -245,6 +245,20 @@ build_vrt -d /path/to/project --hillshade
 
 This produces a `_hillshade.tif` file next to each VRT, built from band 1 (Elevation) at 16m resolution with azimuth 315°, altitude 45°, and 4× vertical exaggeration. The hillshade includes BILINEAR overviews for efficient display.
 
+## Custom output directory
+
+By default, `build_vrt` creates an auto-named directory based on the build parameters (e.g. `BlueTopo_VRT`, `BlueTopo_VRT_3857`). Pass `output_dir` to use a custom name:
+
+```python
+result = build_vrt('/path/to/project', output_dir='my_vrts')
+```
+
+```
+build_vrt -d /path/to/project -o my_vrts
+```
+
+Each output directory can only be used by one build configuration. If you try to use a directory that's already in use by a different configuration (e.g. different resolution parameters), `build_vrt` will raise an error. To reassign a directory, delete it first. The system will detect it's gone and allow reassignment on the next run.
+
 ## Debug mode
 
 Pass `debug=True` (or `--debug` on the CLI) to generate a diagnostic report:
@@ -267,4 +281,4 @@ This writes a timestamped log file (e.g. `bluetopo_debug_20240315_143022.log`) t
 6. **Tile details** — per-tile anomalies (missing links, files missing on disk, unverified downloads)
 7. **UTM zone details** — VRT/OVR paths and build status per zone
 
-The report contains only technical information — no credentials, environment variables, or personal data beyond the project directory path.
+The report contains only technical information and does not include credentials, environment variables, or personal data beyond the project directory path.

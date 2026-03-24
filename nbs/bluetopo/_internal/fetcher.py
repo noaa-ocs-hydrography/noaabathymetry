@@ -20,7 +20,7 @@ from nbs.bluetopo._internal.config import (
     parse_resolution,
     resolve_data_source,
 )
-from nbs.bluetopo._internal.db import connect
+from nbs.bluetopo._internal.db import check_internal_version, connect
 from nbs.bluetopo._internal.download import (
     _get_s3_client,
     all_db_tiles,
@@ -167,6 +167,7 @@ def _run_fetch(project_dir, geometry, cfg, data_source,
     os.makedirs(project_dir, exist_ok=True)
 
     conn = connect(project_dir, cfg)
+    check_internal_version(conn)
     if report:
         report.set_conn(conn)
     try:

@@ -527,8 +527,12 @@ def make_resolution_label(resolutions):
 
 
 def make_vrt_dir_name(data_source, tile_resolution_filter=None,
-                      vrt_resolution_target=None, reproject=False):
+                      vrt_resolution_target=None, reproject=False,
+                      output_dir=None):
     """Build the VRT output directory name from build parameters.
+
+    When *output_dir* is provided, it is returned directly, overriding
+    the auto-generated name.
 
     Parameters
     ----------
@@ -540,13 +544,17 @@ def make_vrt_dir_name(data_source, tile_resolution_filter=None,
         Target pixel size, appended as ``_tr8m``.
     reproject : bool
         If True, appended as ``_3857`` for Web Mercator output.
+    output_dir : str | None
+        Custom output directory name. Overrides auto-generated name.
 
     Returns
     -------
     str
         Directory name, e.g. ``'BlueTopo_VRT'``, ``'BlueTopo_VRT_4m_8m'``,
-        ``'BlueTopo_VRT_3857'``, ``'BlueTopo_VRT_4m_8m_3857'``.
+        ``'BlueTopo_VRT_3857'``, ``'BlueTopo_VRT_4m_8m_3857'``, or a custom name.
     """
+    if output_dir is not None:
+        return output_dir
     name = f"{data_source}_VRT"
     if tile_resolution_filter:
         name += f"_{make_resolution_label(tile_resolution_filter)}"
@@ -753,7 +761,7 @@ def get_vrt_utm_fields(cfg):
     columns plus a combined VRT column; single-dataset sources get one
     VRT/OVR pair.
     """
-    fields = {"utm": "text", "params_key": "text"}
+    fields = {"utm": "text", "params_key": "text", "output_dir": "text"}
     if cfg["subdatasets"]:
         for i in range(len(cfg["subdatasets"])):
             fields[f"utm_subdataset{i+1}_vrt"] = "text"
@@ -797,9 +805,10 @@ def get_built_flags(cfg):
 
 
 def get_utm_file_columns(cfg):
-    """Return VRT/OVR path column names from ``vrt_utm``, excluding PK and built flags."""
+    """Return VRT/OVR path column names from ``vrt_utm``, excluding PK, built flags, and metadata."""
     fields = get_vrt_utm_fields(cfg)
-    return [k for k in fields if k not in ("utm", "params_key") and "built" not in k]
+    exclude = {"utm", "params_key", "output_dir"}
+    return [k for k in fields if k not in exclude and "built" not in k]
 
 
 def get_disk_field(cfg):

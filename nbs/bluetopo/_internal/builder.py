@@ -19,6 +19,8 @@ from dataclasses import dataclass, field
 from osgeo import gdal
 
 from nbs.bluetopo._internal.config import (
+    get_built_flags,
+    get_utm_file_columns,
     make_resolution_label,
     make_vrt_dir_name,
     make_params_key,
@@ -27,7 +29,7 @@ from nbs.bluetopo._internal.config import (
     _timestamp,
     resolve_data_source,
 )
-from nbs.bluetopo._internal.db import connect
+from nbs.bluetopo._internal.db import check_internal_version, connect
 from nbs.bluetopo._internal.vrt import (
     add_vrt_rat,
     build_tile_paths,
@@ -321,6 +323,113 @@ class BuildResult:
     vrt_resolution_target: float = None
 
 
+_SYSTEM_FILES = {'.DS_Store', 'Thumbs.db', 'desktop.ini'}
+
+
+def _verify_dir_absent(project_dir, dir_name):
+    """Verify a directory is truly absent before trusting os.path.isdir().
+
+    Attempts to create the directory. If creation fails, the filesystem
+    is unreliable (network issue, permissions, dir actually exists) and
+    we should not trust earlier os.path.isdir() checks.
+
+    If the directory already exists but is empty (ignoring OS system
+    files), it is accepted. If non-empty, raises ValueError.
+
+    Returns immediately without error if verification passes.
+    """
+    full_path = os.path.join(project_dir, dir_name)
+    if os.path.isdir(full_path):
+        contents = [f for f in os.listdir(full_path) if f not in _SYSTEM_FILES]
+        if contents:
+            raise ValueError(
+                f"Directory '{dir_name}' reported as absent but actually "
+                "exists and is not empty. The filesystem may have returned "
+                "incorrect state. Clear the directory or use a different name."
+            )
+        return
+    try:
+        os.makedirs(full_path)
+        os.rmdir(full_path)  # Clean up — we only needed to test creation
+    except OSError as e:
+        raise ValueError(
+            f"Cannot verify directory '{dir_name}': {e}. "
+            "The filesystem may be unreliable — previous directory "
+            "existence checks may have returned incorrect results. "
+            "No database changes were made."
+        ) from e
+
+
+def _validate_output_dir(project_dir, conn, cfg, params_key, vrt_dir_name):
+    """Validate that output_dir is not in conflict with another build config.
+
+    Checks the DB for rows where a different params_key uses the same
+    output_dir.  If the conflicting directory still exists on disk, raises
+    ValueError.  If the directory was deleted, verifies the filesystem
+    is reliable before clearing stale rows to allow reassignment.
+
+    Also handles the case where this params_key previously used a
+    different output_dir: if the old dir is gone, resets the rows.
+    """
+    cursor = conn.cursor()
+    built_flags = get_built_flags(cfg)
+    utm_cols = get_utm_file_columns(cfg)
+
+    # Check: does this params_key already have a DIFFERENT output_dir?
+    cursor.execute(
+        "SELECT DISTINCT output_dir FROM vrt_utm "
+        "WHERE params_key = ? AND output_dir IS NOT NULL AND output_dir != ?",
+        (params_key, vrt_dir_name),
+    )
+    old_dirs = [row["output_dir"] for row in cursor.fetchall()]
+    for old_dir in old_dirs:
+        if os.path.isdir(os.path.join(project_dir, old_dir)):
+            raise ValueError(
+                f"Build configuration already uses directory '{old_dir}'. "
+                "Delete it to reassign to a new output directory."
+            )
+        # Old dir reported gone — verify filesystem before resetting DB
+        _verify_dir_absent(project_dir, old_dir)
+        set_parts = ["output_dir = ?"] + [f"{col} = NULL" for col in utm_cols]
+        for f in built_flags:
+            set_parts.append(f"{f} = 0")
+        if cfg["subdatasets"]:
+            set_parts.append("built_combined = 0")
+        cursor.execute(
+            f"UPDATE vrt_utm SET {', '.join(set_parts)} "
+            "WHERE params_key = ?",
+            (vrt_dir_name, params_key),
+        )
+        conn.commit()
+
+    # Check: does any OTHER params_key use this output_dir?
+    cursor.execute(
+        "SELECT DISTINCT params_key FROM vrt_utm "
+        "WHERE output_dir = ? AND output_dir IS NOT NULL AND params_key != ?",
+        (vrt_dir_name, params_key),
+    )
+    conflicts = [row["params_key"] for row in cursor.fetchall()]
+    for conflict_pk in conflicts:
+        if os.path.isdir(os.path.join(project_dir, vrt_dir_name)):
+            raise ValueError(
+                f"Output directory '{vrt_dir_name}' is already in use by "
+                f"a different build configuration."
+            )
+        # Conflicting dir reported gone — verify filesystem before resetting DB
+        _verify_dir_absent(project_dir, vrt_dir_name)
+        set_parts = ["output_dir = NULL"] + [f"{col} = NULL" for col in utm_cols]
+        for f in built_flags:
+            set_parts.append(f"{f} = 0")
+        if cfg["subdatasets"]:
+            set_parts.append("built_combined = 0")
+        cursor.execute(
+            f"UPDATE vrt_utm SET {', '.join(set_parts)} "
+            "WHERE params_key = ? AND output_dir = ?",
+            (conflict_pk, vrt_dir_name),
+        )
+        conn.commit()
+
+
 def build_vrt(project_dir: str, data_source: str = None,
               relative_to_vrt: bool = True,
               vrt_resolution_target: float = None,
@@ -328,6 +437,7 @@ def build_vrt(project_dir: str, data_source: str = None,
               hillshade: bool = False,
               workers: int = None,
               reproject: bool = False,
+              output_dir: str = None,
               debug: bool = False) -> BuildResult:
     """Build a flat GDAL VRT per UTM zone from all source tiles.
 
@@ -419,6 +529,12 @@ def build_vrt(project_dir: str, data_source: str = None,
     if vrt_resolution_target is not None:
         validate_vrt_resolution_target(vrt_resolution_target)
 
+    if output_dir is not None and ("/" in output_dir or "\\" in output_dir):
+        raise ValueError(
+            "output_dir must be a single directory name, not a nested path. "
+            f"Got: '{output_dir}'"
+        )
+
     report = None
     if debug:
         from nbs.bluetopo._internal.diagnostics import DebugReport
@@ -431,7 +547,7 @@ def build_vrt(project_dir: str, data_source: str = None,
                             vrt_resolution_target, result, report,
                             tile_resolution_filter=tile_resolution_filter,
                             hillshade=hillshade, workers=workers,
-                            reproject=reproject)
+                            reproject=reproject, output_dir=output_dir)
     except Exception:
         if report:
             report.capture_exception()
@@ -450,7 +566,7 @@ def build_vrt(project_dir: str, data_source: str = None,
 def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                vrt_resolution_target, result, report=None,
                tile_resolution_filter=None, hillshade=False,
-               workers=None, reproject=False):
+               workers=None, reproject=False, output_dir=None):
     """Core build pipeline, separated so the debug wrapper in build_vrt()
     can handle report lifecycle without re-indenting the main logic.
 
@@ -466,15 +582,33 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
     print(f"[{_timestamp()}] {data_source}: Beginning work in project folder: {project_dir}\n")
 
     conn = connect(project_dir, cfg)
+    check_internal_version(conn)
     if report:
         report.set_conn(conn)
     try:
         vrt_dir_name = make_vrt_dir_name(data_source, tile_resolution_filter,
-                                         vrt_resolution_target, reproject)
+                                         vrt_resolution_target, reproject,
+                                         output_dir=output_dir)
         params_key = make_params_key(data_source, tile_resolution_filter,
                                      vrt_resolution_target, reproject)
 
-        if params_key:
+        # Stamp output_dir on any rows that don't have one yet.
+        # Always use the auto-generated name so that custom output_dir
+        # requests are detected as conflicts by _validate_output_dir.
+        auto_vrt_dir_name = f"{data_source}_VRT{params_key}"
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE vrt_utm SET output_dir = ? "
+                "WHERE params_key = ? AND output_dir IS NULL",
+                (auto_vrt_dir_name, params_key),
+            )
+            if cursor.rowcount > 0:
+                conn.commit()
+        except (sqlite3.Error, TypeError):
+            pass  # Mocked or unavailable DB — stamp skipped
+
+        if params_key or output_dir:
             if tile_resolution_filter:
                 print(f"Tile resolution filter: "
                       f"{make_resolution_label(tile_resolution_filter)}")
@@ -482,7 +616,12 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                 print(f"VRT resolution target: {vrt_resolution_target:g}m")
             if reproject:
                 print("Reprojecting to EPSG:3857 (Web Mercator)")
-            ensure_params_rows(conn, cfg, params_key)
+            if output_dir:
+                print(f"Output directory: {output_dir}")
+            ensure_params_rows(conn, cfg, params_key, output_dir=vrt_dir_name)
+
+        # Validate output_dir: check for conflicts with other params_keys
+        _validate_output_dir(project_dir, conn, cfg, params_key, vrt_dir_name)
 
         result.missing_reset = missing_utms(project_dir, conn, cfg, params_key)
         if result.missing_reset:

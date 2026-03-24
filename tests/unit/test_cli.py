@@ -58,6 +58,7 @@ class TestBuildVrtCommand:
                     hillshade=False,
                     workers=None,
                     reproject=False,
+                    output_dir=None,
                     debug=False,
                 )
 
