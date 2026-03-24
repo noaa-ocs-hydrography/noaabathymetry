@@ -115,9 +115,11 @@ For most usecases, reusing the commands above to stay up to date in your area of
 
 ## Notes
 
-In addition to BlueTopo, Modeling data is also available. You can work with Modeling data using the `source` argument in the CLI commands or the `data_source` argument in the Python API (e.g. `data_source='modeling'`).
+In addition to BlueTopo, Modeling, and various S-102 versioned data is also available. You can work with Modeling or S-102 data using the `source` argument in the CLI commands or the `data_source` argument in the Python API (e.g. `data_source='modeling'`).
 
 The primary difference between BlueTopo and Modeling data is the vertical datum. Modeling data is on a low water datum.
+
+Please note that these S-102 data are for test and evaluation and should not be used for navigation.  For offical S-102 please see the [data](https://noaa-s102-pds.s3.amazonaws.com/index.html) available from [Precision Marine Navigation](https://oceanservice.noaa.gov/navigation/precision-navigation/).
 
 ## Authors
 
