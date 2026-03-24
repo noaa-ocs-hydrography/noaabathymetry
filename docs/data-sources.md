@@ -93,6 +93,8 @@ Bathymetric Attributed Grid — a single-file format with elevation and uncertai
 
 ---
 
+> **Note:** The S-102 data available through this package are for test and evaluation and should not be used for navigation. For official S-102 data, see the [data](https://noaa-s102-pds.s3.amazonaws.com/index.html) available from [Precision Marine Navigation](https://oceanservice.noaa.gov/navigation/precision-navigation/).
+
 ## S102 v2.1
 
 IHO S-102 bathymetric surface, version 2.1. Single-file HDF5 format with two bands.

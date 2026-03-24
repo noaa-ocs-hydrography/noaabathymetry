@@ -64,8 +64,8 @@ BlueTopo operates in two distinct steps.
 
 ### Step 1: fetch_tiles
 
-1. **Resolves the data source** — looks up the configuration for the named source, or inspects a local directory for a tile scheme geopackage.
-2. **Downloads the tile scheme** — fetches the latest geopackage from S3 (or copies from a local directory). This file defines all available tiles, their UTM zones, resolutions, and file locations.
+1. **Resolves the data source** — looks up the configuration for the named source.
+2. **Downloads the tile scheme** — fetches the latest geopackage from S3. This file defines all available tiles, their UTM zones, resolutions, and file locations.
 3. **Discovers tiles** — if you provide a geometry, it intersects your area of interest with the tile scheme to find overlapping tiles.
 4. **Synchronizes records** — compares the current tile scheme against the tracking database. If a tile has a newer delivery date, the old files are removed and the tile is queued for re-download.
 5. **Downloads tiles** — fetches all pending tiles from S3 in parallel with checksum verification.
