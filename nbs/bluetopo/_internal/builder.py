@@ -413,7 +413,9 @@ def _validate_output_dir(project_dir, conn, cfg, params_key, vrt_dir_name):
         if os.path.isdir(os.path.join(project_dir, vrt_dir_name)):
             raise ValueError(
                 f"Output directory '{vrt_dir_name}' is already in use by "
-                f"a different build configuration."
+                f"a different build configuration. Delete '{vrt_dir_name}' "
+                "first to rebuild with your new parameters, or choose a "
+                "different output directory."
             )
         # Conflicting dir reported gone — verify filesystem before resetting DB
         _verify_dir_absent(project_dir, vrt_dir_name)

@@ -200,6 +200,8 @@ build_vrt -d /path/to/project --reproject
 
 The 3857 output is stored in a separate directory (e.g. `BlueTopo_VRT_3857/`) and tracked independently from the default UTM VRTs. The output is a GeoTIFF (`.tif`) rather than a VRT, since the reprojection requires pixel computation. Only UTM zones with new or updated tiles are reprojected on subsequent runs.
 
+> **Note:** Reprojection is currently only supported for the BlueTopo data source.
+
 This can be combined with other parameters:
 
 ```python

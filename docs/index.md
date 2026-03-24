@@ -1,6 +1,6 @@
 [BlueTopo](https://www.nauticalcharts.noaa.gov/data/bluetopo.html) is a compilation of the best available public bathymetric data of U.S. waters. Created by [NOAA Office of Coast Survey's](https://www.nauticalcharts.noaa.gov/) National Bathymetric Source project, it provides depth information nationwide with the vertical uncertainty tied to that depth estimate as well as information on the survey source.
 
-This package simplifies downloading bathymetric tiles from NOAA's public S3 bucket and assembling them into per-UTM-zone GDAL Virtual Rasters for use in GIS applications. It supports six S3-hosted data sources (BlueTopo, Modeling, BAG, S-102 v2.1/v2.2/v3.0) and can also work with local tile directories.
+This package simplifies downloading bathymetric tiles from NOAA's public S3 bucket and assembling them into per-UTM-zone GDAL Virtual Rasters for use in GIS applications. It supports six S3-hosted data sources (BlueTopo, Modeling, BAG, S-102 v2.1/v2.2/v3.0).
 
 ## Who this package is for
 
@@ -30,7 +30,7 @@ Install conda if you haven't already: [conda installation](https://docs.conda.io
 Create an environment with the required packages:
 
 ```
-conda create -n bluetopo_env -c conda-forge 'gdal>=3.4' libgdal-hdf5
+conda create -n bluetopo_env -c conda-forge 'gdal>=3.9'
 conda activate bluetopo_env
 pip install bluetopo
 ```

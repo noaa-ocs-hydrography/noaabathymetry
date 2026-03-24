@@ -79,6 +79,7 @@ build_vrt(
     hillshade: bool = False,
     workers: int = None,
     reproject: bool = False,
+    output_dir: str = None,
     debug: bool = False,
 ) -> BuildResult
 ```
@@ -112,8 +113,11 @@ Build a flat GDAL VRT per UTM zone from all source tiles.
 | `ValueError` | Tile downloads folder not found (`fetch_tiles` must run first). |
 | `ValueError` | `vrt_resolution_target` is not positive. |
 | `ValueError` | `workers` is not a positive integer or exceeds `os.cpu_count()`. |
+| `ValueError` | `reproject` is used with a data source other than BlueTopo. |
+| `ValueError` | `output_dir` contains a path separator (must be a single directory name). |
 | `RuntimeError` | GDAL version is too old for the data source. |
 | `RuntimeError` | GDAL is missing required drivers (e.g. S102, BAG). |
+| `RuntimeError` | Project was created with an incompatible internal version. |
 
 **Example**
 
@@ -216,7 +220,7 @@ Two commands are installed when you `pip install bluetopo`.
 fetch_tiles -d DIR [-g GEOMETRY] [-s SOURCE] [--tile-resolution-filter N [N ...]] [--debug]
 ```
 
-| Flag | Long form | Description |
+| Short form | Long form | Description |
 |---|---|---|
 | `-d` | `--dir`, `--directory` | **Required.** Absolute path to the project directory. |
 | `-g` | `--geom`, `--geometry` | Geometry input (file path, bounding box, WKT, or GeoJSON). String inputs assume EPSG:4326. |
@@ -244,10 +248,10 @@ fetch_tiles -d /home/user/bathymetry
 ### build_vrt command
 
 ```
-build_vrt -d DIR [-s SOURCE] [-r BOOL] [-t RESOLUTION] [--tile-resolution-filter N [N ...]] [--hillshade] [--workers N] [--reproject] [--debug]
+build_vrt -d DIR [-s SOURCE] [-r BOOL] [-t RESOLUTION] [--tile-resolution-filter N [N ...]] [--hillshade] [--workers N] [--reproject] [-o OUTPUT_DIR] [--debug]
 ```
 
-| Flag | Long form | Description |
+| Short form | Long form | Description |
 |---|---|---|
 | `-d` | `--dir`, `--directory` | **Required.** Absolute path to the project directory. |
 | `-s` | `--source`, `--data-source` | Data source identifier. Default: `bluetopo`. |
