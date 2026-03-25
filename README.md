@@ -7,9 +7,7 @@
     <a href="#requirements">Requirements</a> •
     <a href="#installation">Installation</a> •
     <a href="#quickstart">Quickstart</a> •
-    <a href="#python-api">Python</a> •
     <a href="#cli">CLI</a> •
-    <a href="#geometry-formats">Geometry</a> •
     <a href="#other-data-sources">Other Sources</a> •
     <a href="#authors">Contact</a>
 </p>
