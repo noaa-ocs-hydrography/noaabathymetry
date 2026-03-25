@@ -49,6 +49,15 @@ Draw your area of interest on the map below to generate usage examples.
     color: #e0e0e0;
     border-color: #888;
 }
+.kw { color: #cba6f7; }
+.fn { color: #89b4fa; }
+.str { color: #a6e3a1; }
+.op { color: #89dceb; }
+.cm { color: #6c7086; }
+.mod { color: #f9e2af; }
+.var { color: #cdd6f4; }
+.param { color: #fab387; }
+.punc { color: #6c7086; }
 </style>
 
 <div style="position: relative; margin-bottom: 16px;">
@@ -88,10 +97,10 @@ Draw your area of interest on the map below to generate usage examples.
 </div>
 
 <strong>Python</strong> <button class="copy-btn" onclick="copyText('python-output', this)">Copy</button>
-<pre id="python-output" style="background: #0d1117; color: #e0e0e0; padding: 12px; border-radius: 4px; overflow-x: auto; user-select: all; border: 1px solid #30363d;"></pre>
+<pre id="python-output" style="background: #0d1117; color: #e0e0e0; padding: 8px; border-radius: 4px; overflow-x: auto; user-select: all; border: 1px solid #30363d; font-size: 11px; line-height: 1.4; white-space: pre-wrap; word-break: break-all;"></pre>
 
 <strong>CLI</strong> <button class="copy-btn" onclick="copyText('cli-output', this)">Copy</button>
-<pre id="cli-output" style="background: #0d1117; color: #e0e0e0; padding: 12px; border-radius: 4px; overflow-x: auto; user-select: all; border: 1px solid #30363d;"></pre>
+<pre id="cli-output" style="background: #0d1117; color: #e0e0e0; padding: 8px; border-radius: 4px; overflow-x: auto; user-select: all; border: 1px solid #30363d; font-size: 11px; line-height: 1.4; white-space: pre-wrap; word-break: break-all;"></pre>
 
 </div>
 
@@ -197,14 +206,20 @@ function refreshExamples() {
     var includeBuild = document.getElementById('include-build-vrt').checked;
 
     var geojson = document.getElementById('geojson-output').textContent;
-    var py = "from nbs.bluetopo import fetch_tiles" + (includeBuild ? ", build_vrt" : "") +
-        "\nfetch_result = fetch_tiles('" + dir + "', geometry='" + geojson + "')";
-    if (includeBuild) py += "\nbuild_result = build_vrt('" + dir + "')";
-    document.getElementById('python-output').textContent = py;
 
-    var cli = 'fetch_tiles -d "' + dir + '" -g \'' + geojson + "'";
-    if (includeBuild) cli += '\nbuild_vrt -d "' + dir + '"';
-    document.getElementById('cli-output').textContent = cli;
+    // Python with syntax highlighting
+    var ed = esc(dir);
+    var eg = esc(geojson);
+    var py = '<span class="kw">from</span> <span class="mod">nbs.bluetopo</span> <span class="kw">import</span> <span class="fn">fetch_tiles</span>' +
+        (includeBuild ? '<span class="punc">,</span> <span class="fn">build_vrt</span>' : '') +
+        '\n<span class="var">fetch_result</span> <span class="op">=</span> <span class="fn">fetch_tiles</span><span class="punc">(</span><span class="str">\'' + ed + '\'</span><span class="punc">,</span> <span class="param">geometry</span><span class="op">=</span><span class="str">\'' + eg + '\'</span><span class="punc">)</span>';
+    if (includeBuild) py += '\n<span class="var">build_result</span> <span class="op">=</span> <span class="fn">build_vrt</span><span class="punc">(</span><span class="str">\'' + ed + '\'</span><span class="punc">)</span>';
+    document.getElementById('python-output').innerHTML = py;
+
+    // CLI with highlighting
+    var cli = '<span class="fn">fetch_tiles</span> <span class="param">-d</span> <span class="str">"' + ed + '"</span> <span class="param">-g</span> <span class="str">\'' + eg + '\'</span>';
+    if (includeBuild) cli += '\n<span class="fn">build_vrt</span> <span class="param">-d</span> <span class="str">"' + ed + '"</span>';
+    document.getElementById('cli-output').innerHTML = cli;
 }
 
 map.on(L.Draw.Event.CREATED, function(event) {
@@ -215,6 +230,12 @@ map.on(L.Draw.Event.CREATED, function(event) {
     document.getElementById('clear-btn').style.display = 'block';
 });
 
+
+function esc(s) {
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+}
 
 var activeTab = 'geojson';
 var tabMap = { geojson: 'geojson-output', bbox: 'bbox-output', wkt: 'wkt-output' };
@@ -239,7 +260,8 @@ function copyActiveFormat(btn) {
 }
 
 function copyText(elementId, btn) {
-    var text = document.getElementById(elementId).textContent;
+    var el = document.getElementById(elementId);
+    var text = el.textContent || el.innerText;
     navigator.clipboard.writeText(text);
     flashButton(btn);
 }
