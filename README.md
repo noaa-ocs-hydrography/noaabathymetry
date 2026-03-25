@@ -8,7 +8,6 @@
     <a href="#installation">Installation</a> •
     <a href="#quickstart">Quickstart</a> •
     <a href="#cli">CLI</a> •
-    <a href="#other-data-sources">Other Sources</a> •
     <a href="#authors">Contact</a>
 </p>
 
@@ -16,7 +15,9 @@
 
 This package simplifies getting BlueTopo data in your area of interest.
 
-For detailed guides, API reference, and troubleshooting, see the [full documentation](https://noaa-ocs-hydrography.github.io/BlueTopo/).
+For most use cases, the quickstart below is all you need.
+
+For more detailed guides, API reference, and troubleshooting, see the [full documentation](https://noaa-ocs-hydrography.github.io/BlueTopo/).
 
 ## Background
 
