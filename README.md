@@ -7,6 +7,7 @@
     <a href="#requirements">Requirements</a> •
     <a href="#installation">Installation</a> •
     <a href="#quickstart">Quickstart</a> •
+    <a href="#python-api">Python API</a> •
     <a href="#cli">CLI</a> •
     <a href="#notes">Notes</a> •
     <a href="#authors">Contact</a> •
@@ -58,16 +59,43 @@ pip install bluetopo
 
 After installation, you have access to a Python API and two matching CLI commands: `fetch_tiles` for downloading tiles and `build_vrt` for assembling them into VRTs.
 
-```python
-from nbs.bluetopo import fetch_tiles, build_vrt
-```
+## Python API
 
-Define your area of interest using any of the formats below, then fetch and build:
+To download the desired files, define your area of interest using any of the geometry formats (listed below), then run the following commands inside of a Python shell:
 
 ```python
-result = fetch_tiles('/path/to/project', geometry='area_of_interest.gpkg')
-result = build_vrt('/path/to/project')
+from nbs.bluetopo import fetch_tiles 
+fetch_result = fetch_tiles('/path/to/project', geometry='area_of_interest.gpkg')
 ```
+
+To build a GDAL VRT of the downloaded files:
+
+```python
+from nbs.bluetopo import build_vrt 
+build_result = build_vrt('/path/to/project')
+```
+
+## CLI
+
+You can also use the command line. Confirm the environment we created during installation is activated.
+
+To fetch the latest BlueTopo data, pass a directory path and a geometry input:
+
+```
+fetch_tiles -d /path/to/project -g area_of_interest.gpkg
+```
+
+The `-g` flag accepts the same formats as the Python `geometry` parameter (file path, bounding box, WKT, or GeoJSON).
+
+Pass the same directory path to `build_vrt` to create a VRT from the fetched data:
+
+```
+build_vrt -d /path/to/project
+```
+
+Use `-h` for help and to see additional arguments.
+
+For most usecases, reusing the commands above to stay up to date in your area of interest is adequate.
 
 ### Geometry formats
 
@@ -93,33 +121,13 @@ result = fetch_tiles('/path/to/project', geometry='POLYGON((-76.1 36.9, -75.9 36
 result = fetch_tiles('/path/to/project', geometry='{"type":"Polygon","coordinates":[[[-76.1,36.9],[-75.9,36.9],[-75.9,37.1],[-76.1,37.1],[-76.1,36.9]]]}')
 ```
 
-## CLI
-
-To fetch the latest BlueTopo data, pass a directory path and a geometry input:
-
-```
-fetch_tiles -d /path/to/project -g area_of_interest.gpkg
-```
-
-The `-g` flag accepts the same formats as the Python `geometry` parameter (file path, bounding box, WKT, or GeoJSON).
-
-Pass the same directory path to `build_vrt` to create a VRT from the fetched data:
-
-```
-build_vrt -d /path/to/project
-```
-
-Use `-h` for help and to see additional arguments.
-
-For most usecases, reusing the commands above to stay up to date in your area of interest is adequate.
-
 ## Notes
 
 In addition to BlueTopo, Modeling, and various S-102 versioned data is also available. You can work with Modeling or S-102 data using the `source` argument in the CLI commands or the `data_source` argument in the Python API (e.g. `data_source='modeling'`).
 
 The primary difference between BlueTopo and Modeling data is the vertical datum. Modeling data is on a low water datum.
 
-Please note that these S-102 data are for test and evaluation and should not be used for navigation.  For offical S-102 please see the [data](https://noaa-s102-pds.s3.amazonaws.com/index.html) available from [Precision Marine Navigation](https://oceanservice.noaa.gov/navigation/precision-navigation/).
+Please note that these S-102 data are for test and evaluation and should not be used for navigation.  For official S-102 please see the [data](https://noaa-s102-pds.s3.amazonaws.com/index.html) available from [Precision Marine Navigation](https://oceanservice.noaa.gov/navigation/precision-navigation/).
 
 ## Authors
 
