@@ -248,8 +248,8 @@ class TestMissingUtms:
         conn, project_dir = registry_db(cfg, utms=[
             {"utm": "19", "built": 1, "utm_vrt": "missing.vrt", "utm_ovr": "missing.ovr"},
         ])
-        count = missing_utms(project_dir, conn, cfg)
-        assert count == 1
+        reset = missing_utms(project_dir, conn, cfg)
+        assert reset == ["19"]
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM vrt_utm WHERE utm = '19'")
         row = dict(cursor.fetchone())
@@ -267,8 +267,8 @@ class TestMissingUtms:
              "utm_subdataset2_ovr": "missing.ovr",
              "utm_combined_vrt": "missing.vrt"},
         ])
-        count = missing_utms(project_dir, conn, cfg)
-        assert count == 1
+        reset = missing_utms(project_dir, conn, cfg)
+        assert reset == ["19"]
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM vrt_utm WHERE utm = '19'")
         row = dict(cursor.fetchone())
@@ -288,8 +288,8 @@ class TestMissingUtms:
         conn, project_dir = registry_db(cfg, utms=[
             {"utm": "19", "built": 1, "utm_vrt": rel_vrt, "utm_ovr": rel_ovr},
         ])
-        count = missing_utms(project_dir, conn, cfg)
-        assert count == 0
+        reset = missing_utms(project_dir, conn, cfg)
+        assert reset == []
 
 
 # ---------------------------------------------------------------------------
@@ -464,6 +464,6 @@ class TestCompositeKeyIsolation:
                   "utm_vrt": "missing_param.vrt", "utm_ovr": None}
         update_utm(conn, fields, cfg)
         # missing_utms on default should find 0
-        assert missing_utms(project_dir, conn, cfg, "") == 0
+        assert missing_utms(project_dir, conn, cfg, "") == []
         # missing_utms on parameterized should find 1
-        assert missing_utms(project_dir, conn, cfg, "_4m") == 1
+        assert len(missing_utms(project_dir, conn, cfg, "_4m")) == 1

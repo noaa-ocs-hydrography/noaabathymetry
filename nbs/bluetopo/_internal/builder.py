@@ -312,8 +312,8 @@ class BuildResult:
     failed : list[dict]
         UTM zones that failed during the build. Each dict has
         ``utm`` (str) and ``reason`` (str) keys.
-    missing_reset : int
-        Number of UTM zones that were reset due to missing VRT files on disk.
+    missing_reset : list[str]
+        UTM zones reset due to missing VRT files on disk.
     tile_resolution_filter : list[int] | None
         Resolution filter that was active, or None if unfiltered.
     vrt_resolution_target : float | None
@@ -322,7 +322,7 @@ class BuildResult:
     built: list = field(default_factory=list)
     skipped: list = field(default_factory=list)
     failed: list = field(default_factory=list)
-    missing_reset: int = 0
+    missing_reset: list = field(default_factory=list)
     tile_resolution_filter: list = None
     vrt_resolution_target: float = None
 
@@ -475,7 +475,7 @@ def build_vrt(project_dir: str, data_source: str = None,
     Returns
     -------
     BuildResult
-        Structured result with built, skipped, and missing_reset counts.
+        Structured result with built, skipped, failed, and missing_reset.
     """
     if workers is not None:
         if isinstance(workers, bool) or not isinstance(workers, int) or workers < 1:
@@ -632,7 +632,7 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
         result.missing_reset = missing_utms(project_dir, conn, cfg, params_key)
         if result.missing_reset:
             logger.info("%d utm vrt(s) missing on disk. Added to build list.",
-                       result.missing_reset)
+                       len(result.missing_reset))
         utms_to_build = select_unbuilt_utms(conn, cfg, params_key)
 
         vrt_dir = os.path.join(project_dir, vrt_dir_name)

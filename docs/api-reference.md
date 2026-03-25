@@ -134,7 +134,7 @@ result = build_vrt(
 for entry in result.built:
     print(f"Built UTM {entry['utm']}: {entry['vrt']}")
 print(f"Skipped (up to date): {len(result.skipped)}")
-print(f"Missing VRTs reset: {result.missing_reset}")
+print(f"Missing VRTs reset: {len(result.missing_reset)}")
 ```
 
 ---
@@ -183,7 +183,7 @@ Dataclass returned by `build_vrt`.
 | `built` | `list[dict]` | UTM zones that were built. Each dict has `utm` (str), `vrt` (str), `ovr` (str or None), and `hillshade` (str or None) keys. |
 | `skipped` | `list[str]` | UTM zone identifiers that were already up to date, or had no matching tiles after resolution filtering. |
 | `failed` | `list[dict]` | UTM zones that failed during the build. Each dict has `utm` (str) and `reason` (str) keys. |
-| `missing_reset` | `int` | Number of UTM zones reset due to VRT files missing on disk. |
+| `missing_reset` | `list[str]` | UTM zones reset due to VRT files missing on disk. |
 | `tile_resolution_filter` | `list[int] \| None` | Resolution filter that was active, or `None` if unfiltered. |
 | `vrt_resolution_target` | `float \| None` | VRT pixel size override that was active, or `None` for native resolution. |
 
@@ -204,7 +204,7 @@ print(result)
 #     ],
 #     skipped=['17'],
 #     failed=[],
-#     missing_reset=0,
+#     missing_reset=[],
 #     tile_resolution_filter=None,
 #     vrt_resolution_target=None
 # )

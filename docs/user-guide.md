@@ -106,7 +106,7 @@ BlueTopo operates in two distinct steps.
 
 **Run metadata:**
 
-- **missing_reset** — number of UTM zones reset because their VRT files were missing on disk.
+- **missing_reset** — UTM zones reset because their VRT files were missing on disk.
 - **tile_resolution_filter** — the resolution filter that was active, or `None` if unfiltered.
 - **vrt_resolution_target** — VRT pixel size override that was active, or `None` for native resolution.
 

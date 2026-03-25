@@ -709,8 +709,8 @@ def missing_utms(project_dir, conn, cfg, params_key=""):
 
     Returns
     -------
-    int
-        Number of UTM zones reset.
+    list[str]
+        UTM zone identifiers that were reset.
     """
     built_flags = get_built_flags(cfg)
     if cfg["subdatasets"]:
@@ -723,7 +723,7 @@ def missing_utms(project_dir, conn, cfg, params_key=""):
         (params_key,),
     )
     utms = [dict(row) for row in cursor.fetchall()]
-    missing_utm_count = 0
+    missing_utm_list = []
     utm_cols = get_utm_file_columns(cfg)
 
     for utm in utms:
@@ -738,7 +738,7 @@ def missing_utms(project_dir, conn, cfg, params_key=""):
                     missing = True
                     break
         if missing:
-            missing_utm_count += 1
+            missing_utm_list.append(utm["utm"])
             set_parts = [f"{col} = ?" for col in utm_cols]
             for f in built_flags:
                 set_parts.append(f"{f} = 0")
@@ -750,9 +750,9 @@ def missing_utms(project_dir, conn, cfg, params_key=""):
                 f"UPDATE vrt_utm SET {set_clause} WHERE utm = ? AND params_key = ?",
                 values,
             )
-    if missing_utm_count:
+    if missing_utm_list:
         conn.commit()
-    return missing_utm_count
+    return missing_utm_list
 
 
 def ensure_params_rows(conn, cfg, params_key, output_dir=None):
