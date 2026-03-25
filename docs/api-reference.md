@@ -179,8 +179,8 @@ Dataclass returned by `build_vrt`.
 | Attribute | Type | Description |
 |---|---|---|
 | `built` | `list[dict]` | UTM zones that were built. Each dict has `utm` (str), `vrt` (str), `ovr` (str or None), and `hillshade` (str or None) keys. |
-| `skipped` | `list[str]` | UTM zone identifiers that were already up to date. |
-| `failed` | `list[dict]` | UTM zones that failed during parallel builds. Each dict has `utm` (str) and `reason` (str) keys. |
+| `skipped` | `list[str]` | UTM zone identifiers that were already up to date, or had no matching tiles after resolution filtering. |
+| `failed` | `list[dict]` | UTM zones that failed during the build. Each dict has `utm` (str) and `reason` (str) keys. |
 | `missing_reset` | `int` | Number of UTM zones reset due to VRT files missing on disk. |
 | `tile_resolution_filter` | `list[int] \| None` | Resolution filter that was active, or `None` if unfiltered. |
 | `vrt_resolution_target` | `float \| None` | VRT pixel size override that was active, or `None` for native resolution. |

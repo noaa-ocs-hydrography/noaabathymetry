@@ -100,8 +100,8 @@ BlueTopo operates in two distinct steps.
 **Zone statuses:**
 
 - **built** — UTM zones that were built in this run. Each entry includes paths to the VRT, overview, and optional hillshade files.
-- **skipped** — UTM zones already up to date; no rebuild was needed.
-- **failed** — UTM zones that failed during parallel builds. Each entry includes the zone identifier and failure reason.
+- **skipped** — UTM zones already up to date, or zones with no matching tiles after resolution filtering.
+- **failed** — UTM zones that failed during the build. Each entry includes the zone identifier and failure reason.
 
 **Run metadata:**
 
@@ -247,7 +247,7 @@ result = build_vrt('/path/to/project', workers=4)
 build_vrt -d /path/to/project --workers 4
 ```
 
-The maximum is `os.cpu_count()`. Each worker loads tile data into RAM independently, so memory usage scales with the number of workers. **Run with the default (1 worker) first to gauge memory usage before scaling up.** If a zone fails during parallel builds, other zones continue and the failure is reported in `BuildResult.failed`.
+The maximum is `os.cpu_count()`. Each worker loads tile data into RAM independently, so memory usage scales with the number of workers. **Run with the default (1 worker) first to gauge memory usage before scaling up.** If a zone fails, other zones continue and the failure is reported in `BuildResult.failed`.
 
 ## Hillshade generation
 

@@ -304,9 +304,10 @@ class BuildResult:
         UTM zones that were built. Each dict has ``utm`` and ``vrt`` keys,
         plus ``ovr`` (str or None) for the overview file path.
     skipped : list[str]
-        UTM zones that were already up to date.
+        UTM zones that were already up to date or had no tiles after
+        resolution filtering.
     failed : list[dict]
-        UTM zones that failed during parallel builds. Each dict has
+        UTM zones that failed during the build. Each dict has
         ``utm`` (str) and ``reason`` (str) keys.
     missing_reset : int
         Number of UTM zones that were reset due to missing VRT files on disk.
@@ -697,22 +698,27 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
 
                 # DB updates sequentially (SQLite single-writer)
                 for zone_result in zone_results:
-                    if reproject:
-                        fields = {"utm_vrt": zone_result["rel_path"],
-                                  "utm_ovr": None,
-                                  "utm": zone_result["utm"],
-                                  "params_key": params_key}
-                    else:
-                        fields = zone_result["fields"]
-                    update_utm(conn, fields, cfg)
+                    utm = zone_result.get("utm") or zone_result.get("fields", {}).get("utm")
+                    try:
+                        if reproject:
+                            fields = {"utm_vrt": zone_result["rel_path"],
+                                      "utm_ovr": None,
+                                      "utm": zone_result["utm"],
+                                      "params_key": params_key}
+                        else:
+                            fields = zone_result["fields"]
+                        update_utm(conn, fields, cfg)
 
-                    built_entry = {
-                        "utm": zone_result["utm"],
-                        "vrt": zone_result.get("vrt") or zone_result.get("output_path"),
-                        "ovr": zone_result.get("ovr"),
-                        "hillshade": zone_result.get("hillshade"),
-                    }
-                    result.built.append(built_entry)
+                        built_entry = {
+                            "utm": zone_result["utm"],
+                            "vrt": zone_result.get("vrt") or zone_result.get("output_path"),
+                            "ovr": zone_result.get("ovr"),
+                            "hillshade": zone_result.get("hillshade"),
+                        }
+                        result.built.append(built_entry)
+                    except Exception as e:
+                        result.failed.append({"utm": utm, "reason": str(e)})
+                        print(f"  utm{utm} FAILED during DB update: {e}")
 
                 if result.failed:
                     failed_names = ", ".join(
@@ -725,29 +731,38 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                     utm = ub_utm["utm"]
                     print(f"  {label} utm{utm}...")
 
-                    zone_result = worker_fn(*worker_args(utm))
-                    if zone_result is None:
-                        continue
+                    try:
+                        zone_result = worker_fn(*worker_args(utm))
+                        if zone_result is None:
+                            continue
 
-                    # DB update immediately in sequential mode
-                    if reproject:
-                        fields = {"utm_vrt": zone_result["rel_path"],
-                                  "utm_ovr": None,
-                                  "utm": zone_result["utm"],
-                                  "params_key": params_key}
-                    else:
-                        fields = zone_result["fields"]
-                    update_utm(conn, fields, cfg)
+                        # DB update immediately in sequential mode
+                        if reproject:
+                            fields = {"utm_vrt": zone_result["rel_path"],
+                                      "utm_ovr": None,
+                                      "utm": zone_result["utm"],
+                                      "params_key": params_key}
+                        else:
+                            fields = zone_result["fields"]
+                        update_utm(conn, fields, cfg)
 
-                    built_entry = {
-                        "utm": zone_result["utm"],
-                        "vrt": zone_result.get("vrt") or zone_result.get("output_path"),
-                        "ovr": zone_result.get("ovr"),
-                        "hillshade": zone_result.get("hillshade"),
-                    }
-                    result.built.append(built_entry)
-                    print(f"  utm{utm} complete after "
-                          f"{datetime.datetime.now() - utm_start}")
+                        built_entry = {
+                            "utm": zone_result["utm"],
+                            "vrt": zone_result.get("vrt") or zone_result.get("output_path"),
+                            "ovr": zone_result.get("ovr"),
+                            "hillshade": zone_result.get("hillshade"),
+                        }
+                        result.built.append(built_entry)
+                        print(f"  utm{utm} complete after "
+                              f"{datetime.datetime.now() - utm_start}")
+                    except Exception as e:
+                        result.failed.append({"utm": utm, "reason": str(e)})
+                        print(f"  utm{utm} FAILED: {e}")
+
+                if result.failed:
+                    failed_names = ", ".join(
+                        f"utm{entry['utm']}" for entry in result.failed)
+                    print(f"\n{len(result.failed)} zone(s) failed: {failed_names}")
         else:
             up_to_date_label = ("EPSG:3857 output(s)" if reproject
                                 else "UTM vrt(s)")
