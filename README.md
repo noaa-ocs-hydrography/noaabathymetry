@@ -81,13 +81,11 @@ build_result = build_vrt('/path/to/project')
 
 You can also use the command line. Confirm the environment we created during installation is activated.
 
-To fetch the latest BlueTopo data, pass a directory path and a geometry input:
+To fetch the latest BlueTopo data, pass a directory path and a geometry input via `-g` (see the Geometry formats section below for accepted inputs):
 
 ```
 fetch_tiles -d /path/to/project -g area_of_interest.gpkg
 ```
-
-The `-g` flag accepts the same formats as the Python `geometry` parameter (file path, bounding box, WKT, or GeoJSON).
 
 Pass the same directory path to `build_vrt` to create a VRT from the fetched data:
 
