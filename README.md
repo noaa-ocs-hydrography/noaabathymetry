@@ -100,6 +100,8 @@ For most usecases, reusing the commands above to stay up to date in your area of
 
 ## Geometry formats
 
+Use the [Geometry Helper](https://noaa-ocs-hydrography.github.io/BlueTopo/geometry-helper.html) to draw your area of interest on a map.
+
 The `geometry` parameter accepts four formats. File inputs use the CRS defined in the file. All other formats assume EPSG:4326 (WGS 84).
 
 **File** — any GDAL-compatible vector file (shapefile, geopackage, GeoJSON file, etc.):

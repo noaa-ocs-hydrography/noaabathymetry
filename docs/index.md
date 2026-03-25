@@ -24,6 +24,7 @@ Common use cases include:
 - **[Data Sources](data-sources.md)** — each data source with its file format, bands, and GDAL requirements.
 - **[API Reference](api-reference.md)** — complete reference for the Python API and CLI commands.
 - **[Troubleshooting](troubleshooting.md)** — common errors and how to fix them.
+- **[Geometry Helper](geometry-helper.md)** — draw your area of interest on a map and copy the output.
 
 ## Installation
 
@@ -75,6 +76,8 @@ build_vrt -d /path/to/project
 ```
 
 ### Geometry formats
+
+Use the [Geometry Helper](geometry-helper.md) to draw your area of interest on a map.
 
 The `geometry` parameter accepts four formats. File inputs use the CRS defined in the file. All other formats assume EPSG:4326 (WGS 84).
 

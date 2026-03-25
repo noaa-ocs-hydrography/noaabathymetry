@@ -6,4 +6,5 @@
 - [Data Sources](data-sources.md)
 - [API Reference](api-reference.md)
 - [Troubleshooting](troubleshooting.md)
+- [Geometry Helper](geometry-helper.md)
 
