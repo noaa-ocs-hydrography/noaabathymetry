@@ -68,14 +68,14 @@ To download files in your area of interest:
 
 ```python
 from nbs.bluetopo import fetch_tiles
-fetch_result = fetch_tiles('/path/to/project', geometry='area_of_interest.gpkg')
+result = fetch_tiles('/path/to/project', geometry='area_of_interest.gpkg')
 ```
 
 To build a GDAL VRT of the downloaded files:
 
 ```python
 from nbs.bluetopo import build_vrt 
-build_result = build_vrt('/path/to/project')
+result = build_vrt('/path/to/project')
 ```
 
 ## CLI
