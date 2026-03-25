@@ -11,6 +11,7 @@ Thin orchestrator that coordinates:
 import concurrent.futures
 import datetime
 import glob
+import logging
 import os
 import platform
 import sqlite3
@@ -26,9 +27,9 @@ from nbs.bluetopo._internal.config import (
     make_params_key,
     parse_resolution,
     validate_vrt_resolution_target,
-    _timestamp,
     resolve_data_source,
 )
+
 from nbs.bluetopo._internal.db import check_internal_version, connect
 from nbs.bluetopo._internal.vrt import (
     add_vrt_rat,
@@ -44,6 +45,8 @@ from nbs.bluetopo._internal.vrt import (
     select_unbuilt_utms,
     update_utm,
 )
+
+logger = logging.getLogger("bluetopo")
 
 
 def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
@@ -112,7 +115,7 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
             fields["utm_combined_vrt"] = rel_combined
 
             if cfg["has_rat"]:
-                add_vrt_rat(tiles, project_dir, utm_combined_vrt, cfg)
+                add_vrt_rat(tiles, project_dir, utm_combined_vrt, cfg, utm=utm)
 
             result = {"utm": utm, "fields": fields,
                       "vrt": os.path.join(project_dir, rel_combined), "ovr": None}
@@ -139,7 +142,7 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
                        cfg["band_descriptions"], vrt_resolution_target=vrt_resolution_target)
 
             if cfg["has_rat"]:
-                add_vrt_rat(tiles, project_dir, utm_vrt, cfg)
+                add_vrt_rat(tiles, project_dir, utm_vrt, cfg, utm=utm)
 
             fields = {"utm_vrt": rel_path, "utm_ovr": None,
                       "utm": utm, "params_key": params_key}
@@ -172,8 +175,8 @@ def _reproject_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
 
     Builds per-resolution VRTs (instant — each has a perfectly aligned
     pixel grid) and warps them together into a single GeoTIFF at the
-    coarsest source resolution.  Coarsest-first ordering ensures finer
-    data overlays coarser in the output.
+    finest source resolution.  Coarsest-first source ordering ensures
+    finer data overlays coarser in the output.
 
     Opens a read-only DB connection for tile selection and RAT
     aggregation (schema migration is already done by the main process).
@@ -206,7 +209,7 @@ def _reproject_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
         # Level 1 — Per-resolution VRTs: group tiles by resolution so each
         #   VRT has a perfectly aligned pixel grid (no fractional-pixel gaps
         #   between same-resolution tiles).
-        # Level 2 — Combined VRT: merges per-resolution VRTs at the coarsest
+        # Level 2 — Combined VRT: merges per-resolution VRTs at the finest
         #   resolution with finer data overlaying coarser (source order).
         #   This composites all resolutions onto one aligned grid BEFORE
         #   reprojection, which preserves more fine-resolution data than
@@ -240,10 +243,10 @@ def _reproject_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
         if not res_vrts:
             return None
 
-        # Combine per-resolution VRTs into a single VRT at the coarsest
+        # Combine per-resolution VRTs into a single VRT at the finest
         # resolution.  Sources are continuous rasters (not individual
         # tiles), so the combined grid won't straddle tile boundaries.
-        target_res = vrt_resolution_target if vrt_resolution_target is not None else max(tile_resolutions)
+        target_res = vrt_resolution_target if vrt_resolution_target is not None else min(tile_resolutions)
         combined_vrt = f"/vsimem/_reproject_UTM{utm}_combined.vrt"
         combined_opts = gdal.BuildVRTOptions(
             options=f"-allow_projection_difference -resolution user "
@@ -256,8 +259,8 @@ def _reproject_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
         vsimem_files.append(combined_vrt)
 
         # Warp single combined VRT to EPSG:3857.
-        # Overview factors are computed relative to the output resolution
-        # (coarsest source) so the 2x overview is included.
+        # filter_coarsest=False includes all overview levels since the
+        # output is a single GeoTIFF that needs overviews at every scale.
         factors = compute_overview_factors(
             resolutions=tile_resolutions,
             vrt_resolution_target=target_res,
@@ -273,7 +276,7 @@ def _reproject_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
 
         # Add RAT
         if cfg["has_rat"]:
-            add_vrt_rat(tiles, project_dir, output_3857, cfg)
+            add_vrt_rat(tiles, project_dir, output_3857, cfg, utm=utm)
 
         # Clean up /vsimem/ VRTs
         for f in vsimem_files:
@@ -582,7 +585,7 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
     GeoTIFF with overviews and RAT.
     """
     start = datetime.datetime.now()
-    print(f"[{_timestamp()}] {data_source}: Beginning work in project folder: {project_dir}\n")
+    logger.info("═══ %s: Building VRTs in %s ═══", data_source, project_dir)
 
     conn = connect(project_dir, cfg)
     check_internal_version(conn)
@@ -613,14 +616,14 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
 
         if params_key or output_dir:
             if tile_resolution_filter:
-                print(f"Tile resolution filter: "
-                      f"{make_resolution_label(tile_resolution_filter)}")
+                logger.info("Tile resolution filter: %s",
+                            make_resolution_label(tile_resolution_filter))
             if vrt_resolution_target is not None:
-                print(f"VRT resolution target: {vrt_resolution_target:g}m")
+                logger.info("VRT resolution target: %gm", vrt_resolution_target)
             if reproject:
-                print("Reprojecting to EPSG:3857 (Web Mercator)")
+                logger.info("Reprojecting to EPSG:3857 (Web Mercator)")
             if output_dir:
-                print(f"Output directory: {output_dir}")
+                logger.info("Output directory: %s", output_dir)
             ensure_params_rows(conn, cfg, params_key, output_dir=vrt_dir_name)
 
         # Validate output_dir: check for conflicts with other params_keys
@@ -628,7 +631,8 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
 
         result.missing_reset = missing_utms(project_dir, conn, cfg, params_key)
         if result.missing_reset:
-            print(f"{result.missing_reset} utm vrts files missing. Added to build list.")
+            logger.info("%d utm vrt(s) missing on disk. Added to build list.",
+                       result.missing_reset)
         utms_to_build = select_unbuilt_utms(conn, cfg, params_key)
 
         vrt_dir = os.path.join(project_dir, vrt_dir_name)
@@ -641,11 +645,11 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
             if os.path.isdir(d) and os.path.basename(d) != vrt_dir_name
         ]
         if other_vrt_dirs:
-            print(f"\nNote: {len(other_vrt_dirs)} other VRT director(ies) "
-                  "exist that may contain stale data:")
+            logger.info("Note: %d other VRT director(ies) "
+                        "exist that may contain stale data:",
+                        len(other_vrt_dirs))
             for d in sorted(other_vrt_dirs):
-                print(f"  {os.path.basename(d)}/")
-            print()
+                logger.info("  %s/", os.path.basename(d))
 
         if utms_to_build:
             # Select the worker function and label based on mode
@@ -670,9 +674,11 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
             use_parallel = workers is not None and workers > 1 and num_zones > 1
             actual_workers = min(workers, num_zones) if use_parallel else 1
 
-            print(f"{label} {num_zones} utm zone(s). "
-                  "This may take minutes or hours depending on the amount of tiles."
-                  + (f" Using {actual_workers} workers." if use_parallel else ""))
+            logger.info("%s %d utm zone(s). "
+                       "This may take minutes or hours depending on the "
+                       "amount of tiles.%s", label, num_zones,
+                       f" Using {actual_workers} parallel workers."
+                       if use_parallel else "")
 
             if use_parallel:
                 zone_results = []
@@ -680,7 +686,7 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                         max_workers=actual_workers) as executor:
                     futures = {}
                     for ub_utm in utms_to_build:
-                        print(f"  Submitting utm{ub_utm['utm']}...")
+                        logger.info("[UTM%s] %s...", ub_utm["utm"], label)
                         future = executor.submit(
                             worker_fn, *worker_args(ub_utm["utm"]))
                         futures[future] = ub_utm["utm"]
@@ -691,10 +697,10 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                             zone_result = future.result()
                             if zone_result is not None:
                                 zone_results.append(zone_result)
-                                print(f"  utm{utm} complete")
+                                logger.info("[UTM%s] Complete", utm)
                         except Exception as e:
                             result.failed.append({"utm": utm, "reason": str(e)})
-                            print(f"  utm{utm} FAILED: {e}")
+                            logger.error("[UTM%s] FAILED: %s", utm, e)
 
                 # DB updates sequentially (SQLite single-writer)
                 for zone_result in zone_results:
@@ -718,18 +724,15 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                         result.built.append(built_entry)
                     except Exception as e:
                         result.failed.append({"utm": utm, "reason": str(e)})
-                        print(f"  utm{utm} FAILED during DB update: {e}")
+                        logger.error("[UTM%s] FAILED during DB update: %s",
+                                     utm, e)
 
-                if result.failed:
-                    failed_names = ", ".join(
-                        f"utm{entry['utm']}" for entry in result.failed)
-                    print(f"\n{len(result.failed)} zone(s) failed: {failed_names}")
             else:
                 # Sequential processing
                 for ub_utm in utms_to_build:
                     utm_start = datetime.datetime.now()
                     utm = ub_utm["utm"]
-                    print(f"  {label} utm{utm}...")
+                    logger.info("[UTM%s] %s...", utm, label)
 
                     try:
                         zone_result = worker_fn(*worker_args(utm))
@@ -753,22 +756,17 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                             "hillshade": zone_result.get("hillshade"),
                         }
                         result.built.append(built_entry)
-                        print(f"  utm{utm} complete after "
-                              f"{datetime.datetime.now() - utm_start}")
+                        logger.info("[UTM%s] Complete (%s)", utm,
+                                    datetime.datetime.now() - utm_start)
                     except Exception as e:
                         result.failed.append({"utm": utm, "reason": str(e)})
-                        print(f"  utm{utm} FAILED: {e}")
-
-                if result.failed:
-                    failed_names = ", ".join(
-                        f"utm{entry['utm']}" for entry in result.failed)
-                    print(f"\n{len(result.failed)} zone(s) failed: {failed_names}")
+                        logger.error("[UTM%s] FAILED: %s", utm, e)
         else:
-            up_to_date_label = ("EPSG:3857 output(s)" if reproject
-                                else "UTM vrt(s)")
-            print(f"{up_to_date_label} appear up to date with the most recently "
-                  f"fetched tiles.\nNote: deleting the {vrt_dir_name} folder will "
-                  "allow you to recreate from scratch if necessary")
+            logger.info("All UTM zones appear up to date with the most "
+                        "recently fetched tiles.")
+            logger.info("Note: deleting the %s folder will "
+                        "allow you to recreate from scratch if necessary",
+                        vrt_dir_name)
 
         all_utms_cursor = conn.cursor()
         all_utms_cursor.execute(
@@ -778,7 +776,20 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
         failed_utm_names = {f["utm"] for f in result.failed}
         result.skipped = sorted(all_utm_names - built_utm_names - failed_utm_names)
 
-        print(f"[{_timestamp()}] {data_source}: Operation complete after {datetime.datetime.now() - start}")
+        # Summary
+        logger.info("─── SUMMARY ───")
+        logger.info("Built:   %d UTM zones successfully built",
+                    len(result.built))
+        skipped_reason = ("already up to date or zones with no matching tiles "
+                         "after resolution filtering"
+                         if tile_resolution_filter else "already up to date")
+        logger.info("Skipped: %d UTM zones %s",
+                    len(result.skipped), skipped_reason)
+        logger.info("Failed:  %d UTM zones failed to build",
+                    len(result.failed))
+
+        logger.info("═══ %s: Complete (%s) ═══",
+                    data_source, datetime.datetime.now() - start)
     finally:
         if not report:
             conn.close()

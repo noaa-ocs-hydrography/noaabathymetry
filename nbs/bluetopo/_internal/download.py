@@ -11,6 +11,7 @@ is extracted from the URL and downloaded directly (no listing).
 import concurrent.futures
 import datetime
 import hashlib
+import logging
 import os
 import re
 import shutil
@@ -37,6 +38,8 @@ from nbs.bluetopo._internal.config import (
     get_utm_file_columns,
     get_verified_fields,
 )
+
+logger = logging.getLogger("bluetopo")
 
 
 # ---------------------------------------------------------------------------
@@ -106,8 +109,8 @@ def _list_s3_latest(client, bucket, prefix, label, data_source, retry=True):
     objs = paginator.paginate(Bucket=bucket, Prefix=prefix).build_full_result()
     if "Contents" not in objs:
         if retry:
-            print(f"[{_timestamp()}] {data_source}: No {label} found in {prefix}, "
-                  "retrying in 5 seconds...")
+            logger.warning("%s: No %s found in %s, retrying in 5 seconds...",
+                          data_source, label, prefix)
             time.sleep(5)
             objs = paginator.paginate(Bucket=bucket, Prefix=prefix).build_full_result()
         if "Contents" not in objs:
@@ -147,7 +150,8 @@ def get_tessellation(conn, project_dir, prefix, data_source, cfg,
         gpkg_files.sort(reverse=True)
         filename = gpkg_files[0]
         if len(gpkg_files) > 1:
-            print(f"[{_timestamp()}] {data_source}: More than one geometry found in {prefix}, using {filename}")
+            logger.info("%s: More than one geometry found in %s, using %s",
+                        data_source, prefix, filename)
         destination_name = os.path.join(project_dir, data_source, "Tessellation", filename)
         relative = os.path.join(data_source, "Tessellation", filename)
         os.makedirs(os.path.dirname(destination_name), exist_ok=True)
@@ -169,7 +173,8 @@ def get_tessellation(conn, project_dir, prefix, data_source, cfg,
         filename = os.path.basename(source_key)
         relative = os.path.join(data_source, "Tessellation", filename)
         if len(all_objects) > 1:
-            print(f"[{_timestamp()}] {data_source}: More than one geometry found in {prefix}, using {filename}")
+            logger.info("%s: More than one geometry found in %s, using %s",
+                        data_source, prefix, filename)
         destination_name = os.path.join(project_dir, relative)
         os.makedirs(os.path.dirname(destination_name), exist_ok=True)
         try:
@@ -180,7 +185,7 @@ def get_tessellation(conn, project_dir, prefix, data_source, cfg,
                 "Possibly due to conflict with an open existing file. "
                 "Please close all files and attempt again") from e
 
-    print(f"[{_timestamp()}] {data_source}: Downloaded {filename}")
+    logger.info("%s: Downloaded %s", data_source, filename)
     cursor.execute(
         f"""REPLACE INTO {catalog_table}({catalog_pk}, location, downloaded)
                       VALUES(?, ?, ?)""",
@@ -217,7 +222,7 @@ def get_xml(conn, project_dir, prefix, data_source, cfg,
     source_key, all_objects = _list_s3_latest(
         client, bucket, prefix, "XML", data_source, retry=True)
     if source_key is None:
-        print(f"[{_timestamp()}] {data_source}: No XML found in {prefix} after retry")
+        logger.warning("%s: No XML found in %s after retry", data_source, prefix)
         return None
 
     # Prefer timestamped version over plain CATALOG.XML for rename safety
@@ -230,7 +235,8 @@ def get_xml(conn, project_dir, prefix, data_source, cfg,
     filename = os.path.basename(source_key)
     relative = os.path.join(data_source, "Data", filename)
     if len(all_objects) > 1:
-        print(f"[{_timestamp()}] {data_source}: More than one XML found in {prefix}, using {filename}")
+        logger.info("%s: More than one XML found in %s, using %s",
+                    data_source, prefix, filename)
     destination_name = os.path.join(project_dir, relative)
     filename_renamed = "CATALOG.XML"
     relative_renamed = os.path.join(data_source, "Data", filename_renamed)
@@ -250,7 +256,7 @@ def get_xml(conn, project_dir, prefix, data_source, cfg,
             f"[{_timestamp()}] {data_source}: Failed to rename XML to CATALOG.XML. "
             "Possibly due to conflict with an open existing file named CATALOG.XML. "
             "Please close all files and attempt again") from e
-    print(f"[{_timestamp()}] {data_source}: Downloaded {filename_renamed}")
+    logger.info("%s: Downloaded %s", data_source, filename_renamed)
     cursor.execute(
         f"""REPLACE INTO {catalog_table}({catalog_pk}, location, downloaded)
                       VALUES(?, ?, ?)""",
@@ -518,7 +524,7 @@ def execute_downloads(download_dict, data_source):
     results = []
     download_length = len(download_dict)
     if download_length:
-        print(f"\nFetching {download_length} tiles")
+        logger.info("Fetching %d tiles", download_length)
         with tqdm(
             total=download_length,
             bar_format=("{desc}: {percentage:3.0f}%|{bar}| "
@@ -755,14 +761,15 @@ def upsert_tiles(conn, project_dir, tile_scheme, cfg):
     for db_tile in db_tiles:
         ts_tile = ts_tiles_map.get(db_tile["tilename"])
         if ts_tile is None:
-            print(f"Warning: {db_tile['tilename']} in database appears to have "
-                  "been removed from latest tilescheme")
+            logger.warning("%s in database appears to have "
+                          "been removed from latest tilescheme",
+                          db_tile["tilename"])
             continue
 
         delivered_date = ts_tile.get(gpkg_fields["delivered_date"])
         if delivered_date is None:
-            print(f"Warning: Unexpected removal of delivered date "
-                  f"for tile {db_tile['tilename']}")
+            logger.warning("Unexpected removal of delivered date "
+                          "for tile %s", db_tile["tilename"])
             continue
 
         if not _date_validated:
@@ -784,9 +791,9 @@ def upsert_tiles(conn, project_dir, tile_scheme, cfg):
                     if db_tile.get(df) and os.path.isfile(os.path.join(project_dir, db_tile[df])):
                         os.remove(os.path.join(project_dir, db_tile[df]))
             except (OSError, PermissionError) as e:
-                print(f"Failed to remove older files for tile "
-                      f"{db_tile['tilename']}. Please close all files and "
-                      "attempt fetch again.")
+                logger.error("Failed to remove older files for tile "
+                             "%s. Please close all files and "
+                             "attempt fetch again.", db_tile["tilename"])
                 raise e
 
             # Build insert tuple: tilename, then per-slot links + checksums,

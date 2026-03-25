@@ -7,9 +7,12 @@ which tiles cover the area of interest.
 """
 
 import json
+import logging
 import os
 
 from osgeo import ogr, osr
+
+logger = logging.getLogger("bluetopo")
 
 # "Memory" was merged into "MEM" in GDAL 3.11; older versions only know "Memory".
 _ogr_mem_driver = ogr.GetDriverByName("MEM")
@@ -156,11 +159,11 @@ def get_tile_list(desired_area, tile_scheme_filename):
     else:
         data_source = ogr.Open(desired_area)
         if data_source is None:
-            print("Unable to open desired area file")
+            logger.warning("Unable to open desired area file")
             return None
     source = ogr.Open(tile_scheme_filename)
     if source is None:
-        print("Unable to open tile scheme file")
+        logger.warning("Unable to open tile scheme file")
         return None
     driver = _ogr_mem_driver
     source_layer = source.GetLayer(0)

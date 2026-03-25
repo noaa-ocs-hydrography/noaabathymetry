@@ -1,5 +1,6 @@
 """Tests for RAT aggregation logic in build_vrt.py (requires GDAL)."""
 
+import logging
 import os
 
 import pytest
@@ -335,7 +336,7 @@ HSD_RAT_FIELDS = {
 
 
 class TestDynamicFieldDetection:
-    def test_mixed_schemas_uses_common_subset(self, make_geotiff, tmp_path, capsys):
+    def test_mixed_schemas_uses_common_subset(self, make_geotiff, tmp_path, caplog):
         """Tile1 has 4 fields (BT), tile2 has 5 fields (HSD) -> VRT RAT uses 4 common fields."""
         cfg = _make_bt_cfg()
         # Give config the full HSD superset so it must be trimmed
@@ -374,9 +375,8 @@ class TestDynamicFieldDetection:
         assert rat.GetRowCount() == 2
         ds = None
 
-        captured = capsys.readouterr()
-        assert "catzoc" in captured.out
-        assert "Warning" in captured.out
+        assert any("catzoc" in r.message for r in caplog.records)
+        assert any(r.levelno == logging.WARNING for r in caplog.records)
 
     def test_master_config_with_bluetopo_tiles_trims_to_match(self, make_geotiff, tmp_path):
         """Master config (5 fields) with BlueTopo tiles (4 mini fields) -> trims to 4."""
@@ -407,7 +407,7 @@ class TestDynamicFieldDetection:
         assert rat.GetRowCount() == 1
         ds = None
 
-    def test_exact_config_match_no_trimming(self, make_geotiff, tmp_path, capsys):
+    def test_exact_config_match_no_trimming(self, make_geotiff, tmp_path, caplog):
         """Config fields exactly match tile fields -> no trimming, no warning."""
         cfg = _make_bt_cfg()
         project_dir = str(tmp_path)
@@ -434,8 +434,7 @@ class TestDynamicFieldDetection:
         assert rat.GetColumnCount() == 4
         ds = None
 
-        captured = capsys.readouterr()
-        assert "Warning" not in captured.out
+        assert not any(r.levelno >= logging.WARNING for r in caplog.records)
 
     def test_unknown_extra_fields_in_tile_ignored(self, make_geotiff, tmp_path):
         """Tile has config fields + extra unknown fields -> unknown fields ignored."""

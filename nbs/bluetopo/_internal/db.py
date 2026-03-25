@@ -6,6 +6,7 @@ downloads, VRT build state, and catalog metadata.  The schema is
 driven by config file_slots and subdataset definitions.
 """
 
+import logging
 import os
 import sqlite3
 
@@ -14,6 +15,8 @@ from nbs.bluetopo._internal.config import (
     get_vrt_utm_fields,
     get_tiles_fields,
 )
+
+logger = logging.getLogger("bluetopo")
 
 # Increment when a release includes breaking changes that make older
 # projects incompatible.  check_internal_version() compares this against the
@@ -58,7 +61,7 @@ def connect(project_dir: str, cfg: dict) -> sqlite3.Connection:
         conn = sqlite3.connect(database_path)
         conn.row_factory = sqlite3.Row
     except sqlite3.Error as e:
-        print("Failed to establish SQLite database connection.")
+        logger.error("Failed to establish SQLite database connection.")
         raise e
     try:
         cursor = conn.cursor()
@@ -110,7 +113,7 @@ def connect(project_dir: str, cfg: dict) -> sqlite3.Connection:
                     cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {field} {ftype}")
                     conn.commit()
     except sqlite3.Error as e:
-        print("Failed to create SQLite tables.")
+        logger.error("Failed to create SQLite tables.")
         raise e
     return conn
 

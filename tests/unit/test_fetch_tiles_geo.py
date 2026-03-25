@@ -1,5 +1,6 @@
 """Tests for geospatial functions in fetch_tiles.py (GDAL/OGR)."""
 
+import logging
 import os
 
 import pytest
@@ -336,8 +337,8 @@ class TestUpsertTiles:
         # Link should remain unchanged
         assert tiles[0]["geotiff_link"] == "oldlink.tif"
 
-    def test_tile_removed_from_tilescheme(self, tmp_path, capsys):
-        """Tile in DB but not in tilescheme prints warning."""
+    def test_tile_removed_from_tilescheme(self, tmp_path, caplog):
+        """Tile in DB but not in tilescheme logs warning."""
         cfg = get_config("bluetopo")
         project_dir = str(tmp_path)
         conn = connect_to_survey_registry(project_dir, cfg)
@@ -353,11 +354,10 @@ class TestUpsertTiles:
 
         upsert_tiles(conn, project_dir, gpkg, cfg)
 
-        captured = capsys.readouterr()
-        assert "removed" in captured.out.lower() or "Warning" in captured.out
+        assert any("removed" in r.message.lower() for r in caplog.records)
 
-    def test_null_delivered_date_in_tilescheme(self, tmp_path, capsys):
-        """Tile in tilescheme with null delivery date prints warning."""
+    def test_null_delivered_date_in_tilescheme(self, tmp_path, caplog):
+        """Tile in tilescheme with null delivery date logs warning."""
         cfg = get_config("bluetopo")
         project_dir = str(tmp_path)
         conn = connect_to_survey_registry(project_dir, cfg)
@@ -376,8 +376,8 @@ class TestUpsertTiles:
 
         upsert_tiles(conn, project_dir, gpkg, cfg)
 
-        captured = capsys.readouterr()
-        assert "removal of delivered date" in captured.out.lower() or "Warning" in captured.out
+        assert any("removal of delivered date" in r.message.lower()
+                    for r in caplog.records)
 
     def test_duplicate_tilename_raises(self, tmp_path):
         """Duplicate tilename in tilescheme raises ValueError."""

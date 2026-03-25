@@ -90,6 +90,7 @@ BlueTopo operates in two distinct steps.
 
 **Run metadata:**
 
+- **missing_reset** — tiles previously downloaded but missing from disk.
 - **new_tiles_tracked** — number of new tiles added to tracking via geometry intersection.
 - **tile_resolution_filter** — the resolution filter that was active, or `None` if unfiltered.
 

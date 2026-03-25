@@ -10,12 +10,12 @@ Thin orchestrator that coordinates:
 """
 
 import datetime
+import logging
 import os
 import platform
 from dataclasses import dataclass, field
 
 from nbs.bluetopo._internal.config import (
-    _timestamp,
     make_resolution_label,
     parse_resolution,
     resolve_data_source,
@@ -35,6 +35,8 @@ from nbs.bluetopo._internal.download import (
 )
 from nbs.bluetopo._internal.spatial import get_tile_list, parse_geometry_input
 
+logger = logging.getLogger("bluetopo")
+
 
 @dataclass
 class FetchResult:
@@ -50,6 +52,8 @@ class FetchResult:
         Tiles that failed download. Each dict has ``tile`` and ``reason`` keys.
     not_found : list[str]
         Tiles whose files could not be located on S3.
+    missing_reset : list[str]
+        Tiles previously downloaded but missing from disk.
     new_tiles_tracked : int
         Number of new tiles added to tracking via geometry intersection.
     tile_resolution_filter : list[int] | None
@@ -59,6 +63,7 @@ class FetchResult:
     downloaded: list = field(default_factory=list)
     failed: list = field(default_factory=list)
     not_found: list = field(default_factory=list)
+    missing_reset: list = field(default_factory=list)
     new_tiles_tracked: int = 0
     tile_resolution_filter: list = None
 
@@ -99,7 +104,7 @@ def fetch_tiles(
     Returns
     -------
     FetchResult
-        Structured result with existing, downloaded, failed, and not_found tiles.
+        Structured result with existing, downloaded, failed, not_found, and missing_reset tiles.
     """
     project_dir = os.path.expanduser(project_dir)
     if not os.path.isabs(project_dir):
@@ -161,9 +166,10 @@ def _run_fetch(project_dir, geometry, cfg, data_source,
     geometry → upsert delivery dates → classify → download → update records.
     """
     start = datetime.datetime.now()
-    print(f"[{_timestamp()}] {data_source}: Beginning work in project folder: {project_dir}")
+    logger.info("═══ %s: Fetching tiles in %s ═══", data_source, project_dir)
     if tile_resolution_filter:
-        print(f"Tile resolution filter: {make_resolution_label(tile_resolution_filter)}")
+        logger.info("Tile resolution filter: %s",
+                    make_resolution_label(tile_resolution_filter))
     os.makedirs(project_dir, exist_ok=True)
 
     conn = connect(project_dir, cfg)
@@ -195,12 +201,12 @@ def _run_fetch(project_dir, geometry, cfg, data_source,
                     if parse_resolution(t.get(res_field)) in res_set
                 ]
             result.new_tiles_tracked = insert_new(conn, tile_list, cfg)
-            print(f"\nTracking {result.new_tiles_tracked} available {data_source} tile(s) "
-                  f"discovered in a total of {len(tile_list)} intersected tile(s) "
-                  "with given polygon.")
+            logger.info("Tracking %d available %s tile(s) "
+                        "in %d intersected tile(s)",
+                        result.new_tiles_tracked, data_source, len(tile_list))
             if tile_resolution_filter and len(tile_list) != total_intersected:
-                print(f"  ({total_intersected - len(tile_list)} tile(s) excluded "
-                      "by resolution filter)")
+                logger.info("  (%d tile(s) excluded by resolution filter)",
+                            total_intersected - len(tile_list))
 
         # Synchronize with latest tilescheme
         upsert_tiles(conn, project_dir, geom_file, cfg)
@@ -215,6 +221,7 @@ def _run_fetch(project_dir, geometry, cfg, data_source,
             ]
         existing, missing, new = classify_tiles(db_tiles, project_dir, cfg)
         result.existing = existing
+        result.missing_reset = missing
 
         client = None if local_dir else _get_s3_client()
         download_dict, tiles_found, tiles_not_found = build_download_plan(
@@ -222,8 +229,9 @@ def _run_fetch(project_dir, geometry, cfg, data_source,
             client=client, bucket=bucket, local_dir=local_dir,
             skip_tilenames=set(existing))
 
-        print(f"\n{len(new)} tile(s) with new data")
-        print(f"{len(missing)} tile(s) already downloaded are missing locally")
+        logger.info("%d tile(s) with new data", len(new))
+        logger.info("%d tile(s) already downloaded are missing locally",
+                    len(missing))
 
         results = execute_downloads(download_dict, data_source)
 
@@ -239,31 +247,27 @@ def _run_fetch(project_dir, geometry, cfg, data_source,
 
         # Summary
         failed_verifications = [f for f in result.failed if "incorrect hash" in f["reason"]]
-        print("\n___________________________________ SUMMARY ___________________________________")
-        print("\nExisting:")
-        print("Number of tiles already existing locally without updates:", len(existing))
-        if new or missing:
-            print("\nSearch:")
-            print(f"Number of tiles to attempt to fetch: {len(new) + len(missing)} "
-                  f"[ {len(new)} new data + {len(missing)} missing locally ]")
-            if len(tiles_found) < (len(new) + len(missing)):
-                print("* Some tiles we wanted to fetch were not found in the S3 bucket."
-                      "\n* The NBS may be actively updating the tiles in question."
-                      "\n* You can rerun fetch_tiles at a later time to download these tiles."
-                      "\n* Please contact the NBS if this issue does not fix itself on subsequent later runs.")
-            print("\nFetch:")
-            print(f"Number of tiles found in S3 successfully downloaded: "
-                  f"{len(result.downloaded)}/{len(tiles_found)}")
-            if result.failed:
-                print("* Some tiles appear to have failed downloading."
-                      "\n* Please rerun fetch_tiles to retry.")
-                if failed_verifications:
-                    failed_names = [f["tile"] for f in failed_verifications]
-                    print(f"{len(failed_verifications)} tiles failed checksum verification: "
-                          f"{failed_names}"
-                          "\nPlease contact the NBS if this issue does not fix itself on subsequent runs.")
-        print(f"\n[{_timestamp()}] {data_source}: Operation complete after "
-              f"{datetime.datetime.now() - start}")
+        logger.info("─── SUMMARY ───")
+        logger.info("Existing:   %d tiles already up to date locally",
+                    len(result.existing))
+        logger.info("Downloaded: %d tiles successfully downloaded",
+                    len(result.downloaded))
+        logger.info("Failed:     %d tiles failed to download",
+                    len(result.failed))
+        logger.info("Not found:  %d tiles not found on S3",
+                    len(result.not_found))
+        if result.not_found:
+            logger.warning("The NBS may be actively updating. "
+                           "Rerun fetch_tiles later to retry.")
+        if result.failed:
+            logger.warning("Rerun fetch_tiles to retry failed downloads.")
+            if failed_verifications:
+                failed_names = [f["tile"] for f in failed_verifications]
+                logger.warning("%d tiles failed checksum "
+                               "verification: %s",
+                               len(failed_verifications), failed_names)
+        logger.info("═══ %s: Complete (%s) ═══",
+                    data_source, datetime.datetime.now() - start)
     finally:
         if not report:
             conn.close()

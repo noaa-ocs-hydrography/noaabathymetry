@@ -149,6 +149,7 @@ Dataclass returned by `fetch_tiles`.
 | `downloaded` | `list[str]` | Tile names successfully downloaded in this run. |
 | `failed` | `list[dict]` | Tiles that failed download. Each dict has `tile` (str) and `reason` (str) keys. |
 | `not_found` | `list[str]` | Tile names whose files could not be located on S3. |
+| `missing_reset` | `list[str]` | Tiles previously downloaded but missing from disk. |
 | `new_tiles_tracked` | `int` | Number of new tiles added to tracking via geometry intersection. |
 | `tile_resolution_filter` | `list[int] \| None` | Resolution filter that was active, or `None` if unfiltered. |
 
@@ -165,6 +166,7 @@ print(result)
 #     failed=[{'tile': 'BlueTopo_BC25L6SE_20240315',
 #              'reason': 'incorrect hash for geotiff (expected=a1b2c3d4e5f6... got=9f8e7d6c5b4a...)'}],
 #     not_found=['BlueTopo_BC25L8NW_20240315'],
+#     missing_reset=[],
 #     new_tiles_tracked=6,
 #     tile_resolution_filter=None
 # )

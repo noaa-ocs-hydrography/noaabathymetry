@@ -8,6 +8,7 @@ sources (S102V22, S102V30), one VRT is built per subdataset and then combined.
 """
 
 import copy
+import logging
 import os
 
 from osgeo import gdal
@@ -21,6 +22,8 @@ from nbs.bluetopo._internal.config import (
     get_utm_file_columns,
 )
 
+logger = logging.getLogger("bluetopo")
+
 gdal.UseExceptions()
 gdal.SetConfigOption("COMPRESS_OVERVIEW", "DEFLATE")
 gdal.SetConfigOption("GDAL_TIFF_OVR_BLOCKSIZE", "512")
@@ -33,7 +36,7 @@ try:
     _target_cache = int(_phys_mem * 0.15)
     if _target_cache > gdal.GetCacheMax():
         gdal.SetCacheMax(_target_cache)
-        print(f"GDAL cache max: {gdal.GetCacheMax() / 1024**3:.1f} GB")
+        logger.debug("GDAL cache max: %.1f GB", gdal.GetCacheMax() / 1024**3)
 except (AttributeError, ValueError, OSError):
     pass  # Windows or unsupported platform — keep GDAL's default
 
@@ -325,10 +328,10 @@ def select_tiles_by_utm(project_dir, conn, utm, cfg, tile_resolution_filter=None
     existing_tiles = [tile for tile in tiles if tile_exists(tile)]
     missing_count = len(tiles) - len(existing_tiles)
     if missing_count:
-        print(f"Did not find the files for {missing_count} "
-              f"registered tile(s) in utm {utm}. "
-              "Run fetch_tiles to retrieve files "
-              "or correct the directory path if incorrect.")
+        logger.warning("[UTM%s] Did not find files for %d registered tile(s). "
+                       "Run fetch_tiles to retrieve files "
+                       "or correct the directory path if incorrect.",
+                       utm, missing_count)
 
     if tile_resolution_filter:
         res_set = set(tile_resolution_filter)
@@ -600,7 +603,7 @@ def _write_rat(vrt_path, surveys, expected_fields, rat_band):
     vrt_ds = None
 
 
-def add_vrt_rat(tiles, project_dir, vrt_path, cfg):
+def add_vrt_rat(tiles, project_dir, vrt_path, cfg, utm=None):
     """Build and attach an aggregated RAT to a VRT from per-tile RATs.
 
     Runs the RAT pipeline: discover common fields, read data from all
@@ -643,8 +646,14 @@ def add_vrt_rat(tiles, project_dir, vrt_path, cfg):
                     list(expected_fields.items())[:survey_width])
 
     if dropped_fields:
-        print(f"Warning: RAT field(s) {sorted(dropped_fields)} were not present "
-              f"in all tiles and have been excluded from the aggregated RAT.")
+        if utm:
+            logger.warning("[UTM%s] RAT field(s) %s were not present "
+                           "in all tiles and have been excluded from the "
+                           "aggregated RAT.", utm, sorted(dropped_fields))
+        else:
+            logger.warning("RAT field(s) %s were not present "
+                           "in all tiles and have been excluded from the "
+                           "aggregated RAT.", sorted(dropped_fields))
 
     # Write RAT
     _write_rat(vrt_path, surveys, expected_fields, rat_band)

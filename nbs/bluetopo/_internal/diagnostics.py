@@ -11,10 +11,13 @@ included beyond the project directory path.
 """
 
 import datetime
+import logging
 import os
 import platform
 import sys
 import traceback
+
+logger = logging.getLogger("bluetopo")
 
 from nbs.bluetopo._internal.config import (
     get_built_flags,
@@ -126,9 +129,9 @@ class DebugReport:
             os.makedirs(self.project_dir, exist_ok=True)
             with open(filepath, "w") as f:
                 f.write("\n".join(lines))
-            print(f"Debug report written to: {filepath}")
+            logger.info("Debug report written to: %s", filepath)
         except Exception as e:
-            print(f"Failed to write debug report: {e}")
+            logger.error("Failed to write debug report: %s", e)
 
     # ------------------------------------------------------------------
     # Section collectors (called in order during write())
