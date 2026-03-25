@@ -7,12 +7,15 @@
     <a href="#requirements">Requirements</a> •
     <a href="#installation">Installation</a> •
     <a href="#quickstart">Quickstart</a> •
-    <a href="#python-api">Python API</a> •
+    <a href="#python-api">Python</a> •
     <a href="#cli">CLI</a> •
     <a href="#geometry-formats">Geometry</a> •
     <a href="#notes">Notes</a> •
-    <a href="#authors">Contact</a> •
-    <a href="https://noaa-ocs-hydrography.github.io/BlueTopo/">Documentation</a>
+    <a href="#authors">Contact</a>
+</p>
+
+<p align="center">
+    <a href="https://noaa-ocs-hydrography.github.io/BlueTopo/">📖 Full Documentation</a>
 </p>
 
 ## Overview
