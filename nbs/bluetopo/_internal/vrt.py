@@ -133,6 +133,21 @@ def create_vrt(files, vrt_path, levels, relative_to_vrt,
         vrt = gdal.Open(vrt_path, 0)
         vrt.BuildOverviews("NEAREST", levels)
         vrt = None
+        _compute_approximate_stats(vrt_path)
+
+
+def _compute_approximate_stats(path):
+    """Compute approximate statistics for all bands from overviews.
+
+    Stores min/max/mean/stddev in the dataset metadata so GIS tools
+    can render the data without scanning the full resolution raster.
+    """
+    ds = gdal.Open(path, 1)
+    if ds is None:
+        return
+    for i in range(1, ds.RasterCount + 1):
+        ds.GetRasterBand(i).ComputeStatistics(True)
+    ds = None
 
 
 def generate_hillshade(vrt_path, hillshade_path):
@@ -226,6 +241,7 @@ def reproject_to_web_mercator(sources, output_path, overview_factors=None,
         ds = gdal.Open(output_path, 0)
         ds.BuildOverviews("NEAREST", overview_factors)
         ds = None
+        _compute_approximate_stats(output_path)
     return output_path
 
 

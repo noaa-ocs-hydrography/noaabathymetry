@@ -9,6 +9,7 @@
     <a href="#quickstart">Quickstart</a> •
     <a href="#python-api">Python API</a> •
     <a href="#cli">CLI</a> •
+    <a href="#geometry-formats">Geometry</a> •
     <a href="#notes">Notes</a> •
     <a href="#authors">Contact</a> •
     <a href="https://noaa-ocs-hydrography.github.io/BlueTopo/">Documentation</a>
@@ -97,7 +98,7 @@ Use `-h` for help and to see additional arguments.
 
 For most usecases, reusing the commands above to stay up to date in your area of interest is adequate.
 
-### Geometry formats
+## Geometry formats
 
 The `geometry` parameter accepts four formats. File inputs use the CRS defined in the file. All other formats assume EPSG:4326 (WGS 84).
 
