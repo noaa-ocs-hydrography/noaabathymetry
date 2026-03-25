@@ -93,6 +93,22 @@ BlueTopo operates in two distinct steps.
 - **new_tiles_tracked** — number of new tiles added to tracking via geometry intersection.
 - **tile_resolution_filter** — the resolution filter that was active, or `None` if unfiltered.
 
+### Understanding `BuildResult`
+
+`build_vrt` returns a `BuildResult` with per-zone status lists and run metadata.
+
+**Zone statuses:**
+
+- **built** — UTM zones that were built in this run. Each entry includes paths to the VRT, overview, and optional hillshade files.
+- **skipped** — UTM zones already up to date; no rebuild was needed.
+- **failed** — UTM zones that failed during parallel builds. Each entry includes the zone identifier and failure reason.
+
+**Run metadata:**
+
+- **missing_reset** — number of UTM zones reset because their VRT files were missing on disk.
+- **tile_resolution_filter** — the resolution filter that was active, or `None` if unfiltered.
+- **vrt_resolution_target** — VRT pixel size override that was active, or `None` for native resolution.
+
 ### How geometry works
 
 The `geometry` parameter controls **tile discovery**, not downloading. When you pass a geometry, `fetch_tiles` intersects it with the tile scheme and adds any overlapping tiles to a persistent tracking list in the project database.

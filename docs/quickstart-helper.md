@@ -81,7 +81,7 @@ Draw your area of interest on the map below to generate usage examples.
 
 <div style="background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin-top: 24px;">
 
-<h3 style="margin-top: 0; border-bottom: 1px solid #30363d; padding-bottom: 10px;">Usage examples</h3>
+<h3 style="margin-top: 0; border-bottom: 1px solid #30363d; padding-bottom: 10px;">Usage examples for your area of interest</h3>
 
 <div style="display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px;">
 <div style="flex: 1; min-width: 200px;">
