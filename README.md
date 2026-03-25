@@ -62,10 +62,12 @@ After installation, you have access to a Python API and two matching CLI command
 
 ## Python API
 
-To download the desired files, define your area of interest using any of the geometry formats (listed below), then run the following commands inside of a Python shell:
+Define your area of interest using any of the geometry formats listed below, then you can use the following in a Python shell or script.
+
+To download files in your area of interest:
 
 ```python
-from nbs.bluetopo import fetch_tiles 
+from nbs.bluetopo import fetch_tiles
 fetch_result = fetch_tiles('/path/to/project', geometry='area_of_interest.gpkg')
 ```
 
@@ -80,7 +82,7 @@ build_result = build_vrt('/path/to/project')
 
 You can also use the command line. Confirm the environment we created during installation is activated.
 
-To fetch the latest BlueTopo data, pass a directory path and a geometry input (see the Geometry formats section below for accepted inputs):
+To fetch the latest BlueTopo data, pass a directory path and a geometry input of your area of interest:
 
 ```
 fetch_tiles -d /path/to/project -g area_of_interest.gpkg
