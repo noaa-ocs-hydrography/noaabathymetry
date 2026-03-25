@@ -81,7 +81,7 @@ build_result = build_vrt('/path/to/project')
 
 You can also use the command line. Confirm the environment we created during installation is activated.
 
-To fetch the latest BlueTopo data, pass a directory path and a geometry input via `-g` (see the Geometry formats section below for accepted inputs):
+To fetch the latest BlueTopo data, pass a directory path and a geometry input (see the Geometry formats section below for accepted inputs):
 
 ```
 fetch_tiles -d /path/to/project -g area_of_interest.gpkg
@@ -123,7 +123,7 @@ result = fetch_tiles('/path/to/project', geometry='{"type":"Polygon","coordinate
 
 ## Other Data Sources
 
-In addition to BlueTopo, Modeling, and various S-102 versioned data is also available. You can work with these using the `data_source` argument (e.g. `data_source='modeling'`).
+In addition to BlueTopo, Modeling, and various S-102 versioned data is also available. You can work with these using the `data_source` argument (e.g. `data_source='modeling'`). When not specified, `data_source` defaults to BlueTopo.
 
 The primary difference between BlueTopo and Modeling data is the vertical datum. Modeling data is on a low water datum.
 
