@@ -125,7 +125,7 @@ result = fetch_tiles('/path/to/project', geometry='{"type":"Polygon","coordinate
 
 ## Other Data Sources
 
-In addition to BlueTopo, Modeling, and various S-102 versioned data is also available. You can work with Modeling or S-102 data using the `source` argument in the CLI commands or the `data_source` argument in the Python API (e.g. `data_source='modeling'`).
+In addition to BlueTopo, Modeling, and various S-102 versioned data is also available. You can work with these using the `data_source` argument (e.g. `data_source='modeling'`).
 
 The primary difference between BlueTopo and Modeling data is the vertical datum. Modeling data is on a low water datum.
 
