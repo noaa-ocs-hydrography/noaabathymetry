@@ -77,8 +77,6 @@ build_vrt -d /path/to/project
 
 ### Geometry formats
 
-Use the [Geometry Helper](geometry-helper.md) to draw your area of interest on a map.
-
 The `geometry` parameter accepts four formats. File inputs use the CRS defined in the file. All other formats assume EPSG:4326 (WGS 84).
 
 **File** — any GDAL-compatible vector file (shapefile, geopackage, GeoJSON file, etc.):
@@ -100,6 +98,8 @@ result = fetch_tiles('/path/to/project', geometry='POLYGON((-76.1 36.9, -75.9 36
 ```python
 result = fetch_tiles('/path/to/project', geometry='{"type":"Polygon","coordinates":[[[-76.1,36.9],[-75.9,36.9],[-75.9,37.1],[-76.1,37.1],[-76.1,36.9]]]}')
 ```
+
+Use the [Geometry Helper](geometry-helper.md) to draw your area of interest on a map.
 
 ### Other data sources
 

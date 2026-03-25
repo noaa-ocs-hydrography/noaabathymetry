@@ -34,6 +34,21 @@ Draw a geometry on the map below to generate input for `fetch_tiles`.
 #clear-btn:hover {
     background: rgba(240, 240, 240, 0.95);
 }
+.copy-btn {
+    font-size: 12px;
+    cursor: pointer;
+    margin-left: 8px;
+    background: none;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    color: #888;
+    padding: 2px 8px;
+    transition: color 0.15s, border-color 0.15s;
+}
+.copy-btn:hover {
+    color: #e0e0e0;
+    border-color: #888;
+}
 </style>
 
 <div style="position: relative; margin-bottom: 16px;">
@@ -43,14 +58,17 @@ Draw a geometry on the map below to generate input for `fetch_tiles`.
 
 <div id="output-section" style="display: none;">
 
-<strong>GeoJSON</strong> <button onclick="copyText('geojson-output')" style="font-size: 12px; cursor: pointer; margin-left: 8px;">Copy</button>
-<pre id="geojson-output" style="background: #1a1a2e; color: #e0e0e0; padding: 12px; border-radius: 4px; overflow-x: auto; user-select: all;"></pre>
-
-<strong>Bounding Box</strong> <button onclick="copyText('bbox-output')" style="font-size: 12px; cursor: pointer; margin-left: 8px;">Copy</button>
-<pre id="bbox-output" style="background: #1a1a2e; color: #e0e0e0; padding: 12px; border-radius: 4px; overflow-x: auto; user-select: all;"></pre>
-
-<strong>WKT</strong> <button onclick="copyText('wkt-output')" style="font-size: 12px; cursor: pointer; margin-left: 8px;">Copy</button>
-<pre id="wkt-output" style="background: #1a1a2e; color: #e0e0e0; padding: 12px; border-radius: 4px; overflow-x: auto; user-select: all;"></pre>
+<div style="display: flex; gap: 4px; margin-bottom: -1px; position: relative; z-index: 1;">
+<button class="fmt-tab active-tab" onclick="switchTab('geojson')" id="tab-geojson" style="padding: 6px 14px; cursor: pointer; border: 1px solid #30363d; border-bottom: none; border-radius: 6px 6px 0 0; background: #1a1a2e; color: #e0e0e0; font-size: 13px;">GeoJSON</button>
+<button class="fmt-tab" onclick="switchTab('bbox')" id="tab-bbox" style="padding: 6px 14px; cursor: pointer; border: 1px solid #30363d; border-bottom: none; border-radius: 6px 6px 0 0; background: #0d1117; color: #888; font-size: 13px;">Bounding Box</button>
+<button class="fmt-tab" onclick="switchTab('wkt')" id="tab-wkt" style="padding: 6px 14px; cursor: pointer; border: 1px solid #30363d; border-bottom: none; border-radius: 6px 6px 0 0; background: #0d1117; color: #888; font-size: 13px;">WKT</button>
+<button id="copy-fmt-btn" class="copy-btn" onclick="copyActiveFormat(this)" style="margin-left: auto; align-self: center;">Copy</button>
+</div>
+<div style="border: 1px solid #30363d; border-radius: 0 0 4px 4px; background: #1a1a2e;">
+<pre id="geojson-output" class="fmt-output" style="display: block; background: transparent; color: #e0e0e0; padding: 12px; margin: 0; overflow-x: auto; user-select: all;"></pre>
+<pre id="bbox-output" class="fmt-output" style="display: none; background: transparent; color: #e0e0e0; padding: 12px; margin: 0; overflow-x: auto; user-select: all;"></pre>
+<pre id="wkt-output" class="fmt-output" style="display: none; background: transparent; color: #e0e0e0; padding: 12px; margin: 0; overflow-x: auto; user-select: all;"></pre>
+</div>
 
 <div style="background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin-top: 24px;">
 
@@ -69,10 +87,10 @@ Draw a geometry on the map below to generate input for `fetch_tiles`.
 </div>
 </div>
 
-<strong>Python</strong> <button onclick="copyText('python-output')" style="font-size: 12px; cursor: pointer; margin-left: 8px;">Copy</button>
+<strong>Python</strong> <button class="copy-btn" onclick="copyText('python-output', this)">Copy</button>
 <pre id="python-output" style="background: #0d1117; color: #e0e0e0; padding: 12px; border-radius: 4px; overflow-x: auto; user-select: all; border: 1px solid #30363d;"></pre>
 
-<strong>CLI</strong> <button onclick="copyText('cli-output')" style="font-size: 12px; cursor: pointer; margin-left: 8px;">Copy</button>
+<strong>CLI</strong> <button class="copy-btn" onclick="copyText('cli-output', this)">Copy</button>
 <pre id="cli-output" style="background: #0d1117; color: #e0e0e0; padding: 12px; border-radius: 4px; overflow-x: auto; user-select: all; border: 1px solid #30363d;"></pre>
 
 </div>
@@ -198,9 +216,43 @@ map.on(L.Draw.Event.CREATED, function(event) {
 });
 
 
-function copyText(elementId) {
+var activeTab = 'geojson';
+var tabMap = { geojson: 'geojson-output', bbox: 'bbox-output', wkt: 'wkt-output' };
+
+function switchTab(name) {
+    activeTab = name;
+    document.querySelectorAll('.fmt-output').forEach(function(el) { el.style.display = 'none'; });
+    document.getElementById(tabMap[name]).style.display = 'block';
+    document.querySelectorAll('.fmt-tab').forEach(function(el) {
+        el.style.background = '#0d1117';
+        el.style.color = '#888';
+    });
+    var tab = document.getElementById('tab-' + name);
+    tab.style.background = '#1a1a2e';
+    tab.style.color = '#e0e0e0';
+}
+
+function copyActiveFormat(btn) {
+    var text = document.getElementById(tabMap[activeTab]).textContent;
+    navigator.clipboard.writeText(text);
+    flashButton(btn);
+}
+
+function copyText(elementId, btn) {
     var text = document.getElementById(elementId).textContent;
     navigator.clipboard.writeText(text);
+    flashButton(btn);
+}
+
+function flashButton(btn) {
+    btn.textContent = 'Copied!';
+    btn.style.color = '#3fb950';
+    btn.style.borderColor = '#3fb950';
+    setTimeout(function() {
+        btn.textContent = 'Copy';
+        btn.style.color = '';
+        btn.style.borderColor = '';
+    }, 1000);
 }
 
 function clearDrawing() {
