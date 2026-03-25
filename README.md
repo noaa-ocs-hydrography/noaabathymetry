@@ -60,6 +60,8 @@ pip install bluetopo
 
 After installation, you have access to a Python API and two matching CLI commands: `fetch_tiles` for downloading tiles and `build_vrt` for assembling them into VRTs.
 
+You can use the [Quickstart Helper](https://noaa-ocs-hydrography.github.io/BlueTopo/quickstart-helper.html) to draw your area of interest on a map and generate usage examples.
+
 ## Python API
 
 Define your area of interest using any of the geometry formats listed below, then you can use the following in a Python shell or script.
@@ -121,8 +123,6 @@ result = fetch_tiles('/path/to/project', geometry='POLYGON((-76.1 36.9, -75.9 36
 ```python
 result = fetch_tiles('/path/to/project', geometry='{"type":"Polygon","coordinates":[[[-76.1,36.9],[-75.9,36.9],[-75.9,37.1],[-76.1,37.1],[-76.1,36.9]]]}')
 ```
-
-Use the [Geometry Helper](https://noaa-ocs-hydrography.github.io/BlueTopo/geometry-helper.html) to draw your area of interest on a map.
 
 ## Other Data Sources
 

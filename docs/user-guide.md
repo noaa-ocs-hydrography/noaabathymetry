@@ -101,8 +101,6 @@ This tracking is additive. Tiles are never removed from tracking. Passing a new 
 
 You only need to pass a geometry when you want to expand your area of interest. Omitting it still updates all previously tracked tiles. If NBS updates a tracked tile (new delivery date, revised data), the next `fetch_tiles` run picks up the change automatically. However, if NBS publishes *entirely new* tiles in your area that didn't exist in the tile scheme when you first ran, they won't be discovered unless you run with the geometry again. Re-running with your geometry periodically ensures newly published tiles in your area of interest are picked up.
 
-Use the [Geometry Helper](geometry-helper.md) to draw your area of interest on a map.
-
 ## Re-fetch and update behavior
 
 Running `fetch_tiles` again on the same project directory is safe and efficient:
