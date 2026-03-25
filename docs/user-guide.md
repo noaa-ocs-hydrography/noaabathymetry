@@ -79,7 +79,7 @@ BlueTopo operates in two distinct steps.
 
 ### Understanding `FetchResult`
 
-`fetch_tiles` returns a `FetchResult` with per-tile status lists and run metadata.
+`fetch_tiles` returns a [`FetchResult`](api-reference.md#fetchresult) with per-tile status lists and run metadata.
 
 **Tile statuses:**
 
@@ -95,7 +95,7 @@ BlueTopo operates in two distinct steps.
 
 ### Understanding `BuildResult`
 
-`build_vrt` returns a `BuildResult` with per-zone status lists and run metadata.
+`build_vrt` returns a [`BuildResult`](api-reference.md#buildresult) with per-zone status lists and run metadata.
 
 **Zone statuses:**
 
