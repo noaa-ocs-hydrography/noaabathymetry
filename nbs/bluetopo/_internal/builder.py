@@ -585,7 +585,7 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
     GeoTIFF with overviews and RAT.
     """
     start = datetime.datetime.now()
-    logger.info("═══ %s: Building VRTs in %s ═══", data_source, project_dir)
+    logger.info("═══ Begin %s: Building VRTs in %s ═══", data_source, project_dir)
 
     conn = connect(project_dir, cfg)
     check_internal_version(conn)
@@ -793,7 +793,7 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
         logger.info("Failed:  %d UTM zones failed to build",
                     len(result.failed))
 
-        logger.info("═══ %s: Complete (%s) ═══",
+        logger.info("═══ Complete %s: Building VRTs (%s) ═══",
                     data_source, datetime.datetime.now() - start)
     finally:
         if not report:

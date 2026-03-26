@@ -171,7 +171,7 @@ def _run_fetch(project_dir, geometry, cfg, data_source,
     geometry → upsert delivery dates → classify → download → update records.
     """
     start = datetime.datetime.now()
-    logger.info("═══ %s: Fetching tiles in %s ═══", data_source, project_dir)
+    logger.info("═══ Begin %s: Fetching tiles in %s ═══", data_source, project_dir)
     if tile_resolution_filter:
         logger.info("Tile resolution filter: %s",
                     make_resolution_label(tile_resolution_filter))
@@ -273,7 +273,7 @@ def _run_fetch(project_dir, geometry, cfg, data_source,
                 logger.warning("%d tiles failed checksum "
                                "verification: %s",
                                len(failed_verifications), failed_names)
-        logger.info("═══ %s: Complete (%s) ═══",
+        logger.info("═══ Complete %s: Fetching tiles (%s) ═══",
                     data_source, datetime.datetime.now() - start)
     finally:
         if not report:
