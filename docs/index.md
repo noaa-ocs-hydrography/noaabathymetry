@@ -60,8 +60,9 @@ Both functions return structured result objects ([`FetchResult`](api-reference.m
 ```python
 result = fetch_tiles('/path/to/project', geometry='area_of_interest.gpkg')
 print(f"Downloaded: {len(result.downloaded)}")
-print(f"Already up to date: {len(result.existing)}")
 print(f"Failed: {len(result.failed)}")
+print(f"Not found: {len(result.not_found)}")
+print(f"Already up to date: {len(result.existing)}")
 
 vrt_result = build_vrt('/path/to/project')
 print(f"Built {len(vrt_result.built)} UTM zone VRTs")

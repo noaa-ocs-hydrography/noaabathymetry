@@ -44,14 +44,16 @@ class FetchResult:
 
     Attributes
     ----------
-    existing : list[str]
-        Tiles already downloaded, verified, and up to date.
     downloaded : list[str]
         Tiles successfully downloaded in this run.
     failed : list[dict]
         Tiles that failed download. Each dict has ``tile`` and ``reason`` keys.
     not_found : list[str]
         Tiles whose files could not be located on S3.
+    existing : list[str]
+        Tiles already downloaded, verified, and up to date.
+    filtered_out : list[str]
+        Tiles excluded by the resolution filter.
     missing_reset : list[str]
         Tiles previously downloaded but missing from disk.
     available_tiles_intersecting_aoi : int
@@ -63,10 +65,11 @@ class FetchResult:
     tile_resolution_filter : list[int] | None
         Resolution filter that was active, or None if unfiltered.
     """
-    existing: list = field(default_factory=list)
     downloaded: list = field(default_factory=list)
     failed: list = field(default_factory=list)
     not_found: list = field(default_factory=list)
+    existing: list = field(default_factory=list)
+    filtered_out: list = field(default_factory=list)
     missing_reset: list = field(default_factory=list)
     available_tiles_intersecting_aoi: int = 0
     new_tiles_tracked: int = 0
@@ -109,7 +112,7 @@ def fetch_tiles(
     Returns
     -------
     FetchResult
-        Structured result with existing, downloaded, failed, not_found, and missing_reset tiles.
+        Structured result with downloaded, failed, not_found, existing, filtered_out, and missing_reset tiles.
     """
     project_dir = os.path.expanduser(project_dir)
     if not os.path.isabs(project_dir):
@@ -222,6 +225,10 @@ def _run_fetch(project_dir, geometry, cfg, data_source,
         db_tiles = all_db_tiles(conn)
         if tile_resolution_filter:
             res_set = set(tile_resolution_filter)
+            result.filtered_out = [
+                t["tilename"] for t in db_tiles
+                if parse_resolution(t.get("resolution")) not in res_set
+            ]
             db_tiles = [
                 t for t in db_tiles
                 if parse_resolution(t.get("resolution")) in res_set
@@ -255,14 +262,21 @@ def _run_fetch(project_dir, geometry, cfg, data_source,
         # Summary
         failed_verifications = [f for f in result.failed if "incorrect hash" in f["reason"]]
         logger.info("─── SUMMARY ───")
-        logger.info("Existing:   %d tiles already up to date locally",
-                    len(result.existing))
-        logger.info("Downloaded: %d tiles successfully downloaded",
+        logger.info("Downloaded:   %d tiles successfully downloaded",
                     len(result.downloaded))
-        logger.info("Failed:     %d tiles failed to download",
+        logger.info("Failed:       %d tiles failed to download",
                     len(result.failed))
-        logger.info("Not found:  %d tiles not found on S3",
+        logger.info("Not found:    %d tiles not found on S3",
                     len(result.not_found))
+        logger.info("Existing:     %d tiles already up to date locally",
+                    len(result.existing))
+        if result.filtered_out:
+            logger.info("Filtered out: %d tiles excluded by resolution filter",
+                        len(result.filtered_out))
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM tiles")
+        total = cursor.fetchone()[0]
+        logger.info("Total:        %d tiles", total)
         if result.not_found:
             logger.warning("The NBS may be actively updating. "
                            "Rerun fetch_tiles later to retry.")

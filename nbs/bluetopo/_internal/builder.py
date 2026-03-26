@@ -792,6 +792,7 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                          if tile_resolution_filter else "already up to date")
         logger.info("Skipped: %d UTM zones %s",
                     len(result.skipped), skipped_reason)
+        logger.info("Total:   %d UTM zones", len(all_utm_names))
 
         logger.info("═══ Complete %s: Building VRTs (%s) ═══",
                     data_source, datetime.datetime.now() - start)

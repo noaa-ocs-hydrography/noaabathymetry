@@ -60,8 +60,8 @@ result = fetch_tiles(
 print(f"Tiles in AOI: {result.available_tiles_intersecting_aoi}")
 print(f"Newly tracked: {result.new_tiles_tracked}")
 print(f"Downloaded: {len(result.downloaded)}")
-print(f"Already existing: {len(result.existing)}")
 print(f"Not found on S3: {len(result.not_found)}")
+print(f"Already existing: {len(result.existing)}")
 for failure in result.failed:
     print(f"  Failed: {failure['tile']} - {failure['reason']}")
 ```
@@ -146,10 +146,11 @@ Dataclass returned by `fetch_tiles`.
 
 | Attribute | Type | Description |
 |---|---|---|
-| `existing` | `list[str]` | Tile names already downloaded, verified, and up to date. |
 | `downloaded` | `list[str]` | Tile names successfully downloaded in this run. |
 | `failed` | `list[dict]` | Tiles that failed download. Each dict has `tile` (str) and `reason` (str) keys. |
 | `not_found` | `list[str]` | Tile names whose files could not be located on S3. |
+| `existing` | `list[str]` | Tile names already downloaded, verified, and up to date. |
+| `filtered_out` | `list[str]` | Tiles excluded by the resolution filter. Empty when no filter is active. |
 | `missing_reset` | `list[str]` | Tiles previously downloaded but missing from disk. |
 | `available_tiles_intersecting_aoi` | `int` | Number of tiles with valid metadata intersecting the area of interest geometry. Includes tiles already tracked. |
 | `new_tiles_tracked` | `int` | Number of tiles actually newly added to tracking in this run. Tiles already in the database are not counted. |
@@ -162,12 +163,13 @@ result = fetch_tiles('/home/user/bathymetry', geometry='aoi.gpkg')
 print(result)
 
 # FetchResult(
-#     existing=['BlueTopo_BC25M4NW_20240301', 'BlueTopo_BC25M4NE_20240301'],
 #     downloaded=['BlueTopo_BC25L4NW_20240315', 'BlueTopo_BC25L4NE_20240315',
 #                 'BlueTopo_BC25L6SW_20240315'],
 #     failed=[{'tile': 'BlueTopo_BC25L6SE_20240315',
 #              'reason': 'incorrect hash for geotiff (expected=a1b2c3d4e5f6... got=9f8e7d6c5b4a...)'}],
 #     not_found=['BlueTopo_BC25L8NW_20240315'],
+#     existing=['BlueTopo_BC25M4NW_20240301', 'BlueTopo_BC25M4NE_20240301'],
+#     filtered_out=[],
 #     missing_reset=[],
 #     available_tiles_intersecting_aoi=8,
 #     new_tiles_tracked=6,
