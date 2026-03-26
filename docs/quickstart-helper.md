@@ -5,6 +5,12 @@ Draw your area of interest on the map below to generate usage examples.
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous" />
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" integrity="sha384-NZLkVuBRMEeB4VeZz27WwTRvlhec30biQ8Xx7zG7JJnkvEKRg5qi6BNbEXo9ydwv" crossorigin="anonymous" />
 <style>
+#path-input::placeholder {
+    color: #555;
+    opacity: 1;
+    font-size: 14px;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
 .leaflet-draw-actions li a {
     background: rgba(50, 50, 50, 0.9);
     color: #f0f0f0;
@@ -85,8 +91,8 @@ Draw your area of interest on the map below to generate usage examples.
 
 <div style="display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px;">
 <div style="flex: 1; min-width: 200px;">
-<label for="path-input" style="font-weight: bold; font-size: 13px;">Your project directory</label>
-<input id="path-input" type="text" value="~/my_bluetopo" oninput="refreshExamples()" style="width: 100%; padding: 8px; margin-top: 4px; border: 1px solid #30363d; border-radius: 4px; background: #0d1117; color: #58a6ff; font-family: monospace; font-size: 14px; box-sizing: border-box; outline: none;" />
+<label for="path-input" style="font-weight: bold; font-size: 13px; color: #aaa;">What's your project directory?</label>
+<input id="path-input" type="text" value="~/my_bluetopo" placeholder="Enter your project directory" oninput="refreshExamples()" onblur="validatePath(this.value)" onfocus="clearValidation()" style="width: 100%; padding: 8px; margin-top: 4px; border: 1px solid #30363d; border-radius: 4px; background: #0d1117; color: #58a6ff; font-family: monospace; font-size: 14px; box-sizing: border-box; outline: none;" />
 <span id="path-warning" style="display: none; color: #d29922; font-size: 12px; margin-top: 4px;"></span>
 </div>
 <div style="display: flex; align-items: flex-end; gap: 8px; padding-bottom: 2px;">
@@ -175,6 +181,7 @@ function updateOutput(layer) {
     document.getElementById('wkt-output').textContent = wkt;
 
     window._lastBbox = bbox;
+    validatePath(document.getElementById('path-input').value);
     refreshExamples();
 }
 
@@ -188,7 +195,7 @@ function validatePath(dir) {
         return false;
     }
     if (!/^(\/|~|[A-Za-z]:[\\\/]|\\\\)/.test(dir.trim())) {
-        warning.textContent = 'Path should be absolute (start with /, ~, or a drive letter).';
+        warning.textContent = 'Path should be absolute (start with /, \\\\, ~, or a drive letter).';
         warning.style.display = 'block';
         input.style.borderColor = '#d29922';
         return false;
@@ -198,11 +205,15 @@ function validatePath(dir) {
     return true;
 }
 
+function clearValidation() {
+    document.getElementById('path-warning').style.display = 'none';
+    document.getElementById('path-input').style.borderColor = '#30363d';
+}
+
 function refreshExamples() {
     var bbox = window._lastBbox;
     if (!bbox) return;
     var dir = document.getElementById('path-input').value;
-    validatePath(dir);
     var includeBuild = document.getElementById('include-build-vrt').checked;
 
     var geojson = document.getElementById('geojson-output').textContent;
