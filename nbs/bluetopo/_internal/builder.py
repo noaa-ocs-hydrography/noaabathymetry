@@ -785,13 +785,13 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
         logger.info("─── SUMMARY ───")
         logger.info("Built:   %d UTM zones successfully built",
                     len(result.built))
+        logger.info("Failed:  %d UTM zones failed to build",
+                    len(result.failed))
         skipped_reason = ("already up to date or zones with no matching tiles "
                          "after resolution filtering"
                          if tile_resolution_filter else "already up to date")
         logger.info("Skipped: %d UTM zones %s",
                     len(result.skipped), skipped_reason)
-        logger.info("Failed:  %d UTM zones failed to build",
-                    len(result.failed))
 
         logger.info("═══ Complete %s: Building VRTs (%s) ═══",
                     data_source, datetime.datetime.now() - start)
