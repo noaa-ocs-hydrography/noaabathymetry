@@ -498,6 +498,9 @@ def pull(download):
                             "Reason": f"incorrect hash for {f['name']} "
                                       f"(expected={f['checksum'][:12]}... "
                                       f"got={actual_hash[:12]}...)"}
+            else:
+                logger.debug("No checksum for %s/%s — skipping verification",
+                             download["tile"], f["name"])
     except Exception as e:
         return {"Tile": download["tile"], "Result": False,
                 "Reason": f"exception: {e}"}

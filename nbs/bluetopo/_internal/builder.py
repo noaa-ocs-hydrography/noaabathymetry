@@ -224,75 +224,75 @@ def _reproject_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
             res_groups.setdefault(res, []).append(tile)
 
         vsimem_files = []
-        res_vrts = []
-        for res in sorted(res_groups, reverse=True):  # coarsest first
-            group_paths = build_tile_paths(res_groups[res], project_dir, cfg)
-            if not group_paths:
-                continue
-            vrt_path = f"/vsimem/_reproject_UTM{utm}_{res}m.vrt"
-            vrt_opts = gdal.BuildVRTOptions(
-                options="-allow_projection_difference -resolution highest -r near")
-            vrt = gdal.BuildVRT(vrt_path, group_paths, options=vrt_opts)
+        try:
+            res_vrts = []
+            for res in sorted(res_groups, reverse=True):  # coarsest first
+                group_paths = build_tile_paths(res_groups[res], project_dir, cfg)
+                if not group_paths:
+                    continue
+                vrt_path = f"/vsimem/_reproject_UTM{utm}_{res}m.vrt"
+                vrt_opts = gdal.BuildVRTOptions(
+                    options="-allow_projection_difference -resolution highest -r near")
+                vrt = gdal.BuildVRT(vrt_path, group_paths, options=vrt_opts)
+                if band_descs:
+                    for i, desc in enumerate(band_descs):
+                        vrt.GetRasterBand(i + 1).SetDescription(desc)
+                vrt = None
+                res_vrts.append(vrt_path)
+                vsimem_files.append(vrt_path)
+
+            if not res_vrts:
+                return None
+
+            # Combine per-resolution VRTs into a single VRT at the finest
+            # resolution.  Sources are continuous rasters (not individual
+            # tiles), so the combined grid won't straddle tile boundaries.
+            target_res = vrt_resolution_target if vrt_resolution_target is not None else min(tile_resolutions)
+            combined_vrt = f"/vsimem/_reproject_UTM{utm}_combined.vrt"
+            combined_opts = gdal.BuildVRTOptions(
+                options=f"-allow_projection_difference -resolution user "
+                        f"-tr {target_res} {target_res} -r near")
+            vrt = gdal.BuildVRT(combined_vrt, res_vrts, options=combined_opts)
             if band_descs:
                 for i, desc in enumerate(band_descs):
                     vrt.GetRasterBand(i + 1).SetDescription(desc)
             vrt = None
-            res_vrts.append(vrt_path)
-            vsimem_files.append(vrt_path)
+            vsimem_files.append(combined_vrt)
 
-        if not res_vrts:
-            return None
+            # Warp single combined VRT to EPSG:3857.
+            # filter_coarsest=False includes all overview levels since the
+            # output is a single GeoTIFF that needs overviews at every scale.
+            factors = compute_overview_factors(
+                resolutions=tile_resolutions,
+                vrt_resolution_target=target_res,
+                overview_levels=[16, 32, 64, 128, 256, 512],
+                filter_coarsest=False,
+            )
+            rel_path = os.path.join(vrt_dir_name,
+                                    f"{data_source}_Fetched_UTM{utm}{params_key}.tif")
+            output_3857 = os.path.join(project_dir, rel_path)
+            reproject_to_web_mercator(combined_vrt, output_3857,
+                                      overview_factors=factors or None,
+                                      target_resolution=target_res)
 
-        # Combine per-resolution VRTs into a single VRT at the finest
-        # resolution.  Sources are continuous rasters (not individual
-        # tiles), so the combined grid won't straddle tile boundaries.
-        target_res = vrt_resolution_target if vrt_resolution_target is not None else min(tile_resolutions)
-        combined_vrt = f"/vsimem/_reproject_UTM{utm}_combined.vrt"
-        combined_opts = gdal.BuildVRTOptions(
-            options=f"-allow_projection_difference -resolution user "
-                    f"-tr {target_res} {target_res} -r near")
-        vrt = gdal.BuildVRT(combined_vrt, res_vrts, options=combined_opts)
-        if band_descs:
-            for i, desc in enumerate(band_descs):
-                vrt.GetRasterBand(i + 1).SetDescription(desc)
-        vrt = None
-        vsimem_files.append(combined_vrt)
+            # Add RAT
+            if cfg["has_rat"]:
+                add_vrt_rat(tiles, project_dir, output_3857, cfg, utm=utm)
 
-        # Warp single combined VRT to EPSG:3857.
-        # filter_coarsest=False includes all overview levels since the
-        # output is a single GeoTIFF that needs overviews at every scale.
-        factors = compute_overview_factors(
-            resolutions=tile_resolutions,
-            vrt_resolution_target=target_res,
-            overview_levels=[16, 32, 64, 128, 256, 512],
-            filter_coarsest=False,
-        )
-        rel_path = os.path.join(vrt_dir_name,
-                                f"{data_source}_Fetched_UTM{utm}{params_key}.tif")
-        output_3857 = os.path.join(project_dir, rel_path)
-        reproject_to_web_mercator(combined_vrt, output_3857,
-                                  overview_factors=factors or None,
-                                  target_resolution=target_res)
+            result = {"utm": utm, "rel_path": rel_path, "output_path": output_3857}
 
-        # Add RAT
-        if cfg["has_rat"]:
-            add_vrt_rat(tiles, project_dir, output_3857, cfg, utm=utm)
+            if hillshade:
+                hs_path = output_3857.replace(".tif", "_hillshade.tif")
+                generate_hillshade(output_3857, hs_path)
+                result["hillshade"] = hs_path
 
-        # Clean up /vsimem/ VRTs
-        for f in vsimem_files:
-            try:
-                gdal.Unlink(f)
-            except RuntimeError:
-                pass
-
-        result = {"utm": utm, "rel_path": rel_path, "output_path": output_3857}
-
-        if hillshade:
-            hs_path = output_3857.replace(".tif", "_hillshade.tif")
-            generate_hillshade(output_3857, hs_path)
-            result["hillshade"] = hs_path
-
-        return result
+            return result
+        finally:
+            for f in vsimem_files:
+                try:
+                    gdal.Unlink(f)
+                except RuntimeError:
+                    pass
     finally:
         worker_conn.close()
 
@@ -762,8 +762,13 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                         result.failed.append({"utm": utm, "reason": str(e)})
                         logger.error("[UTM%s] FAILED: %s", utm, e)
         else:
-            logger.info("All UTM zones appear up to date with the most "
-                        "recently fetched tiles.")
+            if tile_resolution_filter:
+                logger.info("All selected UTM zones appear up to date "
+                            "(tile resolution filter was applied: %s).",
+                            make_resolution_label(tile_resolution_filter))
+            else:
+                logger.info("All UTM zones appear up to date with the most "
+                            "recently fetched tiles.")
             logger.info("Note: deleting the %s folder will "
                         "allow you to recreate from scratch if necessary",
                         vrt_dir_name)

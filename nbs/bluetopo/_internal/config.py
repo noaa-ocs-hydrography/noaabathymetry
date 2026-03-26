@@ -509,6 +509,11 @@ def parse_resolution(raw):
     int | None
         Parsed resolution in meters, or None if *raw* is empty or
         contains no digits.
+
+    Note
+    ----
+    Only integer resolutions are supported.  All NBS resolutions
+    are integers.
     """
     if not raw:
         return None

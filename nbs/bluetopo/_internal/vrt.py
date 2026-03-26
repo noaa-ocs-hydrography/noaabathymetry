@@ -24,6 +24,10 @@ from nbs.bluetopo._internal.config import (
 
 logger = logging.getLogger("bluetopo")
 
+# Process-global GDAL settings applied at import time.
+# These affect all GDAL usage in the process. If BlueTopo is used
+# as a library alongside other GDAL code, these settings will apply
+# to that code as well (especially UseExceptions). Revisit this later.
 gdal.UseExceptions()
 gdal.SetConfigOption("COMPRESS_OVERVIEW", "DEFLATE")
 gdal.SetConfigOption("GDAL_TIFF_OVR_BLOCKSIZE", "512")
@@ -113,6 +117,8 @@ def create_vrt(files, vrt_path, levels, relative_to_vrt,
     vrt_options = gdal.BuildVRTOptions(options=opts_str)
     # BuildVRT resolves relative paths from cwd, so we chdir to the VRT's
     # directory to ensure the stored references are correct.
+    # NOTE: os.chdir() is process-global. Safe with ProcessPoolExecutor
+    # (each worker is a separate process) but not thread-safe.
     cwd = os.getcwd()
     try:
         os.chdir(os.path.dirname(vrt_path))
@@ -335,6 +341,10 @@ def select_tiles_by_utm(project_dir, conn, utm, cfg, tile_resolution_filter=None
 
     if tile_resolution_filter:
         res_set = set(tile_resolution_filter)
+        null_res = [t for t in existing_tiles if parse_resolution(t.get("resolution")) is None]
+        if null_res:
+            logger.warning("[UTM%s] %d tile(s) have no parseable resolution and were "
+                           "excluded by the resolution filter.", utm, len(null_res))
         existing_tiles = [
             t for t in existing_tiles
             if parse_resolution(t.get("resolution")) in res_set
