@@ -91,7 +91,8 @@ BlueTopo operates in two distinct steps.
 **Run metadata:**
 
 - **missing_reset** — tiles previously downloaded but missing from disk.
-- **new_tiles_tracked** — number of new tiles added to tracking via geometry intersection.
+- **available_tiles_intersecting_aoi** — number of tiles with valid metadata intersecting the area of interest geometry (includes tiles already tracked).
+- **new_tiles_tracked** — number of tiles actually newly added to tracking in this run (tiles already in the database are not counted).
 - **tile_resolution_filter** — the resolution filter that was active, or `None` if unfiltered.
 
 ### Understanding `BuildResult`

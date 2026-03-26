@@ -33,7 +33,7 @@ class TestInsertNew:
             {"tile": "T2", "Delivered_Date": "2024-01-02",
              "GeoTIFF_Link": "link2", "RAT_Link": "rat2"},
         ]
-        count = insert_new(conn, tiles, cfg)
+        count, _ = insert_new(conn, tiles, cfg)
         assert count == 2
         result = all_db_tiles(conn)
         assert len(result) == 2
@@ -45,7 +45,7 @@ class TestInsertNew:
             {"tile": "T1", "Delivered_Date": None,
              "GeoTIFF_Link": "link1", "RAT_Link": "rat1"},
         ]
-        count = insert_new(conn, tiles, cfg)
+        count, _ = insert_new(conn, tiles, cfg)
         assert count == 0
 
     def test_bluetopo_filters_missing_link(self, registry_db):
@@ -55,7 +55,7 @@ class TestInsertNew:
             {"tile": "T1", "Delivered_Date": "2024-01-01",
              "GeoTIFF_Link": None, "RAT_Link": "rat1"},
         ]
-        count = insert_new(conn, tiles, cfg)
+        count, _ = insert_new(conn, tiles, cfg)
         assert count == 0
 
     def test_bag_inserts(self, registry_db):
@@ -64,7 +64,7 @@ class TestInsertNew:
         tiles = [
             {"TILE_ID": "T1", "ISSUANCE": "2024-01-01", "BAG": "link1"},
         ]
-        count = insert_new(conn, tiles, cfg)
+        count, _ = insert_new(conn, tiles, cfg)
         assert count == 1
 
     def test_bag_filters_no_issuance(self, registry_db):
@@ -73,7 +73,7 @@ class TestInsertNew:
         tiles = [
             {"TILE_ID": "T1", "ISSUANCE": None, "BAG": "link1"},
         ]
-        count = insert_new(conn, tiles, cfg)
+        count, _ = insert_new(conn, tiles, cfg)
         assert count == 0
 
     def test_bag_filters_no_bag_field(self, registry_db):
@@ -82,7 +82,7 @@ class TestInsertNew:
         tiles = [
             {"TILE_ID": "T1", "ISSUANCE": "2024-01-01", "BAG": None},
         ]
-        count = insert_new(conn, tiles, cfg)
+        count, _ = insert_new(conn, tiles, cfg)
         assert count == 0
 
     def test_s102v22_inserts(self, registry_db):
@@ -91,7 +91,7 @@ class TestInsertNew:
         tiles = [
             {"TILE_ID": "T1", "ISSUANCE": "2024-01-01", "S102V22": "link1"},
         ]
-        count = insert_new(conn, tiles, cfg)
+        count, _ = insert_new(conn, tiles, cfg)
         assert count == 1
 
     def test_s102v30_inserts(self, registry_db):
@@ -100,7 +100,7 @@ class TestInsertNew:
         tiles = [
             {"TILE_ID": "T1", "ISSUANCE": "2024-01-01", "S102V30": "link1"},
         ]
-        count = insert_new(conn, tiles, cfg)
+        count, _ = insert_new(conn, tiles, cfg)
         assert count == 1
 
     def test_s102v30_filters_none_string(self, registry_db):
@@ -110,7 +110,7 @@ class TestInsertNew:
         tiles = [
             {"TILE_ID": "T1", "ISSUANCE": "2024-01-01", "S102V30": "None"},
         ]
-        count = insert_new(conn, tiles, cfg)
+        count, _ = insert_new(conn, tiles, cfg)
         assert count == 0
 
     def test_idempotent(self, registry_db):
@@ -254,7 +254,7 @@ class TestInsertNewEdge:
         tiles = [
             {"TILE_ID": "T1", "ISSUANCE": "2024-01-01", "BAG": "None"},
         ]
-        count = insert_new(conn, tiles, cfg)
+        count, _ = insert_new(conn, tiles, cfg)
         assert count == 0
 
     def test_pmn_none_string_case_insensitive(self, registry_db):
@@ -264,7 +264,7 @@ class TestInsertNewEdge:
         tiles = [
             {"TILE_ID": "T1", "ISSUANCE": "2024-01-01", "BAG": "none"},
         ]
-        count = insert_new(conn, tiles, cfg)
+        count, _ = insert_new(conn, tiles, cfg)
         assert count == 0
 
     def test_mixed_valid_and_invalid_tiles(self, registry_db):
@@ -281,7 +281,7 @@ class TestInsertNewEdge:
             {"tile": "T4", "Delivered_Date": "2024-01-04",
              "GeoTIFF_Link": "link4", "RAT_Link": "rat4"},
         ]
-        count = insert_new(conn, tiles, cfg)
+        count, _ = insert_new(conn, tiles, cfg)
         assert count == 2
         result = all_db_tiles(conn)
         names = {t["tilename"] for t in result}
@@ -293,7 +293,7 @@ class TestInsertNewEdge:
         tiles = [
             {"TILE_ID": "T1", "ISSUANCE": "2024-01-01", "S102V21": "link1"},
         ]
-        count = insert_new(conn, tiles, cfg)
+        count, _ = insert_new(conn, tiles, cfg)
         assert count == 1
 
     def test_s102v21_filters_no_link(self, registry_db):
@@ -302,7 +302,7 @@ class TestInsertNewEdge:
         tiles = [
             {"TILE_ID": "T1", "ISSUANCE": "2024-01-01", "S102V21": None},
         ]
-        count = insert_new(conn, tiles, cfg)
+        count, _ = insert_new(conn, tiles, cfg)
         assert count == 0
 
     def test_s102v22_filters_none_string(self, registry_db):
@@ -312,13 +312,13 @@ class TestInsertNewEdge:
         tiles = [
             {"TILE_ID": "T1", "ISSUANCE": "2024-01-01", "S102V22": "None"},
         ]
-        count = insert_new(conn, tiles, cfg)
+        count, _ = insert_new(conn, tiles, cfg)
         assert count == 0
 
     def test_empty_tile_list(self, registry_db):
         cfg = get_config("bluetopo")
         conn, _ = registry_db(cfg)
-        count = insert_new(conn, [], cfg)
+        count, _ = insert_new(conn, [], cfg)
         assert count == 0
 
     def test_bluetopo_filters_missing_rat_link(self, registry_db):
@@ -328,7 +328,7 @@ class TestInsertNewEdge:
             {"tile": "T1", "Delivered_Date": "2024-01-01",
              "GeoTIFF_Link": "link1", "RAT_Link": None},
         ]
-        count = insert_new(conn, tiles, cfg)
+        count, _ = insert_new(conn, tiles, cfg)
         assert count == 0
 
     def test_pmn_mixed_sources_in_navigation(self, registry_db):
@@ -341,7 +341,7 @@ class TestInsertNewEdge:
             {"TILE_ID": "T2", "ISSUANCE": "2024-01-02", "BAG": None,
              "S102V22": "link2"},
         ]
-        count = insert_new(conn, tiles, cfg)
+        count, _ = insert_new(conn, tiles, cfg)
         assert count == 1
 
 

@@ -85,8 +85,8 @@ Draw your area of interest on the map below to generate usage examples.
 
 <div style="display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px;">
 <div style="flex: 1; min-width: 200px;">
-<label for="path-input" style="font-weight: bold; font-size: 13px;">Project directory</label>
-<input id="path-input" type="text" value="/path/to/project" oninput="refreshExamples()" style="width: 100%; padding: 8px; margin-top: 4px; border: 1px solid #30363d; border-radius: 4px; background: #0d1117; color: #58a6ff; font-family: monospace; font-size: 14px; box-sizing: border-box; outline: none;" />
+<label for="path-input" style="font-weight: bold; font-size: 13px;">Your project directory</label>
+<input id="path-input" type="text" value="~/my_bluetopo" oninput="refreshExamples()" style="width: 100%; padding: 8px; margin-top: 4px; border: 1px solid #30363d; border-radius: 4px; background: #0d1117; color: #58a6ff; font-family: monospace; font-size: 14px; box-sizing: border-box; outline: none;" />
 <span id="path-warning" style="display: none; color: #d29922; font-size: 12px; margin-top: 4px;"></span>
 </div>
 <div style="display: flex; align-items: flex-end; gap: 8px; padding-bottom: 2px;">

@@ -57,7 +57,8 @@ result = fetch_tiles(
     data_source='bluetopo',
 )
 
-print(f"New tiles tracked: {result.new_tiles_tracked}")
+print(f"Tiles in AOI: {result.available_tiles_intersecting_aoi}")
+print(f"Newly tracked: {result.new_tiles_tracked}")
 print(f"Downloaded: {len(result.downloaded)}")
 print(f"Already existing: {len(result.existing)}")
 print(f"Not found on S3: {len(result.not_found)}")
@@ -150,7 +151,8 @@ Dataclass returned by `fetch_tiles`.
 | `failed` | `list[dict]` | Tiles that failed download. Each dict has `tile` (str) and `reason` (str) keys. |
 | `not_found` | `list[str]` | Tile names whose files could not be located on S3. |
 | `missing_reset` | `list[str]` | Tiles previously downloaded but missing from disk. |
-| `new_tiles_tracked` | `int` | Number of new tiles added to tracking via geometry intersection. |
+| `available_tiles_intersecting_aoi` | `int` | Number of tiles with valid metadata intersecting the area of interest geometry. Includes tiles already tracked. |
+| `new_tiles_tracked` | `int` | Number of tiles actually newly added to tracking in this run. Tiles already in the database are not counted. |
 | `tile_resolution_filter` | `list[int] \| None` | Resolution filter that was active, or `None` if unfiltered. |
 
 **Example**
@@ -167,6 +169,7 @@ print(result)
 #              'reason': 'incorrect hash for geotiff (expected=a1b2c3d4e5f6... got=9f8e7d6c5b4a...)'}],
 #     not_found=['BlueTopo_BC25L8NW_20240315'],
 #     missing_reset=[],
+#     available_tiles_intersecting_aoi=8,
 #     new_tiles_tracked=6,
 #     tile_resolution_filter=None
 # )

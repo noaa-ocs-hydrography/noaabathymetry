@@ -54,8 +54,12 @@ class FetchResult:
         Tiles whose files could not be located on S3.
     missing_reset : list[str]
         Tiles previously downloaded but missing from disk.
+    available_tiles_intersecting_aoi : int
+        Number of tiles with valid metadata intersecting the area of
+        interest geometry.  Includes tiles already tracked.
     new_tiles_tracked : int
-        Number of new tiles added to tracking via geometry intersection.
+        Number of tiles actually newly added to tracking in this run.
+        Tiles already in the database are not counted.
     tile_resolution_filter : list[int] | None
         Resolution filter that was active, or None if unfiltered.
     """
@@ -64,6 +68,7 @@ class FetchResult:
     failed: list = field(default_factory=list)
     not_found: list = field(default_factory=list)
     missing_reset: list = field(default_factory=list)
+    available_tiles_intersecting_aoi: int = 0
     new_tiles_tracked: int = 0
     tile_resolution_filter: list = None
 
@@ -200,10 +205,12 @@ def _run_fetch(project_dir, geometry, cfg, data_source,
                     t for t in tile_list
                     if parse_resolution(t.get(res_field)) in res_set
                 ]
-            result.new_tiles_tracked = insert_new(conn, tile_list, cfg)
-            logger.info("Tracking %d available %s tile(s) "
-                        "in %d intersected tile(s)",
-                        result.new_tiles_tracked, data_source, len(tile_list))
+            available, newly_tracked = insert_new(conn, tile_list, cfg)
+            result.available_tiles_intersecting_aoi = available
+            result.new_tiles_tracked = newly_tracked
+            logger.info("%d available %s tile(s) intersecting area of interest "
+                        "(%d newly tracked)",
+                        available, data_source, newly_tracked)
             if tile_resolution_filter and len(tile_list) != total_intersected:
                 logger.info("  (%d tile(s) excluded by resolution filter)",
                             total_intersected - len(tile_list))

@@ -668,9 +668,11 @@ def insert_new(conn, tiles, cfg):
 
     Returns
     -------
-    int
-        Number of tiles that passed the filter and were submitted for
-        insertion (some may already exist due to ``ON CONFLICT DO NOTHING``).
+    tuple[int, int]
+        ``(available, newly_tracked)`` where *available* is the number
+        of tiles with valid metadata intersecting the area of interest,
+        and *newly_tracked* is the number actually inserted (tiles
+        already in the DB are skipped via ``ON CONFLICT DO NOTHING``).
     """
     cursor = conn.cursor()
     gpkg_fields = cfg["gpkg_fields"]
@@ -701,7 +703,7 @@ def insert_new(conn, tiles, cfg):
         tile_list,
     )
     conn.commit()
-    return len(tile_list)
+    return len(tile_list), cursor.rowcount
 
 
 def upsert_tiles(conn, project_dir, tile_scheme, cfg):
