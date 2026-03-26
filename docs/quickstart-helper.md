@@ -103,10 +103,10 @@ Draw your area of interest on the map below to generate usage examples.
 </div>
 
 <strong>Python</strong> <button class="copy-btn" onclick="copyText('python-output', this)">Copy</button>
-<pre id="python-output" style="background: #0d1117; color: #e0e0e0; padding: 8px; border-radius: 4px; overflow-x: auto; user-select: all; border: 1px solid #30363d; font-size: 11px; line-height: 1.4; white-space: pre-wrap; word-break: break-all;"></pre>
+<pre id="python-output" style="background: #0d1117; color: #e0e0e0; padding: 8px; border-radius: 4px; overflow-x: auto; user-select: text; border: 1px solid #30363d; font-size: 11px; line-height: 1.4; white-space: pre-wrap; word-break: break-all;"></pre>
 
 <strong>CLI</strong> <button class="copy-btn" onclick="copyText('cli-output', this)">Copy</button>
-<pre id="cli-output" style="background: #0d1117; color: #e0e0e0; padding: 8px; border-radius: 4px; overflow-x: auto; user-select: all; border: 1px solid #30363d; font-size: 11px; line-height: 1.4; white-space: pre-wrap; word-break: break-all;"></pre>
+<pre id="cli-output" style="background: #0d1117; color: #e0e0e0; padding: 8px; border-radius: 4px; overflow-x: auto; user-select: text; border: 1px solid #30363d; font-size: 11px; line-height: 1.4; white-space: pre-wrap; word-break: break-all;"></pre>
 
 </div>
 
