@@ -697,16 +697,22 @@ def select_unbuilt_utms(conn, cfg, params_key=""):
 
 
 def update_utm(conn, fields, cfg):
-    """Update a ``vrt_utm`` row with VRT/OVR paths, metadata, and set all built flags to 1."""
+    """Update a ``vrt_utm`` row with VRT/OVR paths, metadata, and built flags.
+
+    VRT built flags (e.g. ``built``, ``built_combined``) are always set to 1.
+    ``built_hillshade`` is set from the caller's value (default 0).
+    """
     all_fields = get_vrt_utm_fields(cfg)
     built_flags = get_vrt_built_flags(cfg)
-    exclude = {"utm", "params_key", "output_dir"}
+    exclude = {"utm", "params_key", "output_dir", "built_hillshade"}
     exclude.update(built_flags)
     data_cols = [k for k in all_fields if k not in exclude]
     set_parts = [f"{col} = ?" for col in data_cols]
     for f in built_flags:
         set_parts.append(f"{f} = 1")
+    set_parts.append("built_hillshade = ?")
     values = [fields.get(col) for col in data_cols]
+    values.append(fields.get("built_hillshade", 0))
     params_key = fields.get("params_key", "")
     values.extend([fields["utm"], params_key])
     cursor = conn.cursor()
