@@ -366,13 +366,18 @@ class TestBuildPopulatesSingleDataset:
 class TestBuildWithHillshade:
     def test_hillshade_fields_populated(self, make_geotiff, tmp_path):
         project_dir, cfg = _setup_project(make_geotiff, tmp_path)
-        build_vrt(project_dir, "bluetopo", hillshade=True)
+        result = build_vrt(project_dir, "bluetopo", hillshade=True)
         row = _query_utm_row(project_dir, cfg)
         assert row["built_hillshade"] == 1
         assert row["hillshade"] is not None
         assert os.path.isfile(os.path.join(project_dir, row["hillshade"]))
         assert row["hillshade_disk_file_size"] is not None
         assert row["hillshade_disk_file_size"] > 0
+        # First-pass hillshade should also appear in result.hillshades
+        assert len(result.hillshades) == 1
+        assert result.hillshades[0]["utm"] == "19"
+        assert os.path.isabs(result.hillshades[0]["hillshade"])
+        assert os.path.isfile(result.hillshades[0]["hillshade"])
 
 
 class TestBuildWithResolutionTarget:
@@ -442,6 +447,20 @@ class TestBuildReproject:
         assert row["vrt_resolution"] == 4.0
         assert row["built"] == 1
 
+    def test_reproject_build_result_paths_are_absolute(self, make_geotiff, tmp_path):
+        project_dir, cfg = _setup_project(make_geotiff, tmp_path)
+        result = build_vrt(project_dir, "bluetopo", reproject=True)
+        assert len(result.built) == 1
+        entry = result.built[0]
+        # vrt is always an absolute path
+        assert entry["vrt"] is not None
+        assert os.path.isabs(entry["vrt"])
+        assert os.path.isfile(entry["vrt"])
+        # ovr is an absolute path when present
+        if entry["ovr"] is not None:
+            assert os.path.isabs(entry["ovr"])
+            assert os.path.isfile(entry["ovr"])
+
 
 # ---------------------------------------------------------------------------
 # Second-pass hillshade
@@ -477,6 +496,12 @@ class TestSecondPassHillshade:
         assert row["hillshade"] is not None
         assert os.path.isfile(os.path.join(project_dir, row["hillshade"]))
         assert row["hillshade_disk_file_size"] > 0
+
+        # BuildResult.hillshades should capture the second-pass generation
+        assert len(result2.hillshades) == 1
+        assert result2.hillshades[0]["utm"] == "19"
+        assert os.path.isabs(result2.hillshades[0]["hillshade"])
+        assert os.path.isfile(result2.hillshades[0]["hillshade"])
 
     def test_second_pass_detects_missing_hillshade_file(self, make_geotiff, tmp_path):
         project_dir, cfg = _setup_project(make_geotiff, tmp_path)

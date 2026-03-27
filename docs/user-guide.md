@@ -104,6 +104,7 @@ BlueTopo operates in two distinct steps.
 - **built** — UTM zones that were built in this run. Each entry includes paths to the VRT, overview, and optional hillshade files.
 - **skipped** — UTM zones already up to date, or zones with no matching tiles after resolution filtering.
 - **failed** — UTM zones that failed during the build. Each entry includes the zone identifier and failure reason.
+- **hillshades** — UTM zones where a hillshade was generated. Each entry includes the zone identifier and hillshade file path.
 
 **Run metadata:**
 

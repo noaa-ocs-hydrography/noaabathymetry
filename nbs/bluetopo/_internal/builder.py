@@ -219,7 +219,8 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
                 fields[f"tiles_{res}m"] = res_counts.get(res, 0)
 
             result = {"utm": utm, "fields": fields,
-                      "vrt": utm_vrt, "ovr": fields.get("utm_ovr")}
+                      "vrt": utm_vrt,
+                      "ovr": ovr_path if os.path.isfile(ovr_path) else None}
 
             if hillshade:
                 logger.info("[UTM%s] Generating hillshade...", utm)
@@ -350,45 +351,54 @@ def _reproject_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
             if cfg["has_rat"]:
                 add_vrt_rat(tiles, project_dir, output_3857, cfg, utm=utm)
 
-            result = {"utm": utm, "rel_path": rel_path, "output_path": output_3857}
-            result["utm_vrt_disk_file_size"] = os.path.getsize(output_3857)
+            # Build fields dict matching _build_utm_zone structure
+            fields = {"utm_vrt": rel_path, "utm_ovr": None,
+                      "utm": utm, "params_key": params_key}
+            fields["utm_vrt_disk_file_size"] = os.path.getsize(output_3857)
+            fields["utm_ovr_disk_file_size"] = None
             ovr_path = output_3857 + ".ovr"
             if os.path.isfile(ovr_path):
-                result["utm_ovr"] = rel_path + ".ovr"
-                result["utm_ovr_disk_file_size"] = os.path.getsize(ovr_path)
+                fields["utm_ovr"] = rel_path + ".ovr"
+                fields["utm_ovr_disk_file_size"] = os.path.getsize(ovr_path)
             aux_xml_path = output_3857 + ".aux.xml"
             if os.path.isfile(aux_xml_path):
-                result["utm_aux_xml"] = rel_path + ".aux.xml"
-                result["utm_aux_xml_disk_file_size"] = os.path.getsize(aux_xml_path)
+                fields["utm_aux_xml"] = rel_path + ".aux.xml"
+                fields["utm_aux_xml_disk_file_size"] = os.path.getsize(aux_xml_path)
 
             # Build metadata — based on final GeoTIFF factors, not intermediary VRTs
             tile_count = len(tiles)
             ovw_count = len(factors) if factors else 0
-            result["tile_count"] = tile_count
-            result["tile_count_plus_overviews"] = tile_count * (1 + ovw_count)
-            result["vrt_resolution"] = target_res
-            result["overview_count"] = ovw_count
-            result["overview_resolutions"] = (
+            fields["tile_count"] = tile_count
+            fields["tile_count_plus_overviews"] = tile_count * (1 + ovw_count)
+            fields["vrt_resolution"] = target_res
+            fields["overview_count"] = ovw_count
+            fields["overview_resolutions"] = (
                 ",".join(str(int(f * target_res)) for f in factors) if factors else None
             )
-            result["built_timestamp"] = datetime.datetime.now().isoformat()
+            fields["built_timestamp"] = datetime.datetime.now().isoformat()
             res_counts = {}
             for t in tiles:
                 r = parse_resolution(t.get("resolution"))
                 if r is not None:
                     res_counts[r] = res_counts.get(r, 0) + 1
             for res in (2, 4, 8, 16, 32, 64):
-                result[f"tiles_{res}m"] = res_counts.get(res, 0)
+                fields[f"tiles_{res}m"] = res_counts.get(res, 0)
+
+            result = {"utm": utm, "fields": fields,
+                      "vrt": output_3857,
+                      "ovr": ovr_path if os.path.isfile(ovr_path) else None}
 
             if hillshade:
                 logger.info("[UTM%s] Generating hillshade...", utm)
                 hs_path = output_3857.replace(".tif", "_hillshade.tif")
                 generate_hillshade(output_3857, hs_path)
+                hs_rel = os.path.relpath(hs_path, project_dir)
+                fields["hillshade"] = hs_rel
+                fields["hillshade_disk_file_size"] = os.path.getsize(hs_path)
                 result["hillshade"] = hs_path
-                result["hillshade_disk_file_size"] = os.path.getsize(hs_path)
 
-            result["built_hillshade"] = 1 if hillshade else 0
-            result["build_duration_seconds"] = (datetime.datetime.now() - zone_start).total_seconds()
+            fields["built_hillshade"] = 1 if hillshade else 0
+            fields["build_duration_seconds"] = (datetime.datetime.now() - zone_start).total_seconds()
             return result
         finally:
             for f in vsimem_files:
@@ -407,8 +417,9 @@ class BuildResult:
     Attributes
     ----------
     built : list[dict]
-        UTM zones that were built. Each dict has ``utm`` and ``vrt`` keys,
-        plus ``ovr`` (str or None) for the overview file path.
+        UTM zones that were built. Each dict has ``utm`` (str),
+        ``vrt`` (str), ``ovr`` (str or None), and ``hillshade``
+        (str or None) keys.
     skipped : list[str]
         UTM zones that were already up to date or had no tiles after
         resolution filtering.
@@ -417,6 +428,11 @@ class BuildResult:
         ``utm`` (str) and ``reason`` (str) keys.
     missing_reset : list[str]
         UTM zones reset due to missing VRT files on disk.
+    hillshades : list[dict]
+        UTM zones where a hillshade was generated. Includes both
+        first-pass (during full build) and second-pass (for
+        already-built zones). Each dict has ``utm`` (str) and
+        ``hillshade`` (str, absolute path) keys.
     tile_resolution_filter : list[int] | None
         Resolution filter that was active, or None if unfiltered.
     vrt_resolution_target : float | None
@@ -426,6 +442,7 @@ class BuildResult:
     skipped: list = field(default_factory=list)
     failed: list = field(default_factory=list)
     missing_reset: list = field(default_factory=list)
+    hillshades: list = field(default_factory=list)
     tile_resolution_filter: list = None
     vrt_resolution_target: float = None
 
@@ -574,7 +591,7 @@ def build_vrt(project_dir: str, data_source: str = None,
     Returns
     -------
     BuildResult
-        Structured result with built, skipped, failed, and missing_reset.
+        Structured result with built, skipped, failed, missing_reset, and hillshades.
     """
     if workers is not None:
         if isinstance(workers, bool) or not isinstance(workers, int) or workers < 1:
@@ -803,39 +820,22 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
 
                 # DB updates sequentially (SQLite single-writer)
                 for zone_result in zone_results:
-                    utm = zone_result.get("utm") or zone_result.get("fields", {}).get("utm")
+                    utm = zone_result["utm"]
                     try:
-                        if reproject:
-                            fields = {"utm_vrt": zone_result["rel_path"],
-                                      "utm": zone_result["utm"],
-                                      "params_key": params_key}
-                            for key in ("tile_count", "tile_count_plus_overviews",
-                                        "vrt_resolution", "overview_count",
-                                        "overview_resolutions", "built_timestamp",
-                                        "tiles_2m", "tiles_4m", "tiles_8m",
-                                        "tiles_16m", "tiles_32m", "tiles_64m",
-                                        "build_duration_seconds",
-                                        "utm_vrt_disk_file_size",
-                                        "utm_ovr", "utm_ovr_disk_file_size",
-                                        "utm_aux_xml", "utm_aux_xml_disk_file_size",
-                                        "hillshade_disk_file_size",
-                                        "built_hillshade"):
-                                fields[key] = zone_result.get(key)
-                            hs = zone_result.get("hillshade")
-                            fields["hillshade"] = (
-                                os.path.relpath(hs, project_dir) if hs else None
-                            )
-                        else:
-                            fields = zone_result["fields"]
-                        update_utm(conn, fields, cfg)
+                        update_utm(conn, zone_result["fields"], cfg)
 
                         built_entry = {
                             "utm": zone_result["utm"],
-                            "vrt": zone_result.get("vrt") or zone_result.get("output_path"),
+                            "vrt": zone_result.get("vrt"),
                             "ovr": zone_result.get("ovr"),
                             "hillshade": zone_result.get("hillshade"),
                         }
                         result.built.append(built_entry)
+                        if built_entry.get("hillshade"):
+                            result.hillshades.append({
+                                "utm": zone_result["utm"],
+                                "hillshade": built_entry["hillshade"],
+                            })
                     except Exception as e:
                         result.failed.append({"utm": utm, "reason": str(e)})
                         logger.error("[UTM%s] FAILED during DB update: %s",
@@ -854,37 +854,20 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                             continue
 
                         # DB update immediately in sequential mode
-                        if reproject:
-                            fields = {"utm_vrt": zone_result["rel_path"],
-                                      "utm": zone_result["utm"],
-                                      "params_key": params_key}
-                            for key in ("tile_count", "tile_count_plus_overviews",
-                                        "vrt_resolution", "overview_count",
-                                        "overview_resolutions", "built_timestamp",
-                                        "tiles_2m", "tiles_4m", "tiles_8m",
-                                        "tiles_16m", "tiles_32m", "tiles_64m",
-                                        "build_duration_seconds",
-                                        "utm_vrt_disk_file_size",
-                                        "utm_ovr", "utm_ovr_disk_file_size",
-                                        "utm_aux_xml", "utm_aux_xml_disk_file_size",
-                                        "hillshade_disk_file_size",
-                                        "built_hillshade"):
-                                fields[key] = zone_result.get(key)
-                            hs = zone_result.get("hillshade")
-                            fields["hillshade"] = (
-                                os.path.relpath(hs, project_dir) if hs else None
-                            )
-                        else:
-                            fields = zone_result["fields"]
-                        update_utm(conn, fields, cfg)
+                        update_utm(conn, zone_result["fields"], cfg)
 
                         built_entry = {
                             "utm": zone_result["utm"],
-                            "vrt": zone_result.get("vrt") or zone_result.get("output_path"),
+                            "vrt": zone_result.get("vrt"),
                             "ovr": zone_result.get("ovr"),
                             "hillshade": zone_result.get("hillshade"),
                         }
                         result.built.append(built_entry)
+                        if built_entry.get("hillshade"):
+                            result.hillshades.append({
+                                "utm": zone_result["utm"],
+                                "hillshade": built_entry["hillshade"],
+                            })
                         logger.info("[UTM%s] Complete (%s)", utm,
                                     datetime.datetime.now() - utm_start)
                     except Exception as e:
@@ -967,6 +950,7 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                         )
                         conn.commit()
                         hillshade_count += 1
+                        result.hillshades.append({"utm": utm, "hillshade": hs_path})
                         logger.info("[UTM%s] Hillshade complete", utm)
                     except Exception as e:
                         result.failed.append({"utm": utm, "reason": f"hillshade: {e}"})

@@ -190,6 +190,7 @@ Dataclass returned by `build_vrt`.
 | `skipped` | `list[str]` | UTM zone identifiers that were already up to date, or had no matching tiles after resolution filtering. |
 | `failed` | `list[dict]` | UTM zones that failed during the build. Each dict has `utm` (str) and `reason` (str) keys. |
 | `missing_reset` | `list[str]` | UTM zones reset due to VRT files missing on disk. |
+| `hillshades` | `list[dict]` | UTM zones where a hillshade was generated. Each dict has `utm` (str) and `hillshade` (str, absolute path) keys. |
 | `tile_resolution_filter` | `list[int] \| None` | Resolution filter that was active, or `None` if unfiltered. |
 | `vrt_resolution_target` | `float \| None` | VRT pixel size override that was active, or `None` for native resolution. |
 
@@ -211,6 +212,7 @@ print(result)
 #     skipped=['17'],
 #     failed=[],
 #     missing_reset=[],
+#     hillshades=[],
 #     tile_resolution_filter=None,
 #     vrt_resolution_target=None
 # )
