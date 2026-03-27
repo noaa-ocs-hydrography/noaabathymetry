@@ -72,14 +72,13 @@ class TestColumnNaming:
     @pytest.mark.parametrize("source", REMOTE_SOURCES)
     def test_utm_built_flags_count(self, source):
         cfg = get_config(source)
-        utm_fields = get_vrt_utm_fields(cfg)
-        built_cols = [k for k in utm_fields if "built" in k]
+        built_flags = get_built_flags(cfg)
         if cfg["subdatasets"]:
             # One per subdataset + built_combined
-            expected = len(cfg["subdatasets"]) + 1
-            assert len(built_cols) == expected
+            assert len(built_flags) == len(cfg["subdatasets"]) + 1
+            assert "built_combined" in built_flags
         else:
-            assert len(built_cols) == 1
-            assert "built" in built_cols
+            assert len(built_flags) == 1
+            assert "built" in built_flags
 
 

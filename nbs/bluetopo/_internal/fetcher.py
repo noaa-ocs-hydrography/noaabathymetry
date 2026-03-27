@@ -211,6 +211,7 @@ def _run_fetch(project_dir, geometry, cfg, data_source,
             available, newly_tracked = insert_new(conn, tile_list, cfg)
             result.available_tiles_intersecting_aoi = available
             result.new_tiles_tracked = newly_tracked
+            logger.info("─── Discovery ───")
             logger.info("%d available %s tile(s) intersecting area of interest "
                         "(%d newly tracked)",
                         available, data_source, newly_tracked)
@@ -243,10 +244,13 @@ def _run_fetch(project_dir, geometry, cfg, data_source,
             client=client, bucket=bucket, local_dir=local_dir,
             skip_tilenames=set(existing))
 
+        logger.info("─── Tile Status ───")
         logger.info("%d tile(s) with new data", len(new))
         logger.info("%d tile(s) already downloaded are missing locally",
                     len(missing))
 
+        if download_dict:
+            logger.info("─── Download ───")
         results = execute_downloads(download_dict, data_source)
 
         for r in results:

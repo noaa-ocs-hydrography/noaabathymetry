@@ -114,6 +114,31 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
                        combined_bands, separate=True)
             fields["utm_combined_vrt"] = rel_combined
 
+            # Build metadata
+            native_res = vrt_resolution_target if vrt_resolution_target else (min(tile_resolutions) if tile_resolutions else None)
+            if native_res is None:
+                raise ValueError(
+                    f"No parseable tile resolutions found for UTM {utm}. "
+                    "Check that tiles have valid resolution metadata."
+                )
+            tile_count = len(tiles)
+            ovw_count = len(factors) if factors else 0
+            fields["tile_count"] = tile_count
+            fields["tile_count_plus_overviews"] = tile_count * (1 + ovw_count)
+            fields["vrt_resolution"] = native_res
+            fields["overview_count"] = ovw_count
+            fields["overview_resolutions"] = (
+                ",".join(str(int(f * native_res)) for f in factors) if factors else None
+            )
+            fields["built_timestamp"] = datetime.datetime.now().isoformat()
+            res_counts = {}
+            for t in tiles:
+                r = parse_resolution(t.get("resolution"))
+                if r is not None:
+                    res_counts[r] = res_counts.get(r, 0) + 1
+            for res in (2, 4, 8, 16, 32, 64):
+                fields[f"tiles_{res}m"] = res_counts.get(res, 0)
+
             if cfg["has_rat"]:
                 add_vrt_rat(tiles, project_dir, utm_combined_vrt, cfg, utm=utm)
 
@@ -153,6 +178,31 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
                 raise RuntimeError(
                     f"Overview failed to create for utm{utm}. "
                     "Please try again. If error persists, please contact NBS.")
+
+            # Build metadata
+            native_res = vrt_resolution_target if vrt_resolution_target else (min(tile_resolutions) if tile_resolutions else None)
+            if native_res is None:
+                raise ValueError(
+                    f"No parseable tile resolutions found for UTM {utm}. "
+                    "Check that tiles have valid resolution metadata."
+                )
+            tile_count = len(tiles)
+            ovw_count = len(factors) if factors else 0
+            fields["tile_count"] = tile_count
+            fields["tile_count_plus_overviews"] = tile_count * (1 + ovw_count)
+            fields["vrt_resolution"] = native_res
+            fields["overview_count"] = ovw_count
+            fields["overview_resolutions"] = (
+                ",".join(str(int(f * native_res)) for f in factors) if factors else None
+            )
+            fields["built_timestamp"] = datetime.datetime.now().isoformat()
+            res_counts = {}
+            for t in tiles:
+                r = parse_resolution(t.get("resolution"))
+                if r is not None:
+                    res_counts[r] = res_counts.get(r, 0) + 1
+            for res in (2, 4, 8, 16, 32, 64):
+                fields[f"tiles_{res}m"] = res_counts.get(res, 0)
 
             result = {"utm": utm, "fields": fields,
                       "vrt": utm_vrt, "ovr": fields.get("utm_ovr")}
@@ -281,6 +331,25 @@ def _reproject_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
 
             result = {"utm": utm, "rel_path": rel_path, "output_path": output_3857}
 
+            # Build metadata — based on final GeoTIFF factors, not intermediary VRTs
+            tile_count = len(tiles)
+            ovw_count = len(factors) if factors else 0
+            result["tile_count"] = tile_count
+            result["tile_count_plus_overviews"] = tile_count * (1 + ovw_count)
+            result["vrt_resolution"] = target_res
+            result["overview_count"] = ovw_count
+            result["overview_resolutions"] = (
+                ",".join(str(int(f * target_res)) for f in factors) if factors else None
+            )
+            result["built_timestamp"] = datetime.datetime.now().isoformat()
+            res_counts = {}
+            for t in tiles:
+                r = parse_resolution(t.get("resolution"))
+                if r is not None:
+                    res_counts[r] = res_counts.get(r, 0) + 1
+            for res in (2, 4, 8, 16, 32, 64):
+                result[f"tiles_{res}m"] = res_counts.get(res, 0)
+
             if hillshade:
                 hs_path = output_3857.replace(".tif", "_hillshade.tif")
                 generate_hillshade(output_3857, hs_path)
@@ -397,8 +466,6 @@ def _validate_output_dir(project_dir, conn, cfg, params_key, vrt_dir_name):
         set_parts = ["output_dir = ?"] + [f"{col} = NULL" for col in utm_cols]
         for f in built_flags:
             set_parts.append(f"{f} = 0")
-        if cfg["subdatasets"]:
-            set_parts.append("built_combined = 0")
         cursor.execute(
             f"UPDATE vrt_utm SET {', '.join(set_parts)} "
             "WHERE params_key = ?",
@@ -426,8 +493,6 @@ def _validate_output_dir(project_dir, conn, cfg, params_key, vrt_dir_name):
         set_parts = ["output_dir = NULL"] + [f"{col} = NULL" for col in utm_cols]
         for f in built_flags:
             set_parts.append(f"{f} = 0")
-        if cfg["subdatasets"]:
-            set_parts.append("built_combined = 0")
         cursor.execute(
             f"UPDATE vrt_utm SET {', '.join(set_parts)} "
             "WHERE params_key = ? AND output_dir = ?",
@@ -711,6 +776,12 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                                       "utm_ovr": None,
                                       "utm": zone_result["utm"],
                                       "params_key": params_key}
+                            for key in ("tile_count", "tile_count_plus_overviews",
+                                        "vrt_resolution", "overview_count",
+                                        "overview_resolutions", "built_timestamp",
+                                        "tiles_2m", "tiles_4m", "tiles_8m",
+                                        "tiles_16m", "tiles_32m", "tiles_64m"):
+                                fields[key] = zone_result.get(key)
                         else:
                             fields = zone_result["fields"]
                         update_utm(conn, fields, cfg)
@@ -745,6 +816,12 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                                       "utm_ovr": None,
                                       "utm": zone_result["utm"],
                                       "params_key": params_key}
+                            for key in ("tile_count", "tile_count_plus_overviews",
+                                        "vrt_resolution", "overview_count",
+                                        "overview_resolutions", "built_timestamp",
+                                        "tiles_2m", "tiles_4m", "tiles_8m",
+                                        "tiles_16m", "tiles_32m", "tiles_64m"):
+                                fields[key] = zone_result.get(key)
                         else:
                             fields = zone_result["fields"]
                         update_utm(conn, fields, cfg)

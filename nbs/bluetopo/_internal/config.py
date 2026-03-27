@@ -773,12 +773,24 @@ def get_vrt_utm_fields(cfg):
             fields[f"utm_subdataset{i+1}_vrt"] = "text"
             fields[f"utm_subdataset{i+1}_ovr"] = "text"
         fields["utm_combined_vrt"] = "text"
+    else:
+        fields["utm_vrt"] = "text"
+        fields["utm_ovr"] = "text"
+    # Build metadata (not file paths)
+    fields["tile_count"] = "integer"
+    fields["tile_count_plus_overviews"] = "integer"
+    fields["vrt_resolution"] = "real"
+    fields["overview_count"] = "integer"
+    fields["overview_resolutions"] = "text"
+    for res in (2, 4, 8, 16, 32, 64):
+        fields[f"tiles_{res}m"] = "integer"
+    fields["built_timestamp"] = "text"
+    # Built flags
+    if cfg["subdatasets"]:
         for i in range(len(cfg["subdatasets"])):
             fields[f"built_subdataset{i+1}"] = "integer"
         fields["built_combined"] = "integer"
     else:
-        fields["utm_vrt"] = "text"
-        fields["utm_ovr"] = "text"
         fields["built"] = "integer"
     return fields
 
@@ -806,15 +818,24 @@ def get_tiles_fields(cfg):
 def get_built_flags(cfg):
     """Return built-flag column names from ``vrt_utm`` (e.g. ``["built"]``)."""
     if cfg["subdatasets"]:
-        return [f"built_subdataset{i+1}" for i in range(len(cfg["subdatasets"]))]
+        flags = [f"built_subdataset{i+1}" for i in range(len(cfg["subdatasets"]))]
+        flags.append("built_combined")
+        return flags
     return ["built"]
 
 
 def get_utm_file_columns(cfg):
     """Return VRT/OVR path column names from ``vrt_utm``, excluding PK, built flags, and metadata."""
     fields = get_vrt_utm_fields(cfg)
-    exclude = {"utm", "params_key", "output_dir"}
-    return [k for k in fields if k not in exclude and "built" not in k]
+    exclude = {
+        "utm", "params_key", "output_dir",
+        "tile_count", "tile_count_plus_overviews",
+        "vrt_resolution", "overview_count", "overview_resolutions",
+        "tiles_2m", "tiles_4m", "tiles_8m", "tiles_16m",
+        "tiles_32m", "tiles_64m", "built_timestamp",
+    }
+    exclude.update(get_built_flags(cfg))
+    return [k for k in fields if k not in exclude]
 
 
 def get_disk_field(cfg):

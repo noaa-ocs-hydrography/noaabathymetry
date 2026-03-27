@@ -199,7 +199,7 @@ class TestGetBuiltFlags:
     def test_multi_subdataset(self, source):
         cfg = get_config(source)
         flags = get_built_flags(cfg)
-        assert flags == ["built_subdataset1", "built_subdataset2"]
+        assert flags == ["built_subdataset1", "built_subdataset2", "built_combined"]
 
 
 # ---------------------------------------------------------------------------

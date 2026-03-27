@@ -20,6 +20,7 @@ from nbs.bluetopo._internal.config import (
     get_disk_field,
     get_disk_fields,
     get_utm_file_columns,
+    get_vrt_utm_fields,
 )
 
 logger = logging.getLogger("bluetopo")
@@ -676,11 +677,7 @@ def add_vrt_rat(tiles, project_dir, vrt_path, cfg, utm=None):
 def select_unbuilt_utms(conn, cfg, params_key=""):
     """Return ``vrt_utm`` rows where any built flag is 0 for *params_key*."""
     built_flags = get_built_flags(cfg)
-    if cfg["subdatasets"]:
-        all_flags = built_flags + ["built_combined"]
-        where_clause = " or ".join(f"{f} = 0" for f in all_flags)
-    else:
-        where_clause = " or ".join(f"{f} = 0" for f in built_flags)
+    where_clause = " or ".join(f"{f} = 0" for f in built_flags)
     cursor = conn.cursor()
     cursor.execute(
         f"SELECT * FROM vrt_utm WHERE params_key = ? AND ({where_clause})",
@@ -690,21 +687,21 @@ def select_unbuilt_utms(conn, cfg, params_key=""):
 
 
 def update_utm(conn, fields, cfg):
-    """Update a ``vrt_utm`` row with VRT/OVR paths and set all built flags to 1."""
-    utm_cols = get_utm_file_columns(cfg)
+    """Update a ``vrt_utm`` row with VRT/OVR paths, metadata, and set all built flags to 1."""
+    all_fields = get_vrt_utm_fields(cfg)
     built_flags = get_built_flags(cfg)
-    set_parts = [f"{col} = ?" for col in utm_cols]
+    exclude = {"utm", "params_key", "output_dir"}
+    exclude.update(built_flags)
+    data_cols = [k for k in all_fields if k not in exclude]
+    set_parts = [f"{col} = ?" for col in data_cols]
     for f in built_flags:
         set_parts.append(f"{f} = 1")
-    if cfg["subdatasets"]:
-        set_parts.append("built_combined = 1")
-    set_clause = ", ".join(set_parts)
-    values = [fields.get(col) for col in utm_cols]
+    values = [fields.get(col) for col in data_cols]
     params_key = fields.get("params_key", "")
     values.extend([fields["utm"], params_key])
     cursor = conn.cursor()
     cursor.execute(
-        f"UPDATE vrt_utm SET {set_clause} WHERE utm = ? AND params_key = ?",
+        f"UPDATE vrt_utm SET {', '.join(set_parts)} WHERE utm = ? AND params_key = ?",
         values,
     )
     conn.commit()
@@ -723,10 +720,7 @@ def missing_utms(project_dir, conn, cfg, params_key=""):
         UTM zone identifiers that were reset.
     """
     built_flags = get_built_flags(cfg)
-    if cfg["subdatasets"]:
-        where_built = " or ".join(f"{f} = 1" for f in built_flags + ["built_combined"])
-    else:
-        where_built = " or ".join(f"{f} = 1" for f in built_flags)
+    where_built = " or ".join(f"{f} = 1" for f in built_flags)
     cursor = conn.cursor()
     cursor.execute(
         f"SELECT * FROM vrt_utm WHERE params_key = ? AND ({where_built})",
@@ -752,8 +746,6 @@ def missing_utms(project_dir, conn, cfg, params_key=""):
             set_parts = [f"{col} = ?" for col in utm_cols]
             for f in built_flags:
                 set_parts.append(f"{f} = 0")
-            if cfg["subdatasets"]:
-                set_parts.append("built_combined = 0")
             set_clause = ", ".join(set_parts)
             values = [None] * len(utm_cols) + [utm["utm"], params_key]
             cursor.execute(
@@ -792,8 +784,6 @@ def ensure_params_rows(conn, cfg, params_key, output_dir=None):
         return
 
     col_names = ["utm", "params_key", "output_dir"] + utm_cols + built_flags
-    if cfg["subdatasets"]:
-        col_names.append("built_combined")
 
     col_str = ", ".join(col_names)
     placeholders = ", ".join(["?"] * len(col_names))
@@ -803,8 +793,6 @@ def ensure_params_rows(conn, cfg, params_key, output_dir=None):
         values = [utm, params_key, output_dir]
         values.extend([None] * len(utm_cols))
         values.extend([0] * len(built_flags))
-        if cfg["subdatasets"]:
-            values.append(0)
         rows.append(tuple(values))
 
     cursor.executemany(

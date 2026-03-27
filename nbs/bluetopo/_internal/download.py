@@ -612,8 +612,6 @@ def update_records(conn, download_dict, successful_downloads, cfg):
         # even before the UPDATE below runs.
         built_flags = get_built_flags(cfg)
         insert_cols = ["utm", "params_key"] + built_flags
-        if cfg.get("subdatasets"):
-            insert_cols.append("built_combined")
         insert_col_str = ", ".join(insert_cols)
         insert_ph = ", ".join(["?"] * len(insert_cols))
         insert_rows = []
@@ -630,8 +628,6 @@ def update_records(conn, download_dict, successful_downloads, cfg):
         reset_parts = [f"{col} = NULL" for col in utm_file_cols]
         for f in built_flags:
             reset_parts.append(f"{f} = 0")
-        if cfg.get("subdatasets"):
-            reset_parts.append("built_combined = 0")
         reset_clause = ", ".join(reset_parts)
         utm_ph = ", ".join(["?"] * len(affected_utms))
         cursor.execute(

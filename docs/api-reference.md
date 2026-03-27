@@ -119,6 +119,7 @@ Build a flat GDAL VRT per UTM zone from all source tiles.
 | `RuntimeError` | GDAL version is too old for the data source. |
 | `RuntimeError` | GDAL is missing required drivers (e.g. S102, BAG). |
 | `RuntimeError` | Project was created with an incompatible internal version. |
+| `ValueError` | No parseable tile resolutions found for a UTM zone. |
 
 **Example**
 
