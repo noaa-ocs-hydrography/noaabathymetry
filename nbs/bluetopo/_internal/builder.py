@@ -718,7 +718,7 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
         # Always use the auto-generated name so that custom output_dir
         # requests are detected as conflicts by _validate_output_dir.
         auto_vrt_dir_name = f"{data_source}_VRT{params_key}"
-        try:
+        if isinstance(conn, sqlite3.Connection):
             cursor = conn.cursor()
             cursor.execute(
                 "UPDATE vrt_utm SET output_dir = ? "
@@ -727,8 +727,6 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
             )
             if cursor.rowcount > 0:
                 conn.commit()
-        except (sqlite3.Error, TypeError):
-            pass  # Mocked or unavailable DB — stamp skipped
 
         if params_key or output_dir:
             if tile_resolution_filter:
