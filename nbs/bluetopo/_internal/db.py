@@ -6,6 +6,7 @@ downloads, VRT build state, and catalog metadata.  The schema is
 driven by config file_slots and subdataset definitions.
 """
 
+import datetime
 import logging
 import os
 import sqlite3
@@ -91,12 +92,37 @@ def connect(project_dir: str, cfg: dict) -> sqlite3.Connection:
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS metadata (
-            key text PRIMARY KEY,
-            value text
+            id integer PRIMARY KEY CHECK (id = 1),
+            internal_version integer,
+            data_source text,
+            initialized text
             );
             """
         )
         conn.commit()
+        # Migrate from old key-value metadata table if needed
+        cursor.execute("SELECT name FROM pragma_table_info('metadata')")
+        meta_cols = [dict(row)["name"] for row in cursor.fetchall()]
+        if "key" in meta_cols and "internal_version" not in meta_cols:
+            # Old key-value schema — read existing values and recreate
+            cursor.execute("SELECT key, value FROM metadata")
+            old_data = {row["key"]: row["value"] for row in cursor.fetchall()}
+            cursor.execute("DROP TABLE metadata")
+            cursor.execute(
+                """
+                CREATE TABLE metadata (
+                id integer PRIMARY KEY CHECK (id = 1),
+                internal_version integer,
+                data_source text,
+                initialized text
+                );
+                """
+            )
+            if old_data.get("internal_version"):
+                cursor.execute(
+                    "INSERT INTO metadata(id, internal_version) VALUES(1, ?)",
+                    (int(old_data["internal_version"]),))
+            conn.commit()
         # Schema migration: add any columns required by the config that don't
         # yet exist.  This allows configs to evolve (e.g. new file slots or
         # subdatasets) without requiring users to recreate their database.
@@ -112,6 +138,22 @@ def connect(project_dir: str, cfg: dict) -> sqlite3.Connection:
                 if field not in existing:
                     cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {field} {ftype}")
                     conn.commit()
+        # Seed project metadata on first connect
+        cursor.execute("SELECT initialized FROM metadata WHERE id = 1")
+        row = cursor.fetchone()
+        if row is None:
+            now = datetime.datetime.now().isoformat()
+            cursor.execute(
+                "INSERT INTO metadata(id, internal_version, data_source, initialized) "
+                "VALUES(1, NULL, ?, ?)",
+                (data_source, now))
+            conn.commit()
+        elif row["initialized"] is None:
+            now = datetime.datetime.now().isoformat()
+            cursor.execute(
+                "UPDATE metadata SET data_source = ?, initialized = ? WHERE id = 1",
+                (data_source, now))
+            conn.commit()
     except sqlite3.Error as e:
         logger.error("Failed to create SQLite tables.")
         raise e
@@ -137,9 +179,10 @@ def check_internal_version(conn):
     if not isinstance(conn, sqlite3.Connection):
         return
     cursor = conn.cursor()
-    cursor.execute("SELECT value FROM metadata WHERE key = 'internal_version'")
+    cursor.execute("SELECT internal_version FROM metadata WHERE id = 1")
     row = cursor.fetchone()
-    if row is None:
+    stored_version = row["internal_version"] if row else None
+    if stored_version is None:
         # No version stored. Check if this is a brand new project or
         # an old project that predates version tracking.
         cursor.execute("SELECT COUNT(*) as cnt FROM tiles")
@@ -154,12 +197,11 @@ def check_internal_version(conn):
                 "and build_vrt, or use a new directory."
             )
         cursor.execute(
-            "INSERT INTO metadata(key, value) VALUES('internal_version', ?)",
-            (str(INTERNAL_VERSION),),
+            "UPDATE metadata SET internal_version = ? WHERE id = 1",
+            (INTERNAL_VERSION,),
         )
         conn.commit()
     else:
-        stored_version = int(row["value"])
         if stored_version < INTERNAL_VERSION:
             raise RuntimeError(
                 f"This project was created with an older version of "

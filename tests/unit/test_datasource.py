@@ -19,7 +19,7 @@ from nbs.bluetopo._internal.config import (
     get_catalog_fields,
     get_vrt_utm_fields,
     get_tiles_fields,
-    get_built_flags,
+    get_vrt_built_flags,
     get_utm_file_columns,
     get_disk_field,
     get_disk_fields,
@@ -186,19 +186,19 @@ class TestGetTilesFields:
 
 
 # ---------------------------------------------------------------------------
-# get_built_flags
+# get_vrt_built_flags
 # ---------------------------------------------------------------------------
 
 
 class TestGetBuiltFlags:
     def test_single_dataset(self):
         cfg = get_config("bluetopo")
-        assert get_built_flags(cfg) == ["built"]
+        assert get_vrt_built_flags(cfg) == ["built"]
 
     @pytest.mark.parametrize("source", ["s102v22", "s102v30"])
     def test_multi_subdataset(self, source):
         cfg = get_config(source)
-        flags = get_built_flags(cfg)
+        flags = get_vrt_built_flags(cfg)
         assert flags == ["built_subdataset1", "built_subdataset2", "built_combined"]
 
 

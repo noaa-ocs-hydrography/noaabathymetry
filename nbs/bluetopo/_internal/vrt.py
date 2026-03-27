@@ -16,7 +16,8 @@ from osgeo import gdal
 from nbs.bluetopo._internal.config import (
     parse_resolution,
     validate_vrt_resolution_target,
-    get_built_flags,
+    get_vrt_built_flags,
+    get_all_reset_flags,
     get_disk_field,
     get_disk_fields,
     get_utm_file_columns,
@@ -161,15 +162,15 @@ def _compute_approximate_stats(path):
 
 
 def generate_hillshade(vrt_path, hillshade_path):
-    """Generate a hillshade GeoTIFF from band 1 (Elevation) of a source raster.
+    """Generate a hillshade COG from band 1 (Elevation) of a source raster.
 
     Builds from a 16m downsampled view of the source for speed while
     preserving good terrain detail. Uses an in-memory VRT with
     resolution override so GDAL reads from the source's existing
     overviews instead of full resolution.
 
-    Uses azimuth 315, altitude 45, vertical exaggeration 4x, and
-    builds BILINEAR overviews at factors 2/4/8.
+    Uses azimuth 315, altitude 45, vertical exaggeration 4x.
+    Output is a Cloud Optimized GeoTIFF (COG) with embedded overviews.
     """
     if os.path.isfile(hillshade_path):
         os.remove(hillshade_path)
@@ -177,15 +178,24 @@ def generate_hillshade(vrt_path, hillshade_path):
     # source's overview levels instead of full resolution.
     mem_vrt = "/vsimem/_hillshade_input.vrt"
     gdal.Translate(mem_vrt, vrt_path, format="VRT", xRes=16, yRes=16)
+    # DEMProcessing to a temp in-memory GeoTIFF, then convert to COG
+    mem_tmp = "/vsimem/_hillshade_tmp.tif"
     opts = gdal.DEMProcessingOptions(
         options="-az 315 -alt 45 -z 4 -compute_edges "
                 "-of GTiff -co COMPRESS=DEFLATE -co TILED=YES -co BIGTIFF=YES"
     )
-    gdal.DEMProcessing(hillshade_path, mem_vrt, "hillshade", options=opts)
+    gdal.DEMProcessing(mem_tmp, mem_vrt, "hillshade", options=opts)
     gdal.Unlink(mem_vrt)
-    ds = gdal.Open(hillshade_path, 0)
-    ds.BuildOverviews("BILINEAR", [2, 4, 8])
-    ds = None
+    # Convert to COG — embeds overviews, tiling, and compression in one file
+    gdal.Translate(
+        hillshade_path, mem_tmp, format="COG",
+        creationOptions=[
+            "COMPRESS=DEFLATE",
+            "BIGTIFF=YES",
+            "OVERVIEW_RESAMPLING=BILINEAR",
+        ],
+    )
+    gdal.Unlink(mem_tmp)
     return hillshade_path
 
 
@@ -676,7 +686,7 @@ def add_vrt_rat(tiles, project_dir, vrt_path, cfg, utm=None):
 
 def select_unbuilt_utms(conn, cfg, params_key=""):
     """Return ``vrt_utm`` rows where any built flag is 0 for *params_key*."""
-    built_flags = get_built_flags(cfg)
+    built_flags = get_vrt_built_flags(cfg)
     where_clause = " or ".join(f"{f} = 0" for f in built_flags)
     cursor = conn.cursor()
     cursor.execute(
@@ -689,7 +699,7 @@ def select_unbuilt_utms(conn, cfg, params_key=""):
 def update_utm(conn, fields, cfg):
     """Update a ``vrt_utm`` row with VRT/OVR paths, metadata, and set all built flags to 1."""
     all_fields = get_vrt_utm_fields(cfg)
-    built_flags = get_built_flags(cfg)
+    built_flags = get_vrt_built_flags(cfg)
     exclude = {"utm", "params_key", "output_dir"}
     exclude.update(built_flags)
     data_cols = [k for k in all_fields if k not in exclude]
@@ -719,7 +729,7 @@ def missing_utms(project_dir, conn, cfg, params_key=""):
     list[str]
         UTM zone identifiers that were reset.
     """
-    built_flags = get_built_flags(cfg)
+    built_flags = get_vrt_built_flags(cfg)
     where_built = " or ".join(f"{f} = 1" for f in built_flags)
     cursor = conn.cursor()
     cursor.execute(
@@ -743,8 +753,9 @@ def missing_utms(project_dir, conn, cfg, params_key=""):
                     break
         if missing:
             missing_utm_list.append(utm["utm"])
+            all_flags = get_all_reset_flags(cfg)
             set_parts = [f"{col} = ?" for col in utm_cols]
-            for f in built_flags:
+            for f in all_flags:
                 set_parts.append(f"{f} = 0")
             set_clause = ", ".join(set_parts)
             values = [None] * len(utm_cols) + [utm["utm"], params_key]
@@ -769,7 +780,7 @@ def ensure_params_rows(conn, cfg, params_key, output_dir=None):
     When *output_dir* is provided, it is stored in the ``output_dir``
     column of each new row.
     """
-    built_flags = get_built_flags(cfg)
+    all_flags = get_all_reset_flags(cfg)
     utm_cols = get_utm_file_columns(cfg)
 
     cursor = conn.cursor()
@@ -783,7 +794,7 @@ def ensure_params_rows(conn, cfg, params_key, output_dir=None):
     if not new_utms:
         return
 
-    col_names = ["utm", "params_key", "output_dir"] + utm_cols + built_flags
+    col_names = ["utm", "params_key", "output_dir"] + utm_cols + all_flags
 
     col_str = ", ".join(col_names)
     placeholders = ", ".join(["?"] * len(col_names))
@@ -792,7 +803,7 @@ def ensure_params_rows(conn, cfg, params_key, output_dir=None):
     for utm in new_utms:
         values = [utm, params_key, output_dir]
         values.extend([None] * len(utm_cols))
-        values.extend([0] * len(built_flags))
+        values.extend([0] * len(all_flags))
         rows.append(tuple(values))
 
     cursor.executemany(

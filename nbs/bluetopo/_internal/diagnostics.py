@@ -20,7 +20,7 @@ import traceback
 logger = logging.getLogger("bluetopo")
 
 from nbs.bluetopo._internal.config import (
-    get_built_flags,
+    get_vrt_built_flags,
     get_disk_fields,
     get_utm_file_columns,
     get_verified_fields,
@@ -234,7 +234,7 @@ class DebugReport:
             cursor = self.conn.cursor()
             disk_fields = get_disk_fields(self.cfg)
             verified_fields = get_verified_fields(self.cfg)
-            built_flags = get_built_flags(self.cfg)
+            built_flags = get_vrt_built_flags(self.cfg)
 
             cursor.execute("SELECT COUNT(*) FROM tiles")
             total_tiles = cursor.fetchone()[0]
@@ -350,7 +350,7 @@ class DebugReport:
         try:
             cursor = self.conn.cursor()
             utm_cols = get_utm_file_columns(self.cfg)
-            built_flags = get_built_flags(self.cfg)
+            built_flags = get_vrt_built_flags(self.cfg)
 
             cursor.execute("SELECT * FROM vrt_utm ORDER BY params_key, utm")
             utms = [dict(row) for row in cursor.fetchall()]

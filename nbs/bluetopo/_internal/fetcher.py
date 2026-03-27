@@ -256,6 +256,7 @@ def _run_fetch(project_dir, geometry, cfg, data_source,
         for r in results:
             if r["Result"] is True:
                 result.downloaded.append(r["Tile"])
+                download_dict[r["Tile"]]["downloaded_timestamp"] = r.get("downloaded_timestamp")
             else:
                 result.failed.append({"tile": r["Tile"], "reason": r.get("Reason", "unknown")})
         result.not_found = tiles_not_found

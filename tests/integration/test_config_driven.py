@@ -13,7 +13,7 @@ from nbs.bluetopo._internal.config import (
     get_catalog_fields,
     get_vrt_utm_fields,
     get_tiles_fields,
-    get_built_flags,
+    get_vrt_built_flags,
     get_utm_file_columns,
 )
 from nbs.bluetopo._internal.db import connect as connect_to_survey_registry
@@ -72,7 +72,7 @@ class TestColumnNaming:
     @pytest.mark.parametrize("source", REMOTE_SOURCES)
     def test_utm_built_flags_count(self, source):
         cfg = get_config(source)
-        built_flags = get_built_flags(cfg)
+        built_flags = get_vrt_built_flags(cfg)
         if cfg["subdatasets"]:
             # One per subdataset + built_combined
             assert len(built_flags) == len(cfg["subdatasets"]) + 1

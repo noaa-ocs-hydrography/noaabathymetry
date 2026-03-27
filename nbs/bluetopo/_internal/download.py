@@ -33,7 +33,7 @@ from tqdm import tqdm
 
 from nbs.bluetopo._internal.config import (
     _timestamp,
-    get_built_flags,
+    get_all_reset_flags,
     get_disk_fields,
     get_utm_file_columns,
     get_verified_fields,
@@ -504,7 +504,8 @@ def pull(download):
     except Exception as e:
         return {"Tile": download["tile"], "Result": False,
                 "Reason": f"exception: {e}"}
-    return {"Tile": download["tile"], "Result": True, "Reason": "success"}
+    return {"Tile": download["tile"], "Result": True, "Reason": "success",
+            "downloaded_timestamp": datetime.datetime.now().isoformat()}
 
 
 def execute_downloads(download_dict, data_source):
@@ -578,12 +579,18 @@ def update_records(conn, download_dict, successful_downloads, cfg):
         if tilename not in successful_downloads:
             continue
 
-        # Build tile record: disk paths + verified flags + tilename
+        # Build tile record: disk paths + verified flags + file sizes + timestamp + tilename
         tile_values = []
         for f in download["files"]:
             tile_values.append(f["disk"])
         for _ in download["files"]:
             tile_values.append(1)  # integer verified flag
+        for f in download["files"]:
+            try:
+                tile_values.append(os.path.getsize(f["dest"]))
+            except OSError:
+                tile_values.append(None)
+        tile_values.append(download.get("downloaded_timestamp"))
         tile_values.append(tilename)
         tiles_records.append(tuple(tile_values))
 
@@ -595,7 +602,9 @@ def update_records(conn, download_dict, successful_downloads, cfg):
     # Build SQL from file_slots
     disk_cols = [f"{s['name']}_disk" for s in slots]
     verified_cols = [f"{s['name']}_verified" for s in slots]
-    set_parts = [f"{col} = ?" for col in disk_cols + verified_cols]
+    size_cols = [f"{s['name']}_disk_file_size" for s in slots]
+    set_parts = [f"{col} = ?" for col in disk_cols + verified_cols + size_cols]
+    set_parts.append("downloaded_timestamp = ?")
     set_clause = ", ".join(set_parts)
 
     cursor = conn.cursor()
@@ -610,7 +619,7 @@ def update_records(conn, download_dict, successful_downloads, cfg):
         # Ensure default partition rows exist for affected UTMs.
         # Built flags are set to 0 in the INSERT so the row is valid
         # even before the UPDATE below runs.
-        built_flags = get_built_flags(cfg)
+        built_flags = get_all_reset_flags(cfg)
         insert_cols = ["utm", "params_key"] + built_flags
         insert_col_str = ", ".join(insert_cols)
         insert_ph = ", ".join(["?"] * len(insert_cols))

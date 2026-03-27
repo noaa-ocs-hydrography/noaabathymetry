@@ -20,7 +20,8 @@ from dataclasses import dataclass, field
 from osgeo import gdal
 
 from nbs.bluetopo._internal.config import (
-    get_built_flags,
+    get_vrt_built_flags,
+    get_all_reset_flags,
     get_utm_file_columns,
     make_resolution_label,
     make_vrt_dir_name,
@@ -64,6 +65,7 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
     db_path = os.path.join(project_dir, f"{cfg['canonical_name'].lower()}_registry.db")
     worker_conn = sqlite3.connect(db_path)
     worker_conn.row_factory = sqlite3.Row
+    zone_start = datetime.datetime.now()
     try:
         tiles = select_tiles_by_utm(project_dir, worker_conn, utm, cfg,
                                     tile_resolution_filter=tile_resolution_filter)
@@ -96,9 +98,13 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
                            sd["band_descriptions"], vrt_resolution_target=vrt_resolution_target)
                 sd_vrt_paths.append(utm_sd_vrt)
                 fields[f"utm{suffix_label}_vrt"] = rel_path
+                fields[f"utm{suffix_label}_vrt_disk_file_size"] = os.path.getsize(utm_sd_vrt)
                 fields[f"utm{suffix_label}_ovr"] = None
-                if os.path.isfile(os.path.join(project_dir, rel_path + ".ovr")):
+                fields[f"utm{suffix_label}_ovr_disk_file_size"] = None
+                ovr_abs = os.path.join(project_dir, rel_path + ".ovr")
+                if os.path.isfile(ovr_abs):
                     fields[f"utm{suffix_label}_ovr"] = rel_path + ".ovr"
+                    fields[f"utm{suffix_label}_ovr_disk_file_size"] = os.path.getsize(ovr_abs)
                 elif factors:
                     raise RuntimeError(
                         f"Overview failed to create for utm{utm}. "
@@ -113,6 +119,7 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
             create_vrt(sd_vrt_paths, utm_combined_vrt, None, relative_to_vrt,
                        combined_bands, separate=True)
             fields["utm_combined_vrt"] = rel_combined
+            fields["utm_combined_vrt_disk_file_size"] = os.path.getsize(utm_combined_vrt)
 
             # Build metadata
             native_res = vrt_resolution_target if vrt_resolution_target else (min(tile_resolutions) if tile_resolutions else None)
@@ -146,8 +153,12 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
                       "vrt": os.path.join(project_dir, rel_combined), "ovr": None}
 
             if hillshade:
+                logger.info("[UTM%s] Generating hillshade...", utm)
                 hs_path = utm_combined_vrt.replace(".vrt", "_hillshade.tif")
                 generate_hillshade(utm_combined_vrt, hs_path)
+                hs_rel = os.path.relpath(hs_path, project_dir)
+                fields["hillshade"] = hs_rel
+                fields["hillshade_disk_file_size"] = os.path.getsize(hs_path)
                 result["hillshade"] = hs_path
         else:
             # Single-dataset path (BlueTopo, Modeling, BAG, S102V21)
@@ -171,9 +182,12 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
 
             fields = {"utm_vrt": rel_path, "utm_ovr": None,
                       "utm": utm, "params_key": params_key}
+            fields["utm_vrt_disk_file_size"] = os.path.getsize(utm_vrt)
+            fields["utm_ovr_disk_file_size"] = None
             ovr_path = os.path.join(project_dir, rel_path + ".ovr")
             if os.path.isfile(ovr_path):
                 fields["utm_ovr"] = rel_path + ".ovr"
+                fields["utm_ovr_disk_file_size"] = os.path.getsize(ovr_path)
             elif factors:
                 raise RuntimeError(
                     f"Overview failed to create for utm{utm}. "
@@ -208,10 +222,16 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
                       "vrt": utm_vrt, "ovr": fields.get("utm_ovr")}
 
             if hillshade:
+                logger.info("[UTM%s] Generating hillshade...", utm)
                 hs_path = utm_vrt.replace(".vrt", "_hillshade.tif")
                 generate_hillshade(utm_vrt, hs_path)
+                hs_rel = os.path.relpath(hs_path, project_dir)
+                fields["hillshade"] = hs_rel
+                fields["hillshade_disk_file_size"] = os.path.getsize(hs_path)
                 result["hillshade"] = hs_path
 
+        fields["built_hillshade"] = 1 if hillshade else 0
+        fields["build_duration_seconds"] = (datetime.datetime.now() - zone_start).total_seconds()
         return result
     finally:
         worker_conn.close()
@@ -237,6 +257,7 @@ def _reproject_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
     db_path = os.path.join(project_dir, f"{cfg['canonical_name'].lower()}_registry.db")
     worker_conn = sqlite3.connect(db_path)
     worker_conn.row_factory = sqlite3.Row
+    zone_start = datetime.datetime.now()
     try:
         tiles = select_tiles_by_utm(project_dir, worker_conn, utm, cfg,
                                     tile_resolution_filter=tile_resolution_filter)
@@ -330,6 +351,15 @@ def _reproject_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
                 add_vrt_rat(tiles, project_dir, output_3857, cfg, utm=utm)
 
             result = {"utm": utm, "rel_path": rel_path, "output_path": output_3857}
+            result["utm_vrt_disk_file_size"] = os.path.getsize(output_3857)
+            ovr_path = output_3857 + ".ovr"
+            if os.path.isfile(ovr_path):
+                result["utm_ovr"] = rel_path + ".ovr"
+                result["utm_ovr_disk_file_size"] = os.path.getsize(ovr_path)
+            aux_xml_path = output_3857 + ".aux.xml"
+            if os.path.isfile(aux_xml_path):
+                result["utm_aux_xml"] = rel_path + ".aux.xml"
+                result["utm_aux_xml_disk_file_size"] = os.path.getsize(aux_xml_path)
 
             # Build metadata — based on final GeoTIFF factors, not intermediary VRTs
             tile_count = len(tiles)
@@ -351,10 +381,14 @@ def _reproject_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
                 result[f"tiles_{res}m"] = res_counts.get(res, 0)
 
             if hillshade:
+                logger.info("[UTM%s] Generating hillshade...", utm)
                 hs_path = output_3857.replace(".tif", "_hillshade.tif")
                 generate_hillshade(output_3857, hs_path)
                 result["hillshade"] = hs_path
+                result["hillshade_disk_file_size"] = os.path.getsize(hs_path)
 
+            result["built_hillshade"] = 1 if hillshade else 0
+            result["build_duration_seconds"] = (datetime.datetime.now() - zone_start).total_seconds()
             return result
         finally:
             for f in vsimem_files:
@@ -445,7 +479,7 @@ def _validate_output_dir(project_dir, conn, cfg, params_key, vrt_dir_name):
     different output_dir: if the old dir is gone, resets the rows.
     """
     cursor = conn.cursor()
-    built_flags = get_built_flags(cfg)
+    all_flags = get_all_reset_flags(cfg)
     utm_cols = get_utm_file_columns(cfg)
 
     # Check: does this params_key already have a DIFFERENT output_dir?
@@ -464,7 +498,7 @@ def _validate_output_dir(project_dir, conn, cfg, params_key, vrt_dir_name):
         # Old dir reported gone — verify filesystem before resetting DB
         _verify_dir_absent(project_dir, old_dir)
         set_parts = ["output_dir = ?"] + [f"{col} = NULL" for col in utm_cols]
-        for f in built_flags:
+        for f in all_flags:
             set_parts.append(f"{f} = 0")
         cursor.execute(
             f"UPDATE vrt_utm SET {', '.join(set_parts)} "
@@ -491,7 +525,7 @@ def _validate_output_dir(project_dir, conn, cfg, params_key, vrt_dir_name):
         # Conflicting dir reported gone — verify filesystem before resetting DB
         _verify_dir_absent(project_dir, vrt_dir_name)
         set_parts = ["output_dir = NULL"] + [f"{col} = NULL" for col in utm_cols]
-        for f in built_flags:
+        for f in all_flags:
             set_parts.append(f"{f} = 0")
         cursor.execute(
             f"UPDATE vrt_utm SET {', '.join(set_parts)} "
@@ -773,15 +807,24 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                     try:
                         if reproject:
                             fields = {"utm_vrt": zone_result["rel_path"],
-                                      "utm_ovr": None,
                                       "utm": zone_result["utm"],
                                       "params_key": params_key}
                             for key in ("tile_count", "tile_count_plus_overviews",
                                         "vrt_resolution", "overview_count",
                                         "overview_resolutions", "built_timestamp",
                                         "tiles_2m", "tiles_4m", "tiles_8m",
-                                        "tiles_16m", "tiles_32m", "tiles_64m"):
+                                        "tiles_16m", "tiles_32m", "tiles_64m",
+                                        "build_duration_seconds",
+                                        "utm_vrt_disk_file_size",
+                                        "utm_ovr", "utm_ovr_disk_file_size",
+                                        "utm_aux_xml", "utm_aux_xml_disk_file_size",
+                                        "hillshade_disk_file_size",
+                                        "built_hillshade"):
                                 fields[key] = zone_result.get(key)
+                            hs = zone_result.get("hillshade")
+                            fields["hillshade"] = (
+                                os.path.relpath(hs, project_dir) if hs else None
+                            )
                         else:
                             fields = zone_result["fields"]
                         update_utm(conn, fields, cfg)
@@ -813,15 +856,24 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                         # DB update immediately in sequential mode
                         if reproject:
                             fields = {"utm_vrt": zone_result["rel_path"],
-                                      "utm_ovr": None,
                                       "utm": zone_result["utm"],
                                       "params_key": params_key}
                             for key in ("tile_count", "tile_count_plus_overviews",
                                         "vrt_resolution", "overview_count",
                                         "overview_resolutions", "built_timestamp",
                                         "tiles_2m", "tiles_4m", "tiles_8m",
-                                        "tiles_16m", "tiles_32m", "tiles_64m"):
+                                        "tiles_16m", "tiles_32m", "tiles_64m",
+                                        "build_duration_seconds",
+                                        "utm_vrt_disk_file_size",
+                                        "utm_ovr", "utm_ovr_disk_file_size",
+                                        "utm_aux_xml", "utm_aux_xml_disk_file_size",
+                                        "hillshade_disk_file_size",
+                                        "built_hillshade"):
                                 fields[key] = zone_result.get(key)
+                            hs = zone_result.get("hillshade")
+                            fields["hillshade"] = (
+                                os.path.relpath(hs, project_dir) if hs else None
+                            )
                         else:
                             fields = zone_result["fields"]
                         update_utm(conn, fields, cfg)
@@ -850,6 +902,76 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                         "allow you to recreate from scratch if necessary",
                         vrt_dir_name)
 
+        # Second pass: generate hillshade for already-built zones that lack it
+        hillshade_count = 0
+        if hillshade:
+            # Count hillshades from full builds
+            hillshade_count = sum(1 for e in result.built if e.get("hillshade"))
+
+            # Detect missing hillshade files and reset their flags
+            vrt_built_flags = get_vrt_built_flags(cfg)
+            vrt_built_clause = " AND ".join(f"{f} = 1" for f in vrt_built_flags)
+            hs_cursor = conn.cursor()
+            hs_cursor.execute(
+                f"SELECT utm, hillshade FROM vrt_utm WHERE params_key = ? "
+                f"AND ({vrt_built_clause}) AND built_hillshade = 1",
+                (params_key,),
+            )
+            missing_hs = []
+            for row in hs_cursor.fetchall():
+                hs_path = row["hillshade"]
+                if not hs_path or not os.path.isfile(os.path.join(project_dir, hs_path)):
+                    missing_hs.append(row["utm"])
+            if missing_hs:
+                logger.info("%d hillshade(s) missing on disk. Added to build list.",
+                            len(missing_hs))
+                utm_ph = ", ".join(["?"] * len(missing_hs))
+                hs_cursor.execute(
+                    f"UPDATE vrt_utm SET hillshade = NULL, hillshade_disk_file_size = NULL, "
+                    f"built_hillshade = 0 WHERE params_key = ? AND utm IN ({utm_ph})",
+                    [params_key] + missing_hs,
+                )
+                conn.commit()
+
+            hs_cursor.execute(
+                f"SELECT * FROM vrt_utm WHERE params_key = ? "
+                f"AND ({vrt_built_clause}) "
+                f"AND (built_hillshade IS NULL OR built_hillshade != 1)",
+                (params_key,),
+            )
+            hs_zones = [dict(row) for row in hs_cursor.fetchall()]
+
+            if hs_zones:
+                logger.info("Generating hillshade for %d already-built UTM zone(s).",
+                            len(hs_zones))
+                for hz in hs_zones:
+                    utm = hz["utm"]
+                    # Determine VRT/GeoTIFF path
+                    vrt_col = "utm_combined_vrt" if cfg["subdatasets"] else "utm_vrt"
+                    vrt_rel = hz[vrt_col]
+                    if not vrt_rel:
+                        continue
+                    abs_vrt = os.path.join(project_dir, vrt_rel)
+                    if vrt_rel.endswith(".tif"):
+                        hs_path = abs_vrt.replace(".tif", "_hillshade.tif")
+                    else:
+                        hs_path = abs_vrt.replace(".vrt", "_hillshade.tif")
+                    try:
+                        logger.info("[UTM%s] Generating hillshade...", utm)
+                        generate_hillshade(abs_vrt, hs_path)
+                        hs_rel = os.path.relpath(hs_path, project_dir)
+                        hs_cursor.execute(
+                            "UPDATE vrt_utm SET hillshade = ?, hillshade_disk_file_size = ?, "
+                            "built_hillshade = 1 WHERE utm = ? AND params_key = ?",
+                            (hs_rel, os.path.getsize(hs_path), utm, params_key),
+                        )
+                        conn.commit()
+                        hillshade_count += 1
+                        logger.info("[UTM%s] Hillshade complete", utm)
+                    except Exception as e:
+                        result.failed.append({"utm": utm, "reason": f"hillshade: {e}"})
+                        logger.error("[UTM%s] Hillshade FAILED: %s", utm, e)
+
         all_utms_cursor = conn.cursor()
         all_utms_cursor.execute(
             "SELECT utm FROM vrt_utm WHERE params_key = ?", (params_key,))
@@ -860,8 +982,11 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
 
         # Summary
         logger.info("─── SUMMARY ───")
-        logger.info("Built:   %d UTM zones successfully built",
-                    len(result.built))
+        built_msg = "%d UTM zones successfully built"
+        if hillshade_count:
+            hs_label = "hillshade" if hillshade_count == 1 else "hillshades"
+            built_msg += f" ({hillshade_count} {hs_label})"
+        logger.info("Built:   " + built_msg, len(result.built))
         logger.info("Failed:  %d UTM zones failed to build",
                     len(result.failed))
         skipped_reason = ("already up to date or zones with no matching tiles "

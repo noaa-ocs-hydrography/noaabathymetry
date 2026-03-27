@@ -38,7 +38,7 @@ from nbs.bluetopo._internal.config import (
     get_config,
     get_disk_field,
     get_disk_fields,
-    get_built_flags,
+    get_vrt_built_flags,
     get_utm_file_columns,
 )
 from nbs.bluetopo._internal.fetcher import fetch_tiles as fetch_main

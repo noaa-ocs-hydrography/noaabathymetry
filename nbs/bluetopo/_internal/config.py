@@ -771,11 +771,20 @@ def get_vrt_utm_fields(cfg):
     if cfg["subdatasets"]:
         for i in range(len(cfg["subdatasets"])):
             fields[f"utm_subdataset{i+1}_vrt"] = "text"
+            fields[f"utm_subdataset{i+1}_vrt_disk_file_size"] = "integer"
             fields[f"utm_subdataset{i+1}_ovr"] = "text"
+            fields[f"utm_subdataset{i+1}_ovr_disk_file_size"] = "integer"
         fields["utm_combined_vrt"] = "text"
+        fields["utm_combined_vrt_disk_file_size"] = "integer"
     else:
         fields["utm_vrt"] = "text"
+        fields["utm_vrt_disk_file_size"] = "integer"
         fields["utm_ovr"] = "text"
+        fields["utm_ovr_disk_file_size"] = "integer"
+    fields["utm_aux_xml"] = "text"
+    fields["utm_aux_xml_disk_file_size"] = "integer"
+    fields["hillshade"] = "text"
+    fields["hillshade_disk_file_size"] = "integer"
     # Build metadata (not file paths)
     fields["tile_count"] = "integer"
     fields["tile_count_plus_overviews"] = "integer"
@@ -785,6 +794,7 @@ def get_vrt_utm_fields(cfg):
     for res in (2, 4, 8, 16, 32, 64):
         fields[f"tiles_{res}m"] = "integer"
     fields["built_timestamp"] = "text"
+    fields["build_duration_seconds"] = "real"
     # Built flags
     if cfg["subdatasets"]:
         for i in range(len(cfg["subdatasets"])):
@@ -792,6 +802,7 @@ def get_vrt_utm_fields(cfg):
         fields["built_combined"] = "integer"
     else:
         fields["built"] = "integer"
+    fields["built_hillshade"] = "integer"
     return fields
 
 
@@ -812,10 +823,12 @@ def get_tiles_fields(cfg):
         fields[f"{name}_disk"] = "text"
         fields[f"{name}_sha256_checksum"] = "text"
         fields[f"{name}_verified"] = "integer"
+        fields[f"{name}_disk_file_size"] = "integer"
+    fields["downloaded_timestamp"] = "text"
     return fields
 
 
-def get_built_flags(cfg):
+def get_vrt_built_flags(cfg):
     """Return built-flag column names from ``vrt_utm`` (e.g. ``["built"]``)."""
     if cfg["subdatasets"]:
         flags = [f"built_subdataset{i+1}" for i in range(len(cfg["subdatasets"]))]
@@ -824,17 +837,26 @@ def get_built_flags(cfg):
     return ["built"]
 
 
+def get_all_reset_flags(cfg):
+    """Return all built-flag column names including hillshade for invalidation."""
+    return get_vrt_built_flags(cfg) + ["built_hillshade"]
+
+
 def get_utm_file_columns(cfg):
     """Return VRT/OVR path column names from ``vrt_utm``, excluding PK, built flags, and metadata."""
     fields = get_vrt_utm_fields(cfg)
     exclude = {
         "utm", "params_key", "output_dir",
+        "utm_aux_xml", "utm_aux_xml_disk_file_size",
+        "hillshade", "hillshade_disk_file_size",
         "tile_count", "tile_count_plus_overviews",
         "vrt_resolution", "overview_count", "overview_resolutions",
         "tiles_2m", "tiles_4m", "tiles_8m", "tiles_16m",
         "tiles_32m", "tiles_64m", "built_timestamp",
+        "build_duration_seconds",
     }
-    exclude.update(get_built_flags(cfg))
+    exclude.update(get_all_reset_flags(cfg))
+    exclude.update(k for k in fields if k.endswith("_disk_file_size"))
     return [k for k in fields if k not in exclude]
 
 

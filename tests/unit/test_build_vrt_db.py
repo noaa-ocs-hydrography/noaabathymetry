@@ -10,7 +10,7 @@ from nbs.bluetopo._internal.config import (
     get_catalog_fields,
     get_vrt_utm_fields,
     get_tiles_fields,
-    get_built_flags,
+    get_vrt_built_flags,
     get_utm_file_columns,
 )
 from nbs.bluetopo._internal.db import connect as connect_to_survey_registry

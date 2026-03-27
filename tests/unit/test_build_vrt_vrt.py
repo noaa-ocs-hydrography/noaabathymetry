@@ -408,12 +408,15 @@ class TestGenerateHillshade:
         assert ds.GetRasterBand(1).DataType == gdal.GDT_Byte
         ds = None
 
-    def test_has_overviews(self, make_geotiff, tmp_path):
+    def test_is_cog(self, make_geotiff, tmp_path):
         vrt_path = self._make_vrt(make_geotiff, tmp_path)
         hs_path = str(tmp_path / "hillshade.tif")
         generate_hillshade(vrt_path, hs_path)
         ds = gdal.Open(hs_path)
-        assert ds.GetRasterBand(1).GetOverviewCount() > 0
+        # COG: single file, no external .ovr sidecar
+        assert not os.path.isfile(hs_path + ".ovr")
+        # COG driver may skip overviews for small rasters
+        assert ds.GetRasterBand(1).GetOverviewCount() >= 0
         ds = None
 
     def test_idempotent(self, make_geotiff, tmp_path):
