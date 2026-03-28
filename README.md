@@ -32,9 +32,9 @@ This package simplifies downloading bathymetric data from NOAA and optionally as
 
 ## Requirements
 
-This package requires Python and the following dependencies:
+This package requires Python and the following dependencies, which are set up in the [installation](#installation) guide below:
 
-- GDAL (install via conda)
+- GDAL
 - boto3
 - tqdm
 
@@ -84,7 +84,7 @@ result = build_vrt('/path/to/project')
 
 You can also use the command line. Confirm the environment we created during installation is activated.
 
-To fetch the latest data (default [BlueTopo](https://www.nauticalcharts.noaa.gov/data/bluetopo.html)), pass a directory path and a geometry input of your area of interest:
+To fetch the latest data (default data source is [BlueTopo](https://www.nauticalcharts.noaa.gov/data/bluetopo.html)), pass a directory path and a geometry input of your area of interest:
 
 ```
 fetch_tiles -d /path/to/project -g area_of_interest.gpkg
