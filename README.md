@@ -1,5 +1,7 @@
 <p align="center">
   <img src="docs/images/NOAA-1.png" alt="NOAA" width="120">
+  <br>
+  <a href="https://nauticalcharts.noaa.gov/learn/nbs.html"><strong>National Bathymetric Source</strong></a>
 </p>
 
 ---
@@ -65,7 +67,7 @@ See the Python API and CLI sections below to get started. You can also use the [
 
 Define your area of interest using any of the geometry formats listed below, then you can use the following in a Python shell or script.
 
-To download files in your area of interest (default data source is BlueTopo):
+To download files in your area of interest (default data source is [BlueTopo](https://www.nauticalcharts.noaa.gov/data/bluetopo.html)):
 
 ```python
 from nbs.noaabathymetry import fetch_tiles
@@ -83,7 +85,7 @@ result = build_vrt('/path/to/project')
 
 You can also use the command line. Confirm the environment we created during installation is activated.
 
-To fetch the latest data (default BlueTopo), pass a directory path and a geometry input of your area of interest:
+To fetch the latest data (default [BlueTopo](https://www.nauticalcharts.noaa.gov/data/bluetopo.html)), pass a directory path and a geometry input of your area of interest:
 
 ```
 fetch_tiles -d /path/to/project -g area_of_interest.gpkg
