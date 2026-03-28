@@ -1,7 +1,7 @@
 <p align="center">
   <a href="https://nauticalcharts.noaa.gov/learn/nbs.html"><img src="docs/images/NOAA-1.png" alt="NOAA" width="180"></a>
   <br>
-  <a href="https://nauticalcharts.noaa.gov/learn/nbs.html"><strong>National Bathymetric Source</strong></a>
+  <strong>National Bathymetric Source</strong>
 </p>
 
 ---
