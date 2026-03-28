@@ -32,7 +32,7 @@ This package simplifies downloading bathymetric data from NOAA and optionally as
 
 ## Requirements
 
-This package requires Python and the following dependencies, which are set up in the installation guide below:
+This package requires Python and the following dependencies, which are handled by the installation guide below:
 
 - GDAL
 - boto3
@@ -53,7 +53,7 @@ conda activate noaabathymetry_env
 ```
 
 ```
-pip install noaabathymetry
+pip install noaabathymetry   # installs boto3 and tqdm automatically
 ```
 
 ## Quickstart
