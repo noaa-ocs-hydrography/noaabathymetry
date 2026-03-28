@@ -1,4 +1,4 @@
-[![alt text](https://www.nauticalcharts.noaa.gov/data/images/bluetopo/logo.png)](https://www.nauticalcharts.noaa.gov/data/bluetopo.html)
+<img src="docs/images/NOAA-1.png" alt="NOAA" width="120">
 
 ---
 
@@ -8,6 +8,7 @@
     <a href="#installation">Installation</a> •
     <a href="#quickstart">Quickstart</a> •
     <a href="#cli">CLI</a> •
+    <a href="#other-data-sources">Data Sources</a> •
     <a href="#authors">Contact</a>
 </p>
 
@@ -21,13 +22,9 @@ For more detailed guides, API reference, and troubleshooting, see the [full docu
 
 ## Background
 
-[BlueTopo](https://www.nauticalcharts.noaa.gov/data/bluetopo.html) is a compilation of the best available public bathymetric data of U.S. waters.
+NOAA's [National Bathymetric Source](https://nauticalcharts.noaa.gov/learn/nbs.html) builds and publishes the best available high-resolution bathymetric data of U.S. waters. The program's workflow is designed for continuous throughput, ensuring the best bathymetric data is always available to professionals and the public. This data provides depth measurements nationwide, along with vertical uncertainty estimates and information on the originating survey source. It is available in multiple formats (GeoTIFF compilations like [BlueTopo](https://www.nauticalcharts.noaa.gov/data/bluetopo.html) and Modeling, BAG, and IHO S-102) hosted on a public S3 bucket.
 
-Created by [NOAA Office of Coast Survey's](https://www.nauticalcharts.noaa.gov/) National Bathymetric Source project, [BlueTopo data](https://www.nauticalcharts.noaa.gov/data/bluetopo_specs.html) intends to provide depth information nationwide with the vertical uncertainty tied to that depth estimate as well as information on the survey source that it originated from.
-
-This data is presented in a multiband high resolution GeoTIFF with an associated raster attribute table.
-
-For answers to frequently asked questions, visit the [FAQ](https://www.nauticalcharts.noaa.gov/data/bluetopo_faq.html).
+This package simplifies downloading bathymetric data from NOAA and optionally assembling them into per-UTM-zone GDAL Virtual Rasters for use in GIS applications. It supports six data sources (BlueTopo, Modeling, BAG, S-102 v2.1/v2.2/v3.0).
 
 ## Requirements
 
@@ -84,7 +81,7 @@ result = build_vrt('/path/to/project')
 
 You can also use the command line. Confirm the environment we created during installation is activated.
 
-To fetch the latest BlueTopo data, pass a directory path and a geometry input of your area of interest:
+To fetch the latest data (default BlueTopo), pass a directory path and a geometry input of your area of interest:
 
 ```
 fetch_tiles -d /path/to/project -g area_of_interest.gpkg
@@ -126,7 +123,7 @@ result = fetch_tiles('/path/to/project', geometry='{"type":"Polygon","coordinate
 
 ## Other Data Sources
 
-In addition to BlueTopo, Modeling, and various S-102 versioned data is also available. You can work with these using the `data_source` argument (e.g. `data_source='modeling'`). When not specified, `data_source` defaults to BlueTopo.
+BlueTopo, Modeling, and various S-102 versioned data are available as data sources. You can work with these using the `data_source` argument (e.g. `data_source='modeling'`). When not specified, `data_source` defaults to BlueTopo.
 
 The primary difference between BlueTopo and Modeling data is the vertical datum. Modeling data is on a low water datum.
 
