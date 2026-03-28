@@ -97,7 +97,7 @@ Draw your area of interest on the map below to generate usage examples.
 </div>
 <div style="display: flex; align-items: flex-end; gap: 8px; padding-bottom: 2px;">
 <label style="font-size: 13px; display: flex; align-items: center; gap: 4px; cursor: pointer;">
-<input type="checkbox" id="include-build-vrt" onchange="refreshExamples()" /> Include build_vrt
+<input type="checkbox" id="include-mosaic-tiles" onchange="refreshExamples()" /> Include mosaic_tiles
 </label>
 </div>
 </div>
@@ -214,7 +214,7 @@ function refreshExamples() {
     var bbox = window._lastBbox;
     if (!bbox) return;
     var dir = document.getElementById('path-input').value;
-    var includeBuild = document.getElementById('include-build-vrt').checked;
+    var includeBuild = document.getElementById('include-mosaic-tiles').checked;
 
     var geojson = document.getElementById('geojson-output').textContent;
 
@@ -222,14 +222,14 @@ function refreshExamples() {
     var ed = esc(dir);
     var eg = esc(geojson);
     var py = '<span class="kw">from</span> <span class="mod">nbs.noaabathymetry</span> <span class="kw">import</span> <span class="fn">fetch_tiles</span>' +
-        (includeBuild ? '<span class="punc">,</span> <span class="fn">build_vrt</span>' : '') +
+        (includeBuild ? '<span class="punc">,</span> <span class="fn">mosaic_tiles</span>' : '') +
         '\n<span class="var">fetch_result</span> <span class="op">=</span> <span class="fn">fetch_tiles</span><span class="punc">(</span><span class="str">\'' + ed + '\'</span><span class="punc">,</span> <span class="param">geometry</span><span class="op">=</span><span class="str">\'' + eg + '\'</span><span class="punc">)</span>';
-    if (includeBuild) py += '\n<span class="var">build_result</span> <span class="op">=</span> <span class="fn">build_vrt</span><span class="punc">(</span><span class="str">\'' + ed + '\'</span><span class="punc">)</span>';
+    if (includeBuild) py += '\n<span class="var">mosaic_result</span> <span class="op">=</span> <span class="fn">mosaic_tiles</span><span class="punc">(</span><span class="str">\'' + ed + '\'</span><span class="punc">)</span>';
     document.getElementById('python-output').innerHTML = py;
 
     // CLI with highlighting
     var cli = '<span class="fn">fetch_tiles</span> <span class="param">-d</span> <span class="str">"' + ed + '"</span> <span class="param">-g</span> <span class="str">\'' + eg + '\'</span>';
-    if (includeBuild) cli += '\n<span class="fn">build_vrt</span> <span class="param">-d</span> <span class="str">"' + ed + '"</span>';
+    if (includeBuild) cli += '\n<span class="fn">mosaic_tiles</span> <span class="param">-d</span> <span class="str">"' + ed + '"</span>';
     document.getElementById('cli-output').innerHTML = cli;
 }
 

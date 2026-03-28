@@ -10,14 +10,14 @@ from nbs.noaabathymetry._internal.config import (
     KNOWN_RAT_FIELDS,
     parse_resolution,
     make_resolution_label,
-    make_vrt_dir_name,
+    make_mosaic_dir_name,
     make_params_key,
-    validate_vrt_resolution_target,
+    validate_mosaic_resolution_target,
     _timestamp,
     get_config,
     get_local_config,
     get_catalog_fields,
-    get_vrt_utm_fields,
+    get_mosaic_utm_fields,
     get_tiles_fields,
     get_built_flags,
     get_utm_file_columns,
@@ -107,28 +107,28 @@ class TestGetCatalogFields:
 
 
 # ---------------------------------------------------------------------------
-# get_vrt_utm_fields
+# get_mosaic_utm_fields
 # ---------------------------------------------------------------------------
 
 
-class TestGetVrtUtmFields:
+class TestGetMosaicUtmFields:
     def test_single_dataset(self):
         cfg = get_config("bluetopo")
-        fields = get_vrt_utm_fields(cfg)
+        fields = get_mosaic_utm_fields(cfg)
         assert "utm" in fields
         assert "params_key" in fields
-        assert "utm_vrt" in fields
+        assert "utm_mosaic" in fields
         assert "utm_ovr" in fields
         assert "built" in fields
 
     @pytest.mark.parametrize("source", ["s102v22", "s102v30"])
     def test_multi_subdataset(self, source):
         cfg = get_config(source)
-        fields = get_vrt_utm_fields(cfg)
+        fields = get_mosaic_utm_fields(cfg)
         assert "params_key" in fields
-        assert "utm_subdataset1_vrt" in fields
-        assert "utm_subdataset2_vrt" in fields
-        assert "utm_combined_vrt" in fields
+        assert "utm_subdataset1_mosaic" in fields
+        assert "utm_subdataset2_mosaic" in fields
+        assert "utm_combined_mosaic" in fields
         assert "built_subdataset1" in fields
         assert "built_subdataset2" in fields
         assert "built_combined" in fields
@@ -214,14 +214,14 @@ class TestUtmFileColumns:
         assert "utm" not in cols
         assert "params_key" not in cols
         assert "built" not in cols
-        assert "utm_vrt" in cols
+        assert "utm_mosaic" in cols
 
     @pytest.mark.parametrize("source", ["s102v22", "s102v30"])
     def test_utm_multi_subdataset(self, source):
         cfg = get_config(source)
         cols = get_utm_file_columns(cfg)
-        assert "utm_subdataset1_vrt" in cols
-        assert "utm_combined_vrt" in cols
+        assert "utm_subdataset1_mosaic" in cols
+        assert "utm_combined_mosaic" in cols
         assert "built_subdataset1" not in cols
         assert "built_combined" not in cols
 
@@ -468,27 +468,27 @@ class TestValidateConfig:
 
 
 # ---------------------------------------------------------------------------
-# validate_vrt_resolution_target
+# validate_mosaic_resolution_target
 # ---------------------------------------------------------------------------
 
 
-class TestValidateVrtResolutionTarget:
+class TestValidateMosaicResolutionTarget:
     def test_positive_value_passes(self):
-        validate_vrt_resolution_target(5.0)
+        validate_mosaic_resolution_target(5.0)
 
     def test_positive_float_passes(self):
-        validate_vrt_resolution_target(0.5)
+        validate_mosaic_resolution_target(0.5)
 
     def test_none_passes(self):
-        validate_vrt_resolution_target(None)
+        validate_mosaic_resolution_target(None)
 
     def test_zero_raises(self):
         with pytest.raises(ValueError, match="must be a positive number"):
-            validate_vrt_resolution_target(0)
+            validate_mosaic_resolution_target(0)
 
     def test_negative_raises(self):
         with pytest.raises(ValueError, match="must be a positive number"):
-            validate_vrt_resolution_target(-1)
+            validate_mosaic_resolution_target(-1)
 
 
 # ---------------------------------------------------------------------------
@@ -512,7 +512,7 @@ class TestRatZeroFields:
     def test_non_s102v22_no_zero_fields(self):
         for src in ["bluetopo", "modeling", "bag", "s102v21", "hsd"]:
             cfg = get_config(src)
-            # .get returns [] when key absent -- tested in add_vrt_rat
+            # .get returns [] when key absent -- tested in add_rat
             assert cfg.get("rat_zero_fields", []) == [] or "rat_zero_fields" not in cfg
 
 
@@ -887,33 +887,33 @@ class TestMakeResolutionLabel:
 
 
 # ---------------------------------------------------------------------------
-# make_vrt_dir_name
+# make_mosaic_dir_name
 # ---------------------------------------------------------------------------
 
 
-class TestMakeVrtDirName:
+class TestMakeMosaicDirName:
     def test_no_params(self):
-        assert make_vrt_dir_name("BlueTopo") == "BlueTopo_VRT"
+        assert make_mosaic_dir_name("BlueTopo") == "BlueTopo_Mosaic"
 
     def test_tile_filter_only(self):
-        assert make_vrt_dir_name("BlueTopo",
-            tile_resolution_filter=[4, 8]) == "BlueTopo_VRT_4m_8m"
+        assert make_mosaic_dir_name("BlueTopo",
+            tile_resolution_filter=[4, 8]) == "BlueTopo_Mosaic_4m_8m"
 
     def test_vrt_target_only_integer(self):
-        assert make_vrt_dir_name("BlueTopo",
-            vrt_resolution_target=8.0) == "BlueTopo_VRT_tr8m"
+        assert make_mosaic_dir_name("BlueTopo",
+            vrt_resolution_target=8.0) == "BlueTopo_Mosaic_tr8m"
 
     def test_vrt_target_only_fractional(self):
-        assert make_vrt_dir_name("BlueTopo",
-            vrt_resolution_target=0.5) == "BlueTopo_VRT_tr0p5m"
+        assert make_mosaic_dir_name("BlueTopo",
+            vrt_resolution_target=0.5) == "BlueTopo_Mosaic_tr0p5m"
 
     def test_both_params(self):
-        assert make_vrt_dir_name("BlueTopo",
+        assert make_mosaic_dir_name("BlueTopo",
             tile_resolution_filter=[4, 8],
-            vrt_resolution_target=4.0) == "BlueTopo_VRT_4m_8m_tr4m"
+            vrt_resolution_target=4.0) == "BlueTopo_Mosaic_4m_8m_tr4m"
 
     def test_different_source(self):
-        assert make_vrt_dir_name("BAG") == "BAG_VRT"
+        assert make_mosaic_dir_name("BAG") == "BAG_Mosaic"
 
 
 # ---------------------------------------------------------------------------

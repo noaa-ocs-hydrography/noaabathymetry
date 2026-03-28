@@ -1,4 +1,4 @@
-"""Tests for VRT creation functions in build_vrt.py (requires GDAL)."""
+"""Tests for mosaic creation functions in mosaic.py (requires GDAL)."""
 
 import os
 
@@ -6,7 +6,7 @@ import pytest
 from osgeo import gdal
 
 from nbs.noaabathymetry._internal.config import get_config
-from nbs.noaabathymetry._internal.vrt import create_vrt, compute_overview_factors, generate_hillshade, select_tiles_by_utm
+from nbs.noaabathymetry._internal.mosaic import create_vrt, compute_overview_factors, generate_hillshade, select_tiles_by_utm
 
 
 # ---------------------------------------------------------------------------

@@ -8,7 +8,7 @@ This package simplifies downloading bathymetric data from NOAA and optionally as
 
 This package gives you a straightforward way to get high-resolution bathymetric data from NOAA's National Bathymetric Source.
 
-Point the package at your area of interest and it handles discovery, download, checksum verification, and optional VRT assembly, ready to open in QGIS, ArcGIS, or any GDAL-compatible tool.
+Point the package at your area of interest and it handles discovery, download, checksum verification, and optional mosaic assembly, ready to open in QGIS, ArcGIS, or any GDAL-compatible tool.
 
 Common use cases include:
 
@@ -42,20 +42,20 @@ pip install noaabathymetry
 
 ## Quick start
 
-After installation, you have access to a Python API and two matching CLI commands: `fetch_tiles` for downloading tiles and `build_vrt` for assembling them into VRTs.
+After installation, you have access to a Python API and two matching CLI commands: `fetch_tiles` for downloading tiles and `mosaic_tiles` for assembling them into mosaics.
 
 You can use the [Quickstart Helper](quickstart-helper.md) to draw your area of interest on a map and generate usage examples.
 
 ### Python API
 
 ```python
-from nbs.noaabathymetry import fetch_tiles, build_vrt
+from nbs.noaabathymetry import fetch_tiles, mosaic_tiles
 
 result = fetch_tiles('/path/to/project', geometry='area_of_interest.gpkg')
-vrt_result = build_vrt('/path/to/project')
+mosaic_result = mosaic_tiles('/path/to/project')
 ```
 
-Both functions return structured result objects ([`FetchResult`](api-reference.md#fetchresult), [`BuildResult`](api-reference.md#buildresult)) you can inspect:
+Both functions return structured result objects ([`FetchResult`](api-reference.md#fetchresult), [`MosaicResult`](api-reference.md#buildresult)) you can inspect:
 
 ```python
 result = fetch_tiles('/path/to/project', geometry='area_of_interest.gpkg')
@@ -64,9 +64,9 @@ print(f"Failed: {len(result.failed)}")
 print(f"Not found: {len(result.not_found)}")
 print(f"Already up to date: {len(result.existing)}")
 
-vrt_result = build_vrt('/path/to/project')
-print(f"Built {len(vrt_result.built)} UTM zone VRTs")
-print(f"Skipped {len(vrt_result.skipped)} already up-to-date zones")
+mosaic_result = mosaic_tiles('/path/to/project')
+print(f"Built {len(mosaic_result.built)} UTM zone mosaics")
+print(f"Skipped {len(mosaic_result.skipped)} already up-to-date zones")
 ```
 
 ### CLI
@@ -75,7 +75,7 @@ The same workflow is available from the command line:
 
 ```
 fetch_tiles -d /path/to/project -g area_of_interest.gpkg
-build_vrt -d /path/to/project
+mosaic_tiles -d /path/to/project
 ```
 
 ### Geometry formats
@@ -108,12 +108,12 @@ You can specify any S3-hosted source by name with the `data_source` parameter:
 
 ```python
 result = fetch_tiles('/path/to/project', geometry='aoi.gpkg', data_source='bag')
-vrt_result = build_vrt('/path/to/project', data_source='bag')
+mosaic_result = mosaic_tiles('/path/to/project', data_source='bag')
 ```
 
 ```
 fetch_tiles -d /path/to/project -g aoi.gpkg -s modeling
-build_vrt -d /path/to/project -s modeling
+mosaic_tiles -d /path/to/project -s modeling
 ```
 
 See [Data Sources](data-sources.md) for details on all available sources.

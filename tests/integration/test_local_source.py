@@ -1,7 +1,7 @@
 """Tests for local data source resolution in main() entry points.
 
 When a user passes a directory path (instead of a named source like
-"bluetopo"), both fetch_tiles.main() and build_vrt.main() scan for
+"bluetopo"), both fetch_tiles.main() and mosaic_tiles.main() scan for
 a geopackage whose filename encodes the data source name:
 
     /some/dir/HSD_Tile_Scheme.gpkg  ->  get_local_config("HSD")
@@ -24,7 +24,7 @@ import pytest
 
 from nbs.noaabathymetry._internal.config import get_config, get_local_config, KNOWN_RAT_FIELDS
 import nbs.noaabathymetry._internal.fetcher as fetch_tiles_mod
-import nbs.noaabathymetry._internal.builder as build_vrt_mod
+import nbs.noaabathymetry._internal.builder as mosaic_tiles_mod
 
 
 # ---------------------------------------------------------------------------
@@ -341,12 +341,12 @@ class TestFetchTilesLocalResolution:
 
 
 # ---------------------------------------------------------------------------
-# build_vrt.main() local source resolution
+# mosaic_tiles.main() local source resolution
 # ---------------------------------------------------------------------------
 
 
-class TestBuildVrtLocalResolution:
-    """Test the config resolution in build_vrt.main() for local dirs."""
+class TestMosaicTilesLocalResolution:
+    """Test the config resolution in mosaic_tiles.main() for local dirs."""
 
     def _setup_project(self, tmp_path, source_name, cfg):
         """Create a project dir with registry DB and tile folder."""
@@ -366,11 +366,11 @@ class TestBuildVrtLocalResolution:
         local_dir = _create_local_dir(tmp_path, ["HSD_Tile_Scheme.gpkg"])
         project_dir = self._setup_project(tmp_path, "HSD", cfg)
 
-        with mock.patch.object(build_vrt_mod, "connect") as mock_conn, \
-             mock.patch.object(build_vrt_mod, "missing_utms", return_value=[]), \
-             mock.patch.object(build_vrt_mod, "select_unbuilt_utms", return_value=[]):
+        with mock.patch.object(mosaic_tiles_mod, "connect") as mock_conn, \
+             mock.patch.object(mosaic_tiles_mod, "missing_utms", return_value=[]), \
+             mock.patch.object(mosaic_tiles_mod, "select_unbuilt_utms", return_value=[]):
             mock_conn.return_value = mock.MagicMock()
-            build_vrt_mod.build_vrt(
+            mosaic_tiles_mod.mosaic_tiles(
                 project_dir=project_dir,
                 data_source=local_dir,
             )
@@ -385,7 +385,7 @@ class TestBuildVrtLocalResolution:
         os.makedirs(project_dir)
 
         with pytest.raises(ValueError, match="tile scheme file"):
-            build_vrt_mod.build_vrt(
+            mosaic_tiles_mod.mosaic_tiles(
                 project_dir=project_dir,
                 data_source=local_dir,
             )
@@ -396,7 +396,7 @@ class TestBuildVrtLocalResolution:
         os.makedirs(project_dir)
 
         with pytest.raises(ValueError, match="local-only"):
-            build_vrt_mod.build_vrt(
+            mosaic_tiles_mod.mosaic_tiles(
                 project_dir=project_dir,
                 data_source="hsd",
             )
@@ -404,7 +404,7 @@ class TestBuildVrtLocalResolution:
     def test_relative_path_raises(self, tmp_path):
         """Relative project_dir raises ValueError."""
         with pytest.raises(ValueError, match="absolute path"):
-            build_vrt_mod.build_vrt(
+            mosaic_tiles_mod.mosaic_tiles(
                 project_dir="relative/path",
                 data_source="bluetopo",
             )
@@ -412,7 +412,7 @@ class TestBuildVrtLocalResolution:
     def test_missing_project_dir_raises(self, tmp_path):
         """Non-existent project_dir raises ValueError."""
         with pytest.raises(ValueError, match="Folder path not found"):
-            build_vrt_mod.build_vrt(
+            mosaic_tiles_mod.mosaic_tiles(
                 project_dir=str(tmp_path / "nonexistent"),
                 data_source="bluetopo",
             )
@@ -423,7 +423,7 @@ class TestBuildVrtLocalResolution:
         os.makedirs(project_dir)
 
         with pytest.raises(ValueError, match="database not found"):
-            build_vrt_mod.build_vrt(
+            mosaic_tiles_mod.mosaic_tiles(
                 project_dir=project_dir,
                 data_source="bluetopo",
             )
@@ -439,7 +439,7 @@ class TestBuildVrtLocalResolution:
         conn.close()
 
         with pytest.raises(ValueError, match="Tile downloads folder not found"):
-            build_vrt_mod.build_vrt(
+            mosaic_tiles_mod.mosaic_tiles(
                 project_dir=project_dir,
                 data_source="bluetopo",
             )
@@ -457,11 +457,11 @@ class TestBuildVrtLocalResolution:
             f.write("")
         os.makedirs(os.path.join(project_dir, "Weird"), exist_ok=True)
 
-        with mock.patch.object(build_vrt_mod, "connect") as mock_conn, \
-             mock.patch.object(build_vrt_mod, "missing_utms", return_value=[]), \
-             mock.patch.object(build_vrt_mod, "select_unbuilt_utms", return_value=[]):
+        with mock.patch.object(mosaic_tiles_mod, "connect") as mock_conn, \
+             mock.patch.object(mosaic_tiles_mod, "missing_utms", return_value=[]), \
+             mock.patch.object(mosaic_tiles_mod, "select_unbuilt_utms", return_value=[]):
             mock_conn.return_value = mock.MagicMock()
-            build_vrt_mod.build_vrt(
+            mosaic_tiles_mod.mosaic_tiles(
                 project_dir=project_dir,
                 data_source=local_dir,
             )

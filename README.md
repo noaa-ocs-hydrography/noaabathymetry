@@ -58,7 +58,7 @@ pip install noaabathymetry   # installs boto3 and tqdm automatically
 
 ## Quickstart
 
-After installation, the package provides a Python API and two CLI commands: `fetch_tiles` for downloading tiles and `build_vrt` for assembling them into VRTs.
+After installation, the package provides a Python API and two CLI commands: `fetch_tiles` for downloading tiles and `mosaic_tiles` for assembling them into mosaics.
 
 See the Python API and CLI sections below to get started. You can also use the [Quickstart Helper](https://noaa-ocs-hydrography.github.io/noaabathymetry/quickstart-helper.html) to draw your area of interest on a map and generate usage examples.
 
@@ -73,11 +73,11 @@ from nbs.noaabathymetry import fetch_tiles
 result = fetch_tiles('/path/to/project', geometry='area_of_interest.gpkg')
 ```
 
-To build a GDAL VRT of the downloaded files:
+To mosaic the downloaded files:
 
 ```python
-from nbs.noaabathymetry import build_vrt 
-result = build_vrt('/path/to/project')
+from nbs.noaabathymetry import mosaic_tiles 
+result = mosaic_tiles('/path/to/project')
 ```
 
 ## CLI
@@ -90,10 +90,10 @@ To fetch the latest data (default data source is [BlueTopo](https://www.nautical
 fetch_tiles -d /path/to/project -g area_of_interest.gpkg
 ```
 
-Pass the same directory path to `build_vrt` to create a VRT from the fetched data:
+Pass the same directory path to `mosaic_tiles` to mosaic the fetched data:
 
 ```
-build_vrt -d /path/to/project
+mosaic_tiles -d /path/to/project
 ```
 
 Use `-h` for help and to see additional arguments.

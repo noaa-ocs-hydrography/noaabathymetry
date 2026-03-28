@@ -8,7 +8,7 @@ from nbs.noaabathymetry._internal.config import (
     get_config,
     get_disk_fields,
     get_utm_file_columns,
-    get_vrt_utm_fields,
+    get_mosaic_utm_fields,
 )
 from nbs.noaabathymetry._internal.download import (
     insert_new,
@@ -197,7 +197,7 @@ class TestUpdateRecords:
         update_records(conn, download_dict, ["T1"], cfg)
 
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM vrt_utm WHERE utm = '19'")
+        cursor.execute("SELECT * FROM mosaic_utm WHERE utm = '19'")
         row = dict(cursor.fetchone())
         assert row["built"] == 0
 
@@ -214,7 +214,7 @@ class TestUpdateRecords:
         ]}}
         update_records(conn, download_dict, [], cfg)
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM vrt_utm")
+        cursor.execute("SELECT * FROM mosaic_utm")
         assert cursor.fetchone() is None
 
 
@@ -369,7 +369,7 @@ class TestUpdateRecordsEdge:
         }
         update_records(conn, download_dict, ["T1"], cfg)
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM vrt_utm WHERE utm = '19'")
+        cursor.execute("SELECT * FROM mosaic_utm WHERE utm = '19'")
         row = dict(cursor.fetchone())
         assert row["built_subdataset1"] == 0
         assert row["built_subdataset2"] == 0
@@ -393,7 +393,7 @@ class TestUpdateRecordsEdge:
         }
         update_records(conn, download_dict, ["T1"], cfg)
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM vrt_utm WHERE utm = '19'")
+        cursor.execute("SELECT * FROM mosaic_utm WHERE utm = '19'")
         row = dict(cursor.fetchone())
         assert row["built_subdataset1"] == 0
         assert row["built_subdataset2"] == 0
@@ -422,7 +422,7 @@ class TestUpdateRecordsEdge:
         }
         update_records(conn, download_dict, ["T1", "T2"], cfg)
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM vrt_utm")
+        cursor.execute("SELECT COUNT(*) FROM mosaic_utm")
         assert cursor.fetchone()[0] == 2
 
     def test_resets_parameterized_partitions(self, registry_db):
@@ -434,10 +434,10 @@ class TestUpdateRecordsEdge:
         # Seed a default row and a parameterized row, both marked built
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO vrt_utm(utm, params_key, built) VALUES(?, ?, ?)",
+            "INSERT INTO mosaic_utm(utm, params_key, built) VALUES(?, ?, ?)",
             ("19", "", 1))
         cursor.execute(
-            "INSERT INTO vrt_utm(utm, params_key, built) VALUES(?, ?, ?)",
+            "INSERT INTO mosaic_utm(utm, params_key, built) VALUES(?, ?, ?)",
             ("19", "_4m", 1))
         conn.commit()
 
@@ -451,9 +451,9 @@ class TestUpdateRecordsEdge:
         }
         update_records(conn, download_dict, ["T1"], cfg)
 
-        cursor.execute("SELECT built FROM vrt_utm WHERE utm = '19' AND params_key = ''")
+        cursor.execute("SELECT built FROM mosaic_utm WHERE utm = '19' AND params_key = ''")
         assert cursor.fetchone()[0] == 0
-        cursor.execute("SELECT built FROM vrt_utm WHERE utm = '19' AND params_key = '_4m'")
+        cursor.execute("SELECT built FROM mosaic_utm WHERE utm = '19' AND params_key = '_4m'")
         assert cursor.fetchone()[0] == 0
 
     def test_resets_multi_subdataset_parameterized_partitions(self, registry_db):
@@ -464,7 +464,7 @@ class TestUpdateRecordsEdge:
         ])
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO vrt_utm(utm, params_key, built_subdataset1, built_subdataset2, built_combined) "
+            "INSERT INTO mosaic_utm(utm, params_key, built_subdataset1, built_subdataset2, built_combined) "
             "VALUES(?, ?, ?, ?, ?)",
             ("19", "_4m", 1, 1, 1))
         conn.commit()
@@ -477,7 +477,7 @@ class TestUpdateRecordsEdge:
         }
         update_records(conn, download_dict, ["T1"], cfg)
 
-        cursor.execute("SELECT * FROM vrt_utm WHERE utm = '19' AND params_key = '_4m'")
+        cursor.execute("SELECT * FROM mosaic_utm WHERE utm = '19' AND params_key = '_4m'")
         row = dict(cursor.fetchone())
         assert row["built_subdataset1"] == 0
         assert row["built_subdataset2"] == 0

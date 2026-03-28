@@ -123,7 +123,7 @@ Requires a CATALOG.XML file downloaded from S3 (handled automatically by `fetch_
 
 ## S102 v2.2
 
-IHO S-102 v2.2 with dual subdatasets: bathymetry coverage and a quality-of-survey layer. The VRT build produces separate subdataset VRTs plus a combined VRT.
+IHO S-102 v2.2 with dual subdatasets: bathymetry coverage and a quality-of-survey layer. The mosaic build produces separate subdataset VRTs plus a combined VRT.
 
 **Source key:** `s102v22`
 

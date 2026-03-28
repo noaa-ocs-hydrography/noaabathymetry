@@ -11,7 +11,7 @@ import pytest
 from nbs.noaabathymetry._internal.config import (
     get_config,
     get_catalog_fields,
-    get_vrt_utm_fields,
+    get_mosaic_utm_fields,
     get_tiles_fields,
     get_built_flags,
     get_utm_file_columns,
@@ -52,14 +52,14 @@ class TestDbSchemaConsistency:
         conn.close()
 
     @pytest.mark.parametrize("source", REMOTE_SOURCES)
-    def test_vrt_utm_matches_config(self, tmp_path, source):
+    def test_mosaic_utm_matches_config(self, tmp_path, source):
         cfg = get_config(source)
         conn = connect_to_survey_registry(str(tmp_path), cfg)
         cursor = conn.cursor()
-        cursor.execute("SELECT name FROM pragma_table_info('vrt_utm')")
+        cursor.execute("SELECT name FROM pragma_table_info('mosaic_utm')")
         db_cols = {row[0] for row in cursor.fetchall()}
-        expected = set(get_vrt_utm_fields(cfg).keys())
-        assert expected.issubset(db_cols), f"{source}: vrt_utm missing {expected - db_cols}"
+        expected = set(get_mosaic_utm_fields(cfg).keys())
+        assert expected.issubset(db_cols), f"{source}: mosaic_utm missing {expected - db_cols}"
         conn.close()
 
 
@@ -72,7 +72,7 @@ class TestColumnNaming:
     @pytest.mark.parametrize("source", REMOTE_SOURCES)
     def test_utm_built_flags_count(self, source):
         cfg = get_config(source)
-        utm_fields = get_vrt_utm_fields(cfg)
+        utm_fields = get_mosaic_utm_fields(cfg)
         built_cols = [k for k in utm_fields if "built" in k]
         if cfg["subdatasets"]:
             # One per subdataset + built_combined

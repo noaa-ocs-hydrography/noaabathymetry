@@ -2,7 +2,7 @@
 
 ## Project directory structure
 
-After running `fetch_tiles` and `build_vrt`, your project directory will contain:
+After running `fetch_tiles` and `mosaic_tiles`, your project directory will contain:
 
 ```
 /path/to/project/
@@ -15,13 +15,13 @@ After running `fetch_tiles` and `build_vrt`, your project directory will contain
 │   ├── UTM19/
 │   │   └── ...
 │   └── ...
-├── BlueTopo_VRT/                  # Built VRT files
+├── BlueTopo_Mosaic/                  # Built mosaic files
 │   ├── BlueTopo_Fetched_UTM18.vrt
 │   ├── BlueTopo_Fetched_UTM18.vrt.ovr
 │   ├── BlueTopo_Fetched_UTM18_hillshade.tif   # Optional (--hillshade)
 │   ├── BlueTopo_Fetched_UTM19.vrt
 │   └── ...
-├── BlueTopo_VRT_3857/             # Optional (--reproject)
+├── BlueTopo_Mosaic_3857/             # Optional (--reproject)
 │   ├── BlueTopo_Fetched_UTM18.tif
 │   └── ...
 └── bluetopo_registry.db           # SQLite tracking database
@@ -36,7 +36,7 @@ The folder and file names change based on the data source. For example, with `da
 │   ├── UTM18/
 │   │   └── tile_name.bag
 │   └── ...
-├── BAG_VRT/
+├── BAG_Mosaic/
 │   └── BAG_Fetched_UTM18.vrt
 └── bag_registry.db
 ```
@@ -51,7 +51,7 @@ S-102 sources also create a `Data/` subdirectory for the CATALOG.XML file and pr
 │   │   └── CATALOG.XML
 │   └── UTM18/
 │       └── tile_name.h5
-├── S102V22_VRT/
+├── S102V22_Mosaic/
 │   ├── S102V22_Fetched_UTM18_BathymetryCoverage.vrt
 │   ├── S102V22_Fetched_UTM18_QualityOfSurvey.vrt
 │   └── S102V22_Fetched_UTM18.vrt           # Combined VRT
@@ -70,12 +70,12 @@ The package operates in two distinct steps.
 4. **Synchronizes records** — compares the current tile scheme against the tracking database. If a tile has a newer delivery date, the old files are removed and the tile is queued for re-download.
 5. **Downloads tiles** — fetches all pending tiles from S3 in parallel with checksum verification.
 
-### Step 2: build_vrt
+### Step 2: mosaic_tiles
 
 1. **Checks prerequisites** — verifies the project directory, registry database, and tile folder all exist. Checks GDAL version and driver availability.
-2. **Detects missing VRTs** — scans the tracking database for UTM zones that need building (newly downloaded tiles, or VRT files deleted from disk).
-3. **Builds per-UTM VRTs** — creates a GDAL Virtual Raster for each UTM zone, referencing the downloaded tile files. Adds overview files (`.ovr`) for efficient display at multiple zoom levels.
-4. **Aggregates RATs** — for sources with Raster Attribute Tables (BlueTopo, Modeling, HSD, S102V22, S102V30), combines per-tile RAT data into the UTM VRT.
+2. **Detects missing mosaics** — scans the tracking database for UTM zones that need building (newly downloaded tiles, or mosaic files deleted from disk).
+3. **Builds per-UTM mosaics** — creates a GDAL Virtual Raster for each UTM zone, referencing the downloaded tile files. Adds overview files (`.ovr`) for efficient display at multiple zoom levels.
+4. **Aggregates RATs** — for sources with Raster Attribute Tables (BlueTopo, Modeling, HSD, S102V22, S102V30), combines per-tile RAT data into the UTM mosaic.
 
 ### Understanding `FetchResult`
 
@@ -95,21 +95,21 @@ The package operates in two distinct steps.
 - **new_tiles_tracked** — number of tiles actually newly added to tracking in this run (tiles already in the database are not counted).
 - **tile_resolution_filter** — the resolution filter that was active, or `None` if unfiltered.
 
-### Understanding `BuildResult`
+### Understanding `MosaicResult`
 
-`build_vrt` returns a [`BuildResult`](api-reference.md#buildresult) with per-zone status lists and run metadata.
+`mosaic_tiles` returns a [`MosaicResult`](api-reference.md#mosaicresult) with per-zone status lists and run metadata.
 
 **Zone statuses:**
 
-- **built** — UTM zones that were built in this run. Each entry includes paths to the VRT, overview, and optional hillshade files.
+- **built** — UTM zones that were built in this run. Each entry includes paths to the mosaic, overview, and optional hillshade files.
 - **skipped** — UTM zones already up to date, or zones with no matching tiles after resolution filtering.
 - **failed** — UTM zones that failed during the build. Each entry includes the zone identifier and failure reason.
 
 **Run metadata:**
 
-- **missing_reset** — UTM zones reset because their VRT files were missing on disk.
+- **missing_reset** — UTM zones reset because their mosaic files were missing on disk.
 - **tile_resolution_filter** — the resolution filter that was active, or `None` if unfiltered.
-- **vrt_resolution_target** — VRT pixel size override that was active, or `None` for native resolution.
+- **mosaic_resolution_target** — Output pixel size override that was active, or `None` for native resolution.
 
 ### How geometry works
 
@@ -128,10 +128,10 @@ Running `fetch_tiles` again on the same project directory is safe and efficient:
 - If a tile's delivery date is newer than what's in the database, the old files are removed and the tile is re-downloaded.
 - New tiles discovered by a new or updated geometry are added to tracking.
 
-Running `build_vrt` again:
+Running `mosaic_tiles` again:
 
-- UTM zones whose VRTs are already built and up to date are skipped.
-- If you delete a VRT file, the next `build_vrt` run will detect it's missing and rebuild.
+- UTM zones whose mosaics are already built and up to date are skipped.
+- If you delete a mosaic file, the next `mosaic_tiles` run will detect it's missing and rebuild.
 - If new tiles were downloaded since the last build, only the affected UTM zones are rebuilt.
 
 ## Resolution filtering
@@ -147,39 +147,39 @@ Restricts which tiles are fetched or built by their native resolution. Pass one 
 result = fetch_tiles('/path/to/project', geometry='aoi.gpkg',
                      tile_resolution_filter=[4, 8])
 
-# Only build VRTs from those tiles
-vrt_result = build_vrt('/path/to/project', tile_resolution_filter=[4, 8])
+# Only build mosaics from those tiles
+mosaic_result = mosaic_tiles('/path/to/project', tile_resolution_filter=[4, 8])
 ```
 
 ```
 fetch_tiles -d /path/to/project -g aoi.gpkg --tile-resolution-filter 4 8
-build_vrt -d /path/to/project --tile-resolution-filter 4 8
+mosaic_tiles -d /path/to/project --tile-resolution-filter 4 8
 ```
 
-When a resolution filter is used with `build_vrt`, the output goes to a **separate directory** to avoid overwriting the default VRTs:
+When a resolution filter is used with `mosaic_tiles`, the output goes to a **separate directory** to avoid overwriting the default mosaics:
 
 ```
-BlueTopo_VRT_4m_8m/
+BlueTopo_Mosaic_4m_8m/
 ├── BlueTopo_Fetched_UTM18_4m_8m.vrt
 └── ...
 ```
 
-### vrt_resolution_target
+### mosaic_resolution_target
 
-Forces the output VRT pixel size to a specific value in meters. This resamples all tiles to a uniform resolution. Only applies to `build_vrt`.
+Forces the output mosaic pixel size to a specific value in meters. This resamples all tiles to a uniform resolution. Only applies to `mosaic_tiles`.
 
 ```python
-vrt_result = build_vrt('/path/to/project', vrt_resolution_target=8)
+mosaic_result = mosaic_tiles('/path/to/project', mosaic_resolution_target=8)
 ```
 
 ```
-build_vrt -d /path/to/project -t 8
+mosaic_tiles -d /path/to/project -t 8
 ```
 
 Output directory:
 
 ```
-BlueTopo_VRT_tr8m/
+BlueTopo_Mosaic_tr8m/
 ├── BlueTopo_Fetched_UTM18_tr8m.vrt
 └── ...
 ```
@@ -189,34 +189,34 @@ BlueTopo_VRT_tr8m/
 You can combine the tile filter with a resolution target:
 
 ```python
-vrt_result = build_vrt('/path/to/project',
+mosaic_result = mosaic_tiles('/path/to/project',
                        tile_resolution_filter=[4, 8],
-                       vrt_resolution_target=8)
+                       mosaic_resolution_target=8)
 ```
 
 Output directory:
 
 ```
-BlueTopo_VRT_4m_8m_tr8m/
+BlueTopo_Mosaic_4m_8m_tr8m/
 ├── BlueTopo_Fetched_UTM18_4m_8m_tr8m.vrt
 └── ...
 ```
 
-> **Note:** Parameterized builds never touch the default VRT directory. If you have both `BlueTopo_VRT/` and `BlueTopo_VRT_4m_8m/`, `build_vrt` will note the other directory's existence but won't modify it.
+> **Note:** Parameterized builds never touch the default mosaic directory. If you have both `BlueTopo_Mosaic/` and `BlueTopo_Mosaic_4m_8m/`, `mosaic_tiles` will note the other directory's existence but won't modify it.
 
 ## Web Mercator reprojection
 
-Pass `reproject=True` (or `--reproject` on the CLI) to produce EPSG:3857 (Web Mercator) GeoTIFFs instead of native UTM VRTs. This is useful for serving tiles through GeoServer or other web mapping platforms that require a single CRS across UTM zone boundaries.
+Pass `reproject=True` (or `--reproject` on the CLI) to produce EPSG:3857 (Web Mercator) GeoTIFFs . This is useful for serving tiles through GeoServer or other web mapping platforms that require a single CRS across UTM zone boundaries.
 
 ```python
-vrt_result = build_vrt('/path/to/project', reproject=True)
+mosaic_result = mosaic_tiles('/path/to/project', reproject=True)
 ```
 
 ```
-build_vrt -d /path/to/project --reproject
+mosaic_tiles -d /path/to/project --reproject
 ```
 
-The 3857 output is stored in a separate directory (e.g. `BlueTopo_VRT_3857/`) and tracked independently from the default UTM VRTs. The output is a GeoTIFF (`.tif`) rather than a VRT, since the reprojection requires pixel computation. Only UTM zones with new or updated tiles are reprojected on subsequent runs.
+The 3857 output is stored in a separate directory (e.g. `BlueTopo_Mosaic_3857/`) and tracked independently from the default mosaics. The output is a GeoTIFF (`.tif`) rather than a VRT, since the reprojection requires pixel computation. Only UTM zones with new or updated tiles are reprojected on subsequent runs.
 
 > **Note:** Reprojection is currently only supported for the BlueTopo data source.
 
@@ -224,60 +224,60 @@ This can be combined with other parameters:
 
 ```python
 # With resolution filtering
-vrt_result = build_vrt('/path/to/project', tile_resolution_filter=[4, 8], reproject=True)
+mosaic_result = mosaic_tiles('/path/to/project', tile_resolution_filter=[4, 8], reproject=True)
 
 # With a target resolution, parallel workers, and hillshade
-vrt_result = build_vrt('/path/to/project', reproject=True,
-                       vrt_resolution_target=16, workers=3, hillshade=True)
+mosaic_result = mosaic_tiles('/path/to/project', reproject=True,
+                       mosaic_resolution_target=16, workers=3, hillshade=True)
 ```
 
 ```
-build_vrt -d /path/to/project --reproject -t 16 --workers 3 --hillshade
+mosaic_tiles -d /path/to/project --reproject -t 16 --workers 3 --hillshade
 ```
 
-Output directories follow the same naming pattern: `BlueTopo_VRT_4m_8m_3857/`, `BlueTopo_VRT_tr16m_3857/`, etc.
+Output directories follow the same naming pattern: `BlueTopo_Mosaic_4m_8m_3857/`, `BlueTopo_Mosaic_tr16m_3857/`, etc.
 
 ## Parallel processing
 
-By default, `build_vrt` processes UTM zones sequentially. Pass `workers` to build multiple zones in parallel:
+By default, `mosaic_tiles` processes UTM zones sequentially. Pass `workers` to build multiple zones in parallel:
 
 ```python
-result = build_vrt('/path/to/project', workers=4)
+result = mosaic_tiles('/path/to/project', workers=4)
 ```
 
 ```
-build_vrt -d /path/to/project --workers 4
+mosaic_tiles -d /path/to/project --workers 4
 ```
 
-The maximum is `os.cpu_count()`. Each worker loads tile data into RAM independently, so memory usage scales with the number of workers. **Run with the default (1 worker) first to gauge memory usage before scaling up.** If a zone fails, other zones continue and the failure is reported in `BuildResult.failed`.
+The maximum is `os.cpu_count()`. Each worker loads tile data into RAM independently, so memory usage scales with the number of workers. **Run with the default (1 worker) first to gauge memory usage before scaling up.** If a zone fails, other zones continue and the failure is reported in `MosaicResult.failed`.
 
 ## Hillshade generation
 
-Pass `hillshade=True` (or `--hillshade` on the CLI) to generate a hillshade GeoTIFF alongside each VRT:
+Pass `hillshade=True` (or `--hillshade` on the CLI) to generate a hillshade GeoTIFF alongside each mosaic:
 
 ```python
-result = build_vrt('/path/to/project', hillshade=True)
+result = mosaic_tiles('/path/to/project', hillshade=True)
 ```
 
 ```
-build_vrt -d /path/to/project --hillshade
+mosaic_tiles -d /path/to/project --hillshade
 ```
 
-This produces a `_hillshade.tif` file next to each VRT, built from band 1 (Elevation) at 16m resolution with azimuth 315°, altitude 45°, and 4× vertical exaggeration. The hillshade includes BILINEAR overviews for efficient display.
+This produces a `_hillshade.tif` file next to each mosaic, built from band 1 (Elevation) at 16m resolution with azimuth 315°, altitude 45°, and 4× vertical exaggeration. The hillshade includes BILINEAR overviews for efficient display.
 
 ## Custom output directory
 
-By default, `build_vrt` creates an auto-named directory based on the build parameters (e.g. `BlueTopo_VRT`, `BlueTopo_VRT_3857`). Pass `output_dir` to use a custom name:
+By default, `mosaic_tiles` creates an auto-named directory based on the build parameters (e.g. `BlueTopo_Mosaic`, `BlueTopo_Mosaic_3857`). Pass `output_dir` to use a custom name:
 
 ```python
-result = build_vrt('/path/to/project', output_dir='my_vrts')
+result = mosaic_tiles('/path/to/project', output_dir='my_mosaics')
 ```
 
 ```
-build_vrt -d /path/to/project -o my_vrts
+mosaic_tiles -d /path/to/project -o my_mosaics
 ```
 
-Each output directory can only be used by one build configuration. If you try to use a directory that's already in use by a different configuration (e.g. different resolution parameters), `build_vrt` will raise an error. To reassign a directory, delete it first. The system will detect it's gone and allow reassignment on the next run.
+Each output directory can only be used by one build configuration. If you try to use a directory that's already in use by a different configuration (e.g. different resolution parameters), `mosaic_tiles` will raise an error. To reassign a directory, delete it first. The system will detect it's gone and allow reassignment on the next run.
 
 ## Debug mode
 
@@ -295,10 +295,10 @@ This writes a timestamped log file (e.g. `noaabathymetry_debug_20240315_143022.l
 
 1. **Environment** — package version, Python version, GDAL version, platform
 2. **Configuration** — active data source settings, file slots, gpkg field mappings
-3. **Filesystem** — existence and size of registry DB, tile folder, VRT folder
+3. **Filesystem** — existence and size of registry DB, tile folder, mosaic folder
 4. **Database schema** — column definitions for all tables
 5. **Database summary** — tile counts (verified, unverified, pending), UTM zone build status
 6. **Tile details** — per-tile anomalies (missing links, files missing on disk, unverified downloads)
-7. **UTM zone details** — VRT/OVR paths and build status per zone
+7. **UTM zone details** — Mosaic/OVR paths and build status per zone
 
 The report contains only technical information and does not include credentials, environment variables, or personal data beyond the project directory path.

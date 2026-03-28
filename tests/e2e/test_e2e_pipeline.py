@@ -1,4 +1,4 @@
-"""End-to-end pipeline tests that exercise fetch_tiles + build_vrt.
+"""End-to-end pipeline tests that exercise fetch_tiles + mosaic_tiles.
 
 Tests are split into two categories:
 
@@ -43,7 +43,7 @@ from nbs.noaabathymetry._internal.config import (
 )
 from nbs.noaabathymetry._internal.fetcher import fetch_tiles as fetch_main
 from nbs.noaabathymetry._internal.db import connect as connect_to_survey_registry
-from nbs.noaabathymetry._internal.builder import build_vrt as build_main
+from nbs.noaabathymetry._internal.builder import mosaic_tiles as build_main
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -107,7 +107,7 @@ def _skip_if_gdal_too_old(cfg):
 
 
 def _skip_if_gdal_missing_drivers(cfg):
-    """Skip the test if GDAL is missing required drivers for build_vrt."""
+    """Skip the test if GDAL is missing required drivers for mosaic_tiles."""
     missing = [d for d in cfg.get("required_gdal_drivers", [])
                if gdal.GetDriverByName(d) is None]
     if missing:
@@ -200,30 +200,30 @@ def assert_fetch_results(project_dir, cfg, successful, failed):
 def assert_build_results(project_dir, cfg, scenario):
     """Verify post-build state."""
     data_source = cfg["canonical_name"]
-    vrt_dir = os.path.join(project_dir, f"{data_source}_VRT")
-    assert os.path.isdir(vrt_dir), f"VRT directory missing: {vrt_dir}"
+    mosaic_dir = os.path.join(project_dir, f"{data_source}_Mosaic")
+    assert os.path.isdir(mosaic_dir), f"Mosaic directory missing: {mosaic_dir}"
 
     # At least 1 UTM VRT file
     utm_zones = _get_utm_zones(project_dir, cfg)
     assert len(utm_zones) >= 1, "Expected at least 1 UTM zone"
 
-    utm_vrts_found = []
+    utm_mosaics_found = []
     for zone in utm_zones:
-        vrt_path = os.path.join(vrt_dir, f"{data_source}_Fetched_UTM{zone}.vrt")
+        vrt_path = os.path.join(mosaic_dir, f"{data_source}_Fetched_UTM{zone}.vrt")
         if os.path.isfile(vrt_path):
-            utm_vrts_found.append(vrt_path)
+            utm_mosaics_found.append(vrt_path)
 
-    assert len(utm_vrts_found) >= 1, \
-        f"Expected at least 1 UTM VRT in {vrt_dir}"
+    assert len(utm_mosaics_found) >= 1, \
+        f"Expected at least 1 UTM VRT in {mosaic_dir}"
 
     # Cross-UTM scenarios should produce 2+ VRT files
     if "cross_utm" in scenario:
-        assert len(utm_vrts_found) >= 2, \
-            f"Cross-UTM scenario expected 2+ UTM VRTs, got {len(utm_vrts_found)}"
+        assert len(utm_mosaics_found) >= 2, \
+            f"Cross-UTM scenario expected 2+ UTM VRTs, got {len(utm_mosaics_found)}"
 
     # Each VRT openable by GDAL with correct band count
     expected_bands = _expected_band_count(cfg)
-    for vrt_path in utm_vrts_found:
+    for vrt_path in utm_mosaics_found:
         ds = gdal.Open(vrt_path)
         assert ds is not None, f"GDAL cannot open VRT: {vrt_path}"
         assert ds.RasterCount == expected_bands, \
@@ -232,7 +232,7 @@ def assert_build_results(project_dir, cfg, scenario):
 
     # Sources with RAT: verify RAT present on UTM VRT
     if cfg["has_rat"]:
-        for vrt_path in utm_vrts_found:
+        for vrt_path in utm_mosaics_found:
             ds = gdal.Open(vrt_path, 0)
             band = ds.GetRasterBand(cfg["rat_band"])
             rat = band.GetDefaultRAT()
@@ -701,14 +701,14 @@ class TestDeleteVRTRebuild:
         )
 
         # Find a UTM VRT file to delete
-        vrt_dir = os.path.join(project_dir, f"{data_source}_VRT")
-        assert os.path.isdir(vrt_dir), f"VRT directory missing: {vrt_dir}"
+        mosaic_dir = os.path.join(project_dir, f"{data_source}_Mosaic")
+        assert os.path.isdir(mosaic_dir), f"Mosaic directory missing: {mosaic_dir}"
 
         utm_zones = _get_utm_zones(project_dir, cfg)
         assert len(utm_zones) >= 1
 
         target_zone = utm_zones[0]
-        vrt_path = os.path.join(vrt_dir, f"{data_source}_Fetched_UTM{target_zone}.vrt")
+        vrt_path = os.path.join(mosaic_dir, f"{data_source}_Fetched_UTM{target_zone}.vrt")
         assert os.path.isfile(vrt_path), f"UTM VRT not found: {vrt_path}"
 
         # Delete the VRT (and ovr if present)

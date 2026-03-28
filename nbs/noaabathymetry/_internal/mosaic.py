@@ -1,10 +1,10 @@
 """
-vrt.py - GDAL Virtual Raster creation, overviews, and RAT aggregation.
+mosaic.py - Mosaic creation, overviews, and RAT aggregation.
 
-Builds flat VRTs per UTM zone from source tiles, with adaptive overviews
-targeting config-driven output resolutions, optionally filtered to above
-the coarsest source.  For multi-subdataset
-sources (S102V22, S102V30), one VRT is built per subdataset and then combined.
+Builds per-UTM-zone mosaics from source tiles (VRTs or reprojected GeoTIFFs),
+with adaptive overviews targeting config-driven output resolutions, optionally
+filtered to above the coarsest source. For multi-subdataset sources
+(S102V22, S102V30), one VRT is built per subdataset and then combined.
 """
 
 import copy
@@ -15,7 +15,7 @@ from osgeo import gdal
 
 from nbs.noaabathymetry._internal.config import (
     parse_resolution,
-    validate_vrt_resolution_target,
+    validate_mosaic_resolution_target,
     get_built_flags,
     get_disk_field,
     get_disk_fields,
@@ -109,7 +109,7 @@ def create_vrt(files, vrt_path, levels, relative_to_vrt,
                       "Please close all files and attempt again") from e
     opts_str = '-separate -allow_projection_difference' if separate else '-allow_projection_difference'
     if vrt_resolution_target is not None:
-        validate_vrt_resolution_target(vrt_resolution_target)
+        validate_mosaic_resolution_target(vrt_resolution_target)
         opts_str += f' -resolution user -tr {vrt_resolution_target} {vrt_resolution_target}'
     else:
         opts_str += f' -resolution {resolution}'
@@ -159,7 +159,7 @@ def _compute_approximate_stats(path):
     ds = None
 
 
-def generate_hillshade(vrt_path, hillshade_path):
+def generate_hillshade(raster_path, hillshade_path):
     """Generate a hillshade GeoTIFF from band 1 (Elevation) of a source raster.
 
     Builds from a 16m downsampled view of the source for speed while
@@ -175,7 +175,7 @@ def generate_hillshade(vrt_path, hillshade_path):
     # Create an in-memory VRT at 16m resolution. GDAL reads from the
     # source's overview levels instead of full resolution.
     mem_vrt = "/vsimem/_hillshade_input.vrt"
-    gdal.Translate(mem_vrt, vrt_path, format="VRT", xRes=16, yRes=16)
+    gdal.Translate(mem_vrt, raster_path, format="VRT", xRes=16, yRes=16)
     opts = gdal.DEMProcessingOptions(
         options="-az 315 -alt 45 -z 4 -compute_edges "
                 "-of GTiff -co COMPRESS=DEFLATE -co TILED=YES -co BIGTIFF=YES"
@@ -199,7 +199,7 @@ def reproject_to_web_mercator(sources, output_path, overview_factors=None,
     When multiple sources are provided, they are mosaicked in order
     (later sources overlay earlier ones).
 
-    The RAT is not preserved through Warp. Call ``add_vrt_rat()`` on the
+    The RAT is not preserved through Warp. Call ``add_rat()`` on the
     output file after this function to attach the aggregated RAT.
 
     Parameters
@@ -564,16 +564,16 @@ def _read_rat_data_s102(tiles, project_dir, cfg, exp_fields, expected_fields):
     return surveys
 
 
-def _write_rat(vrt_path, surveys, expected_fields, rat_band):
-    """Pass 3: create a GDAL RasterAttributeTable and attach it to the VRT.
+def _write_rat(raster_path, surveys, expected_fields, rat_band):
+    """Pass 3: create a GDAL RasterAttributeTable and attach it to a raster.
 
     Columns are typed according to *expected_fields*.  Boolean strings
     (``"true"``/``"false"``) are coerced to 0/1 for int/float columns.
 
     Parameters
     ----------
-    vrt_path : str
-        Path to the VRT file to modify.
+    raster_path : str
+        Path to the raster file to modify.
     surveys : list[list]
         Survey rows from :func:`_read_rat_data`.
     expected_fields : dict
@@ -606,15 +606,15 @@ def _write_rat(vrt_path, surveys, expected_fields, rat_band):
                 rat.SetValueAsInt(row_idx, col_idx, int(val))
             elif field_type == float:
                 rat.SetValueAsDouble(row_idx, col_idx, float(val))
-    vrt_ds = gdal.Open(vrt_path, 1)
-    contributor_band = vrt_ds.GetRasterBand(rat_band)
+    ds = gdal.Open(raster_path, 1)
+    contributor_band = ds.GetRasterBand(rat_band)
     contributor_band.SetDefaultRAT(rat)
     contributor_band = None
-    vrt_ds = None
+    ds = None
 
 
-def add_vrt_rat(tiles, project_dir, vrt_path, cfg, utm=None):
-    """Build and attach an aggregated RAT to a VRT from per-tile RATs.
+def add_rat(tiles, project_dir, raster_path, cfg, utm=None):
+    """Build and attach an aggregated RAT to a raster from per-tile RATs.
 
     Runs the RAT pipeline: discover common fields, read data from all
     tiles, write combined RAT.  No-op if ``cfg["has_rat"]`` is False.
@@ -626,8 +626,8 @@ def add_vrt_rat(tiles, project_dir, vrt_path, cfg, utm=None):
         ``select_tiles_by_utm``).
     project_dir : str
         Absolute path to the project directory.
-    vrt_path : str
-        Path to the VRT file to attach the RAT to.
+    raster_path : str
+        Path to the raster file to attach the RAT to.
     cfg : dict
         Data source configuration.
     """
@@ -666,7 +666,7 @@ def add_vrt_rat(tiles, project_dir, vrt_path, cfg, utm=None):
                            "aggregated RAT.", sorted(dropped_fields))
 
     # Write RAT
-    _write_rat(vrt_path, surveys, expected_fields, rat_band)
+    _write_rat(raster_path, surveys, expected_fields, rat_band)
 
 
 # ---------------------------------------------------------------------------
@@ -674,7 +674,7 @@ def add_vrt_rat(tiles, project_dir, vrt_path, cfg, utm=None):
 # ---------------------------------------------------------------------------
 
 def select_unbuilt_utms(conn, cfg, params_key=""):
-    """Return ``vrt_utm`` rows where any built flag is 0 for *params_key*."""
+    """Return ``mosaic_utm`` rows where any built flag is 0 for *params_key*."""
     built_flags = get_built_flags(cfg)
     if cfg["subdatasets"]:
         all_flags = built_flags + ["built_combined"]
@@ -683,14 +683,14 @@ def select_unbuilt_utms(conn, cfg, params_key=""):
         where_clause = " or ".join(f"{f} = 0" for f in built_flags)
     cursor = conn.cursor()
     cursor.execute(
-        f"SELECT * FROM vrt_utm WHERE params_key = ? AND ({where_clause})",
+        f"SELECT * FROM mosaic_utm WHERE params_key = ? AND ({where_clause})",
         (params_key,),
     )
     return [dict(row) for row in cursor.fetchall()]
 
 
 def update_utm(conn, fields, cfg):
-    """Update a ``vrt_utm`` row with VRT/OVR paths and set all built flags to 1."""
+    """Update a ``mosaic_utm`` row with mosaic/OVR paths and set all built flags to 1."""
     utm_cols = get_utm_file_columns(cfg)
     built_flags = get_built_flags(cfg)
     set_parts = [f"{col} = ?" for col in utm_cols]
@@ -704,16 +704,16 @@ def update_utm(conn, fields, cfg):
     values.extend([fields["utm"], params_key])
     cursor = conn.cursor()
     cursor.execute(
-        f"UPDATE vrt_utm SET {set_clause} WHERE utm = ? AND params_key = ?",
+        f"UPDATE mosaic_utm SET {set_clause} WHERE utm = ? AND params_key = ?",
         values,
     )
     conn.commit()
 
 
 def missing_utms(project_dir, conn, cfg, params_key=""):
-    """Detect and reset UTM zones whose VRT files are missing from disk.
+    """Detect and reset UTM zones whose mosaic files are missing from disk.
 
-    Scans all built rows for *params_key*.  If any VRT path is absent
+    Scans all built rows for *params_key*.  If any mosaic path is absent
     (or any non-None OVR path is absent), the row is reset to unbuilt
     with all file columns set to NULL.
 
@@ -729,7 +729,7 @@ def missing_utms(project_dir, conn, cfg, params_key=""):
         where_built = " or ".join(f"{f} = 1" for f in built_flags)
     cursor = conn.cursor()
     cursor.execute(
-        f"SELECT * FROM vrt_utm WHERE params_key = ? AND ({where_built})",
+        f"SELECT * FROM mosaic_utm WHERE params_key = ? AND ({where_built})",
         (params_key,),
     )
     utms = [dict(row) for row in cursor.fetchall()]
@@ -757,7 +757,7 @@ def missing_utms(project_dir, conn, cfg, params_key=""):
             set_clause = ", ".join(set_parts)
             values = [None] * len(utm_cols) + [utm["utm"], params_key]
             cursor.execute(
-                f"UPDATE vrt_utm SET {set_clause} WHERE utm = ? AND params_key = ?",
+                f"UPDATE mosaic_utm SET {set_clause} WHERE utm = ? AND params_key = ?",
                 values,
             )
     if missing_utm_list:
@@ -766,11 +766,11 @@ def missing_utms(project_dir, conn, cfg, params_key=""):
 
 
 def ensure_params_rows(conn, cfg, params_key, output_dir=None):
-    """Seed ``vrt_utm`` rows for a parameterized build partition.
+    """Seed ``mosaic_utm`` rows for a parameterized build partition.
 
     Copies UTM zones from the default partition (``params_key=''``) into
     the target partition if they don't yet exist, initializing built
-    flags to 0 and VRT/OVR paths to NULL.  This allows parameterized
+    flags to 0 and mosaic/OVR paths to NULL.  This allows parameterized
     builds (e.g. resolution-filtered) to track state independently
     from the default build.
 
@@ -781,10 +781,10 @@ def ensure_params_rows(conn, cfg, params_key, output_dir=None):
     utm_cols = get_utm_file_columns(cfg)
 
     cursor = conn.cursor()
-    cursor.execute("SELECT utm FROM vrt_utm WHERE params_key = ''")
+    cursor.execute("SELECT utm FROM mosaic_utm WHERE params_key = ''")
     default_utms = {row["utm"] for row in cursor.fetchall()}
 
-    cursor.execute("SELECT utm FROM vrt_utm WHERE params_key = ?", (params_key,))
+    cursor.execute("SELECT utm FROM mosaic_utm WHERE params_key = ?", (params_key,))
     existing_utms = {row["utm"] for row in cursor.fetchall()}
 
     new_utms = default_utms - existing_utms
@@ -808,7 +808,7 @@ def ensure_params_rows(conn, cfg, params_key, output_dir=None):
         rows.append(tuple(values))
 
     cursor.executemany(
-        f"INSERT OR IGNORE INTO vrt_utm({col_str}) VALUES({placeholders})",
+        f"INSERT OR IGNORE INTO mosaic_utm({col_str}) VALUES({placeholders})",
         rows,
     )
     conn.commit()

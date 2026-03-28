@@ -3,7 +3,7 @@ config.py - Configuration-driven data source definitions.
 
 All data source variation is captured here. Adding a new NBS product
 requires only a new entry in ``DATA_SOURCES`` -- no new functions in
-build_vrt or fetch_tiles.
+mosaic_tiles or fetch_tiles.
 
 File slots
 ----------
@@ -60,7 +60,7 @@ subdatasets : list[dict] | None
 band_descriptions : list[str] | None
     Band labels for single-dataset sources.
 has_rat : bool
-    Whether to build a Raster Attribute Table on UTM VRTs.
+    Whether to build a Raster Attribute Table on UTM mosaics.
 rat_open_method : str | None
     ``"direct"`` or ``"s102_quality"``.
 rat_band : int | None
@@ -531,10 +531,10 @@ def make_resolution_label(resolutions):
     return "_".join(f"{r}m" for r in sorted(resolutions))
 
 
-def make_vrt_dir_name(data_source, tile_resolution_filter=None,
-                      vrt_resolution_target=None, reproject=False,
-                      output_dir=None):
-    """Build the VRT output directory name from build parameters.
+def make_mosaic_dir_name(data_source, tile_resolution_filter=None,
+                         vrt_resolution_target=None, reproject=False,
+                         output_dir=None):
+    """Build the mosaic output directory name from build parameters.
 
     When *output_dir* is provided, it is returned directly, overriding
     the auto-generated name.
@@ -555,12 +555,12 @@ def make_vrt_dir_name(data_source, tile_resolution_filter=None,
     Returns
     -------
     str
-        Directory name, e.g. ``'BlueTopo_VRT'``, ``'BlueTopo_VRT_4m_8m'``,
-        ``'BlueTopo_VRT_3857'``, ``'BlueTopo_VRT_4m_8m_3857'``, or a custom name.
+        Directory name, e.g. ``'BlueTopo_Mosaic'``, ``'BlueTopo_Mosaic_4m_8m'``,
+        ``'BlueTopo_Mosaic_3857'``, ``'BlueTopo_Mosaic_4m_8m_3857'``, or a custom name.
     """
     if output_dir is not None:
         return output_dir
-    name = f"{data_source}_VRT"
+    name = f"{data_source}_Mosaic"
     if tile_resolution_filter:
         name += f"_{make_resolution_label(tile_resolution_filter)}"
     if vrt_resolution_target is not None:
@@ -573,22 +573,22 @@ def make_vrt_dir_name(data_source, tile_resolution_filter=None,
 
 def make_params_key(data_source, tile_resolution_filter=None,
                     vrt_resolution_target=None, reproject=False):
-    """Derive the ``params_key`` string used to partition ``vrt_utm`` rows.
+    """Derive the ``params_key`` string used to partition ``mosaic_utm`` rows.
 
-    The key is the suffix portion of the VRT directory name. Default
+    The key is the suffix portion of the mosaic directory name. Default
     (unparameterized) builds use ``""``; parameterized builds get a key
     like ``"_4m_8m"`` or ``"_4m_8m_tr8m"`` or ``"_3857"``.
     """
-    dir_name = make_vrt_dir_name(data_source, tile_resolution_filter,
-                                 vrt_resolution_target, reproject)
-    return dir_name.removeprefix(f"{data_source}_VRT")
+    dir_name = make_mosaic_dir_name(data_source, tile_resolution_filter,
+                                    vrt_resolution_target, reproject)
+    return dir_name.removeprefix(f"{data_source}_Mosaic")
 
 
-def validate_vrt_resolution_target(value):
+def validate_mosaic_resolution_target(value):
     """Raise ``ValueError`` if *value* is not None and not positive."""
     if value is not None and value <= 0:
         raise ValueError(
-            f"vrt_resolution_target must be a positive number, got {value}"
+            f"mosaic_resolution_target must be a positive number, got {value}"
         )
 
 
@@ -760,24 +760,24 @@ def get_catalog_fields(cfg):
     return {cfg["catalog_pk"]: "text", "location": "text", "downloaded": "text"}
 
 
-def get_vrt_utm_fields(cfg):
-    """Return ``{column_name: sql_type}`` for the ``vrt_utm`` table.
+def get_mosaic_utm_fields(cfg):
+    """Return ``{column_name: sql_type}`` for the ``mosaic_utm`` table.
 
-    Schema varies by source: subdataset sources get per-subdataset VRT/OVR
-    columns plus a combined VRT column; single-dataset sources get one
-    VRT/OVR pair.
+    Schema varies by source: subdataset sources get per-subdataset mosaic/OVR
+    columns plus a combined mosaic column; single-dataset sources get one
+    mosaic/OVR pair.
     """
     fields = {"utm": "text", "params_key": "text", "output_dir": "text"}
     if cfg["subdatasets"]:
         for i in range(len(cfg["subdatasets"])):
-            fields[f"utm_subdataset{i+1}_vrt"] = "text"
+            fields[f"utm_subdataset{i+1}_mosaic"] = "text"
             fields[f"utm_subdataset{i+1}_ovr"] = "text"
-        fields["utm_combined_vrt"] = "text"
+        fields["utm_combined_mosaic"] = "text"
         for i in range(len(cfg["subdatasets"])):
             fields[f"built_subdataset{i+1}"] = "integer"
         fields["built_combined"] = "integer"
     else:
-        fields["utm_vrt"] = "text"
+        fields["utm_mosaic"] = "text"
         fields["utm_ovr"] = "text"
         fields["built"] = "integer"
     return fields
@@ -804,15 +804,15 @@ def get_tiles_fields(cfg):
 
 
 def get_built_flags(cfg):
-    """Return built-flag column names from ``vrt_utm`` (e.g. ``["built"]``)."""
+    """Return built-flag column names from ``mosaic_utm`` (e.g. ``["built"]``)."""
     if cfg["subdatasets"]:
         return [f"built_subdataset{i+1}" for i in range(len(cfg["subdatasets"]))]
     return ["built"]
 
 
 def get_utm_file_columns(cfg):
-    """Return VRT/OVR path column names from ``vrt_utm``, excluding PK, built flags, and metadata."""
-    fields = get_vrt_utm_fields(cfg)
+    """Return mosaic/OVR path column names from ``mosaic_utm``, excluding PK, built flags, and metadata."""
+    fields = get_mosaic_utm_fields(cfg)
     exclude = {"utm", "params_key", "output_dir"}
     return [k for k in fields if k not in exclude and "built" not in k]
 

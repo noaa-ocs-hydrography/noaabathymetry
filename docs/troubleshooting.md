@@ -7,7 +7,7 @@
 > Please use an absolute path for your project folder.
 > Typically for non windows systems this means starting with '/'
 
-**Cause:** Both `fetch_tiles` and `build_vrt` require the `project_dir` to be an absolute path. Relative paths like `./my_project` or `my_project` are rejected.
+**Cause:** Both `fetch_tiles` and `mosaic_tiles` require the `project_dir` to be an absolute path. Relative paths like `./my_project` or `my_project` are rejected.
 
 **Fix:** Use a full path:
 
@@ -28,23 +28,23 @@ The same requirement applies to geometry file paths. If you pass a file path as 
 
 ---
 
-## "fetch_tiles must be run at least once prior to build_vrt"
+## "fetch_tiles must be run at least once prior to mosaic_tiles"
 
 **Full message:**
 
-> SQLite database not found. Confirm correct folder. Note: fetch_tiles must be run at least once prior to build_vrt
+> SQLite database not found. Confirm correct folder. Note: fetch_tiles must be run at least once prior to mosaic_tiles
 
-**Cause:** `build_vrt` could not find the registry database (`<source>_registry.db`) in the project directory. This happens when:
+**Cause:** `mosaic_tiles` could not find the registry database (`<source>_registry.db`) in the project directory. This happens when:
 
 - `fetch_tiles` was never run on this directory.
-- You're pointing `build_vrt` at the wrong directory.
+- You're pointing `mosaic_tiles` at the wrong directory.
 - The `data_source` argument doesn't match what was used with `fetch_tiles` (each source has its own database).
 
-**Fix:** Run `fetch_tiles` first, then `build_vrt` with the same directory and data source:
+**Fix:** Run `fetch_tiles` first, then `mosaic_tiles` with the same directory and data source:
 
 ```python
 fetch_tiles('/path/to/project', geometry='aoi.gpkg', data_source='bag')
-build_vrt('/path/to/project', data_source='bag')
+mosaic_tiles('/path/to/project', data_source='bag')
 ```
 
 ---
@@ -53,7 +53,7 @@ build_vrt('/path/to/project', data_source='bag')
 
 **Full message:**
 
-> Please update GDAL to >=3.9 to run build_vrt.
+> Please update GDAL to >=3.9 to run mosaic_tiles.
 > Some users have encountered issues with conda's installation of GDAL 3.4. Try more recent versions of GDAL if you also encounter issues in your conda environment.
 
 **Cause:** The installed GDAL version is older than what the data source requires. S-102 sources (s102v21, s102v22, s102v30) need GDAL 3.9+. BlueTopo, Modeling, BAG, and HSD need GDAL 3.4+.
@@ -143,7 +143,7 @@ if result.not_found:
 
 **Cause:** The tile scheme geopackage, XML catalog, or tile files cannot be written because another process has them locked. This is most common on Windows when:
 
-- QGIS has the VRT or geopackage file open
+- QGIS has the mosaic or geopackage file open
 - Another Python process is using the database
 - A file explorer preview pane has the file locked
 
@@ -151,17 +151,17 @@ if result.not_found:
 
 ---
 
-## Stale VRT directories
+## Stale mosaic directories
 
 **Console output:**
 
-> Note: 2 other VRT director(ies) exist that may contain stale data:
->   BlueTopo_VRT/
->   BlueTopo_VRT_4m_8m/
+> Note: 2 other mosaic director(ies) exist that may contain stale data:
+>   BlueTopo_Mosaic/
+>   BlueTopo_Mosaic_4m_8m/
 
-**Cause:** This is an informational warning, not an error. When running `build_vrt` with resolution parameters (`--tile-resolution-filter` or `--vrt-resolution-target`), the output goes to a parameterized directory (e.g. `BlueTopo_VRT_tr8m/`). If other VRT directories exist from previous builds with different parameters, the package notes them.
+**Cause:** This is an informational warning, not an error. When running `mosaic_tiles` with resolution parameters (`--tile-resolution-filter` or `--mosaic-resolution-target`), the output goes to a parameterized directory (e.g. `BlueTopo_Mosaic_tr8m/`). If other mosaic directories exist from previous builds with different parameters, the package notes them.
 
-**What to do:** This warning is safe to ignore. The other directories are not modified. If you no longer need them, you can delete them manually. Deleting the default `BlueTopo_VRT/` directory will cause the next default `build_vrt` run to rebuild it from scratch.
+**What to do:** This warning is safe to ignore. The other directories are not modified. If you no longer need them, you can delete them manually. Deleting the default `BlueTopo_Mosaic/` directory will cause the next default `mosaic_tiles` run to rebuild it from scratch.
 
 ---
 
@@ -173,10 +173,10 @@ if result.not_found:
 
 **Cause:** When using `--workers N`, individual UTM zones can fail while others succeed. Common causes include insufficient RAM (each worker loads tile data independently), disk space exhaustion, or GDAL errors on specific tile combinations.
 
-**Fix:** Check your system's available memory. Each worker can consume significant RAM depending on the number and size of tiles in the UTM zone. Run with the default (no `--workers` flag) first to gauge memory usage for a single zone, then scale up. Failed zones can be retried by running `build_vrt` again. Only the failed zones will be rebuilt.
+**Fix:** Check your system's available memory. Each worker can consume significant RAM depending on the number and size of tiles in the UTM zone. Run with the default (no `--workers` flag) first to gauge memory usage for a single zone, then scale up. Failed zones can be retried by running `mosaic_tiles` again. Only the failed zones will be rebuilt.
 
 ```python
-result = build_vrt('/path/to/project', workers=4)
+result = mosaic_tiles('/path/to/project', workers=4)
 for failure in result.failed:
     print(f"UTM {failure['utm']} failed: {failure['reason']}")
 ```
@@ -189,6 +189,6 @@ for failure in result.failed:
 
 > Overview failed to create for utmXX. Please try again. If error persists, please contact NBS.
 
-**Cause:** GDAL failed to create the `.ovr` overview file for a UTM zone VRT. This can happen due to disk space issues, file permission problems, or GDAL bugs.
+**Cause:** GDAL failed to create the `.ovr` overview file for a UTM zone mosaic. This can happen due to disk space issues, file permission problems, or GDAL bugs.
 
 **Fix:** Check that you have sufficient disk space and write permissions. Retry the build. If the error persists, run with `--debug` and share the diagnostic report with the NBS team.

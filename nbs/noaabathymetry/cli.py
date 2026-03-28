@@ -1,9 +1,9 @@
-"""CLI entry points for fetch_tiles and build_vrt commands."""
+"""CLI entry points for fetch_tiles and mosaic_tiles commands."""
 
 from argparse import ArgumentParser, ArgumentTypeError
 
 from nbs.noaabathymetry import __version__
-from nbs.noaabathymetry._internal.builder import build_vrt
+from nbs.noaabathymetry._internal.builder import mosaic_tiles
 from nbs.noaabathymetry._internal.fetcher import fetch_tiles
 
 
@@ -37,9 +37,9 @@ def str_to_bool(value):
         raise ArgumentTypeError("Boolean value expected.")
 
 
-def build_vrt_command():
-    """Console_scripts entry point for build_vrt."""
-    parser = ArgumentParser(prog="build_vrt")
+def mosaic_tiles_command():
+    """Console_scripts entry point for mosaic_tiles."""
+    parser = ArgumentParser(prog="mosaic_tiles")
     parser.add_argument("-v", "--version", action="version",
                         version=f"%(prog)s {__version__}")
     parser.add_argument(
@@ -59,15 +59,15 @@ def build_vrt_command():
         const=True, type=str_to_bool,
     )
     parser.add_argument(
-        "-t", "--vrt-resolution-target",
-        help="VRT output pixel size in meters (any positive number).",
+        "-t", "--mosaic-resolution-target",
+        help="Output pixel size in meters (any positive number).",
         type=float,
-        dest="vrt_resolution_target", default=None,
+        dest="mosaic_resolution_target", default=None,
     )
     parser.add_argument(
         "--tile-resolution-filter",
         help="Only include tiles at these resolutions (meters). "
-             "Outputs to a separate VRT directory. Example: --tile-resolution-filter 4 8",
+             "Outputs to a separate mosaic directory. Example: --tile-resolution-filter 4 8",
         type=int, nargs="+", dest="tile_resolution_filter", default=None,
     )
     parser.add_argument(
@@ -80,7 +80,7 @@ def build_vrt_command():
     )
     parser.add_argument(
         "--reproject", action="store_true",
-        help="Reproject to EPSG:3857 (Web Mercator) GeoTIFFs instead of native UTM VRTs.",
+        help="Reproject to EPSG:3857 (Web Mercator) GeoTIFFs.",
     )
     parser.add_argument(
         "-o", "--output-dir",
@@ -92,11 +92,11 @@ def build_vrt_command():
         help="Write a diagnostic report to the project directory.",
     )
     args = parser.parse_args()
-    build_vrt(
+    mosaic_tiles(
         project_dir=args.dir,
         data_source=args.source,
         relative_to_vrt=args.relative_to_vrt,
-        vrt_resolution_target=args.vrt_resolution_target,
+        mosaic_resolution_target=args.mosaic_resolution_target,
         tile_resolution_filter=args.tile_resolution_filter,
         hillshade=args.hillshade,
         workers=args.workers,

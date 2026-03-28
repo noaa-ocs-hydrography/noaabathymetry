@@ -5,7 +5,7 @@
 Both public functions are importable from `nbs.noaabathymetry`:
 
 ```python
-from nbs.noaabathymetry import fetch_tiles, build_vrt
+from nbs.noaabathymetry import fetch_tiles, mosaic_tiles
 ```
 
 ---
@@ -68,24 +68,24 @@ for failure in result.failed:
 
 ---
 
-### build_vrt
+### mosaic_tiles
 
 ```python
-build_vrt(
+mosaic_tiles(
     project_dir: str,
     data_source: str = None,
     relative_to_vrt: bool = True,
-    vrt_resolution_target: float = None,
+    mosaic_resolution_target: float = None,
     tile_resolution_filter: list = None,
     hillshade: bool = False,
     workers: int = None,
     reproject: bool = False,
     output_dir: str = None,
     debug: bool = False,
-) -> BuildResult
+) -> MosaicResult
 ```
 
-Build a flat GDAL VRT per UTM zone from all source tiles.
+Build a per-UTM-zone mosaic from all source tiles.
 
 **Parameters**
 
@@ -94,15 +94,15 @@ Build a flat GDAL VRT per UTM zone from all source tiles.
 | `project_dir` | `str` | *required* | Absolute path to the project directory. |
 | `data_source` | `str \| None` | `None` | A known source name, or `None` (defaults to `"bluetopo"`). |
 | `relative_to_vrt` | `bool` | `True` | Store referenced file paths as relative to the VRT's directory. Set to `False` for absolute paths. |
-| `vrt_resolution_target` | `float \| None` | `None` | Force output pixel size in meters. Must be a positive number. |
-| `tile_resolution_filter` | `list[int] \| None` | `None` | Only include tiles at these resolutions (meters). Outputs to a separate VRT directory. |
+| `mosaic_resolution_target` | `float \| None` | `None` | Force output pixel size in meters. Must be a positive number. |
+| `tile_resolution_filter` | `list[int] \| None` | `None` | Only include tiles at these resolutions (meters). Outputs to a separate mosaic directory. |
 | `hillshade` | `bool` | `False` | If `True`, generate a hillshade GeoTIFF from the elevation band. |
 | `workers` | `int \| None` | `None` | Number of parallel worker processes for building UTM zones. `None` or `1` = sequential. Must not exceed `os.cpu_count()`. |
-| `reproject` | `bool` | `False` | If `True`, reproject to EPSG:3857 (Web Mercator) GeoTIFFs instead of native UTM VRTs. Outputs to a separate directory (e.g. `BlueTopo_VRT_3857/`). |
+| `reproject` | `bool` | `False` | If `True`, reproject to EPSG:3857 (Web Mercator) GeoTIFFs. Outputs to a separate directory. |
 | `output_dir` | `str \| None` | `None` | Custom output directory name within the project directory. Overrides the auto-generated name. Each directory can only be used by one build configuration. |
 | `debug` | `bool` | `False` | If `True`, writes a diagnostic report to the project directory. |
 
-**Returns:** [`BuildResult`](#buildresult)
+**Returns:** [`MosaicResult`](#mosaicresult)
 
 **Raises**
 
@@ -112,7 +112,7 @@ Build a flat GDAL VRT per UTM zone from all source tiles.
 | `ValueError` | Project directory does not exist. |
 | `ValueError` | Registry database not found (`fetch_tiles` must run first). |
 | `ValueError` | Tile downloads folder not found (`fetch_tiles` must run first). |
-| `ValueError` | `vrt_resolution_target` is not positive. |
+| `ValueError` | `mosaic_resolution_target` is not positive. |
 | `ValueError` | `workers` is not a positive integer or exceeds `os.cpu_count()`. |
 | `ValueError` | `reproject` is used with a data source other than BlueTopo. |
 | `ValueError` | `output_dir` contains a path separator (must be a single directory name). |
@@ -123,19 +123,19 @@ Build a flat GDAL VRT per UTM zone from all source tiles.
 **Example**
 
 ```python
-from nbs.noaabathymetry import build_vrt
+from nbs.noaabathymetry import mosaic_tiles
 
-result = build_vrt(
+result = mosaic_tiles(
     '/home/user/bathymetry',
     data_source='bluetopo',
-    vrt_resolution_target=8,
+    mosaic_resolution_target=8,
     tile_resolution_filter=[4, 8],
 )
 
 for entry in result.built:
-    print(f"Built UTM {entry['utm']}: {entry['vrt']}")
+    print(f"Built UTM {entry['utm']}: {entry['mosaic']}")
 print(f"Skipped (up to date): {len(result.skipped)}")
-print(f"Missing VRTs reset: {len(result.missing_reset)}")
+print(f"Missing mosaics reset: {len(result.missing_reset)}")
 ```
 
 ---
@@ -179,39 +179,39 @@ print(result)
 
 ---
 
-### BuildResult
+### MosaicResult
 
-Dataclass returned by `build_vrt`.
+Dataclass returned by `mosaic_tiles`.
 
 | Attribute | Type | Description |
 |---|---|---|
-| `built` | `list[dict]` | UTM zones that were built. Each dict has `utm` (str), `vrt` (str), `ovr` (str or None), and `hillshade` (str or None) keys. |
+| `built` | `list[dict]` | UTM zones that were built. Each dict has `utm` (str), `mosaic` (str), `ovr` (str or None), and `hillshade` (str or None) keys. |
 | `skipped` | `list[str]` | UTM zone identifiers that were already up to date, or had no matching tiles after resolution filtering. |
 | `failed` | `list[dict]` | UTM zones that failed during the build. Each dict has `utm` (str) and `reason` (str) keys. |
-| `missing_reset` | `list[str]` | UTM zones reset due to VRT files missing on disk. |
+| `missing_reset` | `list[str]` | UTM zones reset due to mosaic files missing on disk. |
 | `tile_resolution_filter` | `list[int] \| None` | Resolution filter that was active, or `None` if unfiltered. |
-| `vrt_resolution_target` | `float \| None` | VRT pixel size override that was active, or `None` for native resolution. |
+| `mosaic_resolution_target` | `float \| None` | Output pixel size override that was active, or `None` for native resolution. |
 
 **Example**
 
 ```python
-result = build_vrt('/home/user/bathymetry')
+result = mosaic_tiles('/home/user/bathymetry')
 print(result)
 
-# BuildResult(
+# MosaicResult(
 #     built=[
-#         {'utm': '18', 'vrt': '/home/user/bathymetry/BlueTopo_VRT/BlueTopo_Fetched_UTM18.vrt',
-#          'ovr': '/home/user/bathymetry/BlueTopo_VRT/BlueTopo_Fetched_UTM18.vrt.ovr',
+#         {'utm': '18', 'mosaic': '/home/user/bathymetry/BlueTopo_Mosaic/BlueTopo_Fetched_UTM18.vrt',
+#          'ovr': '/home/user/bathymetry/BlueTopo_Mosaic/BlueTopo_Fetched_UTM18.vrt.ovr',
 #          'hillshade': None},
-#         {'utm': '19', 'vrt': '/home/user/bathymetry/BlueTopo_VRT/BlueTopo_Fetched_UTM19.vrt',
-#          'ovr': '/home/user/bathymetry/BlueTopo_VRT/BlueTopo_Fetched_UTM19.vrt.ovr',
+#         {'utm': '19', 'mosaic': '/home/user/bathymetry/BlueTopo_Mosaic/BlueTopo_Fetched_UTM19.vrt',
+#          'ovr': '/home/user/bathymetry/BlueTopo_Mosaic/BlueTopo_Fetched_UTM19.vrt.ovr',
 #          'hillshade': None}
 #     ],
 #     skipped=['17'],
 #     failed=[],
 #     missing_reset=[],
 #     tile_resolution_filter=None,
-#     vrt_resolution_target=None
+#     mosaic_resolution_target=None
 # )
 ```
 
@@ -252,10 +252,10 @@ fetch_tiles -d /home/user/bathymetry -g aoi.gpkg -s bag
 fetch_tiles -d /home/user/bathymetry
 ```
 
-### build_vrt command
+### mosaic_tiles command
 
 ```
-build_vrt -d DIR [-s SOURCE] [-r BOOL] [-t RESOLUTION] [--tile-resolution-filter N [N ...]] [--hillshade] [--workers N] [--reproject] [-o OUTPUT_DIR] [--debug]
+mosaic_tiles -d DIR [-s SOURCE] [-r BOOL] [-t RESOLUTION] [--tile-resolution-filter N [N ...]] [--hillshade] [--workers N] [--reproject] [-o OUTPUT_DIR] [--debug]
 ```
 
 | Short form | Long form | Description |
@@ -263,11 +263,11 @@ build_vrt -d DIR [-s SOURCE] [-r BOOL] [-t RESOLUTION] [--tile-resolution-filter
 | `-d` | `--dir`, `--directory` | **Required.** Absolute path to the project directory. |
 | `-s` | `--source`, `--data-source` | Data source identifier. Default: `bluetopo`. |
 | `-r` | `--rel`, `--relative_to_vrt` | Store VRT file paths as relative. Default: `true`. |
-| `-t` | `--vrt-resolution-target` | Force output pixel size in meters (any positive number). |
+| `-t` | `--mosaic-resolution-target` | Force output pixel size in meters (any positive number). |
 | | `--tile-resolution-filter` | Only include tiles at these resolutions (meters). Multiple values allowed. |
 | | `--hillshade` | Generate a hillshade GeoTIFF from the elevation band. |
 | | `--workers` | Number of parallel worker processes for building UTM zones. |
-| | `--reproject` | Reproject to EPSG:3857 (Web Mercator) GeoTIFFs instead of native UTM VRTs. |
+| | `--reproject` | Reproject to EPSG:3857 (Web Mercator) GeoTIFFs. |
 | `-o` | `--output-dir` | Custom output directory name within the project directory. |
 | | `--debug` | Write a diagnostic report to the project directory. |
 | `-v` | `--version` | Show version and exit. |
@@ -275,24 +275,24 @@ build_vrt -d DIR [-s SOURCE] [-r BOOL] [-t RESOLUTION] [--tile-resolution-filter
 **Examples**
 
 ```bash
-# Build VRTs from fetched BlueTopo tiles
-build_vrt -d /home/user/bathymetry
+# Build mosaics from fetched BlueTopo tiles
+mosaic_tiles -d /home/user/bathymetry
 
 # Build at 8m resolution target
-build_vrt -d /home/user/bathymetry -t 8
+mosaic_tiles -d /home/user/bathymetry -t 8
 
 # Build only from 4m tiles
-build_vrt -d /home/user/bathymetry --tile-resolution-filter 4
+mosaic_tiles -d /home/user/bathymetry --tile-resolution-filter 4
 
 # Build with 4 parallel workers
-build_vrt -d /home/user/bathymetry --workers 4
+mosaic_tiles -d /home/user/bathymetry --workers 4
 
 # Build with hillshade generation
-build_vrt -d /home/user/bathymetry --hillshade
+mosaic_tiles -d /home/user/bathymetry --hillshade
 
 # Build into a custom output directory
-build_vrt -d /home/user/bathymetry -o my_custom_vrts
+mosaic_tiles -d /home/user/bathymetry -o my_custom_mosaics
 
-# Build Modeling VRTs
-build_vrt -d /home/user/bathymetry -s modeling
+# Build Modeling mosaics
+mosaic_tiles -d /home/user/bathymetry -s modeling
 ```

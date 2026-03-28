@@ -1,10 +1,10 @@
-"""noaabathymetry — NOAA NBS bathymetric data download & VRT builder."""
+"""noaabathymetry — NOAA NBS bathymetric data download & mosaic builder."""
 
 import logging
 import sys
 from importlib.metadata import version, PackageNotFoundError
 
-from ._internal.builder import build_vrt, BuildResult
+from ._internal.builder import mosaic_tiles, MosaicResult
 from ._internal.fetcher import fetch_tiles, FetchResult
 
 class _ColorFormatter(logging.Formatter):
@@ -48,4 +48,4 @@ try:
 except PackageNotFoundError:
     __version__ = "unknown"
 
-__all__ = ["fetch_tiles", "build_vrt", "FetchResult", "BuildResult", "__version__"]
+__all__ = ["fetch_tiles", "mosaic_tiles", "FetchResult", "MosaicResult", "__version__"]

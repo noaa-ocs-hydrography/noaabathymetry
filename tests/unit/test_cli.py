@@ -39,21 +39,21 @@ class TestStrToBool:
 
 
 # ---------------------------------------------------------------------------
-# CLI argument parsing - build_vrt_command
+# CLI argument parsing - mosaic_tiles_command
 # ---------------------------------------------------------------------------
 
 
-class TestBuildVrtCommand:
+class TestMosaicTilesCommand:
     def test_parses_all_args(self):
-        from nbs.noaabathymetry.cli import build_vrt_command
-        with mock.patch("sys.argv", ["build_vrt", "-d", "/tmp/test", "-s", "bluetopo", "-r", "true"]):
-            with mock.patch("nbs.noaabathymetry.cli.build_vrt") as mock_bv:
-                build_vrt_command()
+        from nbs.noaabathymetry.cli import mosaic_tiles_command
+        with mock.patch("sys.argv", ["mosaic_tiles", "-d", "/tmp/test", "-s", "bluetopo", "-r", "true"]):
+            with mock.patch("nbs.noaabathymetry.cli.mosaic_tiles") as mock_bv:
+                mosaic_tiles_command()
                 mock_bv.assert_called_once_with(
                     project_dir="/tmp/test",
                     data_source="bluetopo",
                     relative_to_vrt=True,
-                    vrt_resolution_target=None,
+                    mosaic_resolution_target=None,
                     tile_resolution_filter=None,
                     hillshade=False,
                     workers=None,
@@ -63,18 +63,18 @@ class TestBuildVrtCommand:
                 )
 
     def test_default_source(self):
-        from nbs.noaabathymetry.cli import build_vrt_command
-        with mock.patch("sys.argv", ["build_vrt", "-d", "/tmp/test"]):
-            with mock.patch("nbs.noaabathymetry.cli.build_vrt") as mock_bv:
-                build_vrt_command()
+        from nbs.noaabathymetry.cli import mosaic_tiles_command
+        with mock.patch("sys.argv", ["mosaic_tiles", "-d", "/tmp/test"]):
+            with mock.patch("nbs.noaabathymetry.cli.mosaic_tiles") as mock_bv:
+                mosaic_tiles_command()
                 args = mock_bv.call_args
                 assert args.kwargs["data_source"] == "bluetopo"
 
     def test_default_relative(self):
-        from nbs.noaabathymetry.cli import build_vrt_command
-        with mock.patch("sys.argv", ["build_vrt", "-d", "/tmp/test"]):
-            with mock.patch("nbs.noaabathymetry.cli.build_vrt") as mock_bv:
-                build_vrt_command()
+        from nbs.noaabathymetry.cli import mosaic_tiles_command
+        with mock.patch("sys.argv", ["mosaic_tiles", "-d", "/tmp/test"]):
+            with mock.patch("nbs.noaabathymetry.cli.mosaic_tiles") as mock_bv:
+                mosaic_tiles_command()
                 args = mock_bv.call_args
                 assert args.kwargs["relative_to_vrt"] is True
 
@@ -113,20 +113,20 @@ class TestFetchTilesCommand:
 
 
 class TestLongFormArgs:
-    def test_build_vrt_directory_alias(self):
-        from nbs.noaabathymetry.cli import build_vrt_command
-        with mock.patch("sys.argv", ["build_vrt", "--directory", "/tmp/test"]):
-            with mock.patch("nbs.noaabathymetry.cli.build_vrt") as mock_bv:
-                build_vrt_command()
+    def test_mosaic_tiles_directory_alias(self):
+        from nbs.noaabathymetry.cli import mosaic_tiles_command
+        with mock.patch("sys.argv", ["mosaic_tiles", "--directory", "/tmp/test"]):
+            with mock.patch("nbs.noaabathymetry.cli.mosaic_tiles") as mock_bv:
+                mosaic_tiles_command()
                 mock_bv.assert_called_once()
                 assert mock_bv.call_args.kwargs["project_dir"] == "/tmp/test"
 
-    def test_build_vrt_relative_to_vrt_alias(self):
-        from nbs.noaabathymetry.cli import build_vrt_command
-        with mock.patch("sys.argv", ["build_vrt", "--directory", "/tmp/test",
+    def test_mosaic_tiles_relative_to_vrt_alias(self):
+        from nbs.noaabathymetry.cli import mosaic_tiles_command
+        with mock.patch("sys.argv", ["mosaic_tiles", "--directory", "/tmp/test",
                                      "--relative_to_vrt", "false"]):
-            with mock.patch("nbs.noaabathymetry.cli.build_vrt") as mock_bv:
-                build_vrt_command()
+            with mock.patch("nbs.noaabathymetry.cli.mosaic_tiles") as mock_bv:
+                mosaic_tiles_command()
                 assert mock_bv.call_args.kwargs["relative_to_vrt"] is False
 
     def test_fetch_tiles_directory_alias(self):
@@ -161,25 +161,25 @@ class TestLongFormArgs:
 class TestRelativeFlag:
     def test_r_flag_no_value(self):
         """'-r' with no following value uses const=True."""
-        from nbs.noaabathymetry.cli import build_vrt_command
-        with mock.patch("sys.argv", ["build_vrt", "-d", "/tmp/test", "-r"]):
-            with mock.patch("nbs.noaabathymetry.cli.build_vrt") as mock_bv:
-                build_vrt_command()
+        from nbs.noaabathymetry.cli import mosaic_tiles_command
+        with mock.patch("sys.argv", ["mosaic_tiles", "-d", "/tmp/test", "-r"]):
+            with mock.patch("nbs.noaabathymetry.cli.mosaic_tiles") as mock_bv:
+                mosaic_tiles_command()
                 assert mock_bv.call_args.kwargs["relative_to_vrt"] is True
 
     def test_r_flag_false(self):
-        from nbs.noaabathymetry.cli import build_vrt_command
-        with mock.patch("sys.argv", ["build_vrt", "-d", "/tmp/test", "-r", "false"]):
-            with mock.patch("nbs.noaabathymetry.cli.build_vrt") as mock_bv:
-                build_vrt_command()
+        from nbs.noaabathymetry.cli import mosaic_tiles_command
+        with mock.patch("sys.argv", ["mosaic_tiles", "-d", "/tmp/test", "-r", "false"]):
+            with mock.patch("nbs.noaabathymetry.cli.mosaic_tiles") as mock_bv:
+                mosaic_tiles_command()
                 assert mock_bv.call_args.kwargs["relative_to_vrt"] is False
 
     def test_rel_flag_no_value(self):
         """'--rel' with no following value uses const=True."""
-        from nbs.noaabathymetry.cli import build_vrt_command
-        with mock.patch("sys.argv", ["build_vrt", "-d", "/tmp/test", "--rel"]):
-            with mock.patch("nbs.noaabathymetry.cli.build_vrt") as mock_bv:
-                build_vrt_command()
+        from nbs.noaabathymetry.cli import mosaic_tiles_command
+        with mock.patch("sys.argv", ["mosaic_tiles", "-d", "/tmp/test", "--rel"]):
+            with mock.patch("nbs.noaabathymetry.cli.mosaic_tiles") as mock_bv:
+                mosaic_tiles_command()
                 assert mock_bv.call_args.kwargs["relative_to_vrt"] is True
 
 
@@ -189,11 +189,11 @@ class TestRelativeFlag:
 
 
 class TestMissingRequired:
-    def test_build_vrt_no_dir_fails(self):
-        from nbs.noaabathymetry.cli import build_vrt_command
-        with mock.patch("sys.argv", ["build_vrt"]):
+    def test_mosaic_tiles_no_dir_fails(self):
+        from nbs.noaabathymetry.cli import mosaic_tiles_command
+        with mock.patch("sys.argv", ["mosaic_tiles"]):
             with pytest.raises(SystemExit):
-                build_vrt_command()
+                mosaic_tiles_command()
 
     def test_fetch_tiles_no_dir_fails(self):
         from nbs.noaabathymetry.cli import fetch_tiles_command

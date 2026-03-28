@@ -840,7 +840,7 @@ def registry_db(tmp_path):
                 placeholders = ", ".join(["?"] * len(utm))
                 vals = list(utm.values())
                 cursor.execute(
-                    f"INSERT OR REPLACE INTO vrt_utm({cols}) VALUES({placeholders})",
+                    f"INSERT OR REPLACE INTO mosaic_utm({cols}) VALUES({placeholders})",
                     vals,
                 )
 
