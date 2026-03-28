@@ -31,7 +31,7 @@ from botocore.client import Config
 from osgeo import ogr
 from tqdm import tqdm
 
-from nbs.bluetopo._internal.config import (
+from nbs.noaabathymetry._internal.config import (
     _timestamp,
     get_built_flags,
     get_disk_fields,
@@ -39,7 +39,7 @@ from nbs.bluetopo._internal.config import (
     get_verified_fields,
 )
 
-logger = logging.getLogger("bluetopo")
+logger = logging.getLogger("noaabathymetry")
 
 
 # ---------------------------------------------------------------------------
@@ -783,7 +783,7 @@ def upsert_tiles(conn, project_dir, tile_scheme, cfg):
                     f"Unexpected date format '{delivered_date}' for tile "
                     f"{db_tile['tilename']}. Expected 'YYYY-MM-DD HH:MM:SS'. "
                     f"The tilescheme format may have changed. "
-                    f"Please contact NBS or update BlueTopo.\n{debug_info}")
+                    f"Please contact NBS or update noaabathymetry.\n{debug_info}")
             _date_validated = True
 
         # String comparison works chronologically for YYYY-MM-DD [HH:MM:SS] format.

@@ -5,8 +5,8 @@ import os
 import pytest
 from osgeo import gdal
 
-from nbs.bluetopo._internal.config import get_config
-from nbs.bluetopo._internal.vrt import create_vrt, compute_overview_factors, generate_hillshade, select_tiles_by_utm
+from nbs.noaabathymetry._internal.config import get_config
+from nbs.noaabathymetry._internal.vrt import create_vrt, compute_overview_factors, generate_hillshade, select_tiles_by_utm
 
 
 # ---------------------------------------------------------------------------

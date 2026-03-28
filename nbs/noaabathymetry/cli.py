@@ -2,9 +2,9 @@
 
 from argparse import ArgumentParser, ArgumentTypeError
 
-from nbs.bluetopo import __version__
-from nbs.bluetopo._internal.builder import build_vrt
-from nbs.bluetopo._internal.fetcher import fetch_tiles
+from nbs.noaabathymetry import __version__
+from nbs.noaabathymetry._internal.builder import build_vrt
+from nbs.noaabathymetry._internal.fetcher import fetch_tiles
 
 
 def str_to_bool(value):

@@ -34,16 +34,16 @@ import sqlite3
 import pytest
 from osgeo import gdal, ogr
 
-from nbs.bluetopo._internal.config import (
+from nbs.noaabathymetry._internal.config import (
     get_config,
     get_disk_field,
     get_disk_fields,
     get_built_flags,
     get_utm_file_columns,
 )
-from nbs.bluetopo._internal.fetcher import fetch_tiles as fetch_main
-from nbs.bluetopo._internal.db import connect as connect_to_survey_registry
-from nbs.bluetopo._internal.builder import build_vrt as build_main
+from nbs.noaabathymetry._internal.fetcher import fetch_tiles as fetch_main
+from nbs.noaabathymetry._internal.db import connect as connect_to_survey_registry
+from nbs.noaabathymetry._internal.builder import build_vrt as build_main
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -593,7 +593,7 @@ class TestSyntheticLocal:
         )
 
         # Verify tiles were fetched
-        from nbs.bluetopo._internal.config import get_local_config
+        from nbs.noaabathymetry._internal.config import get_local_config
         local_cfg = get_local_config(cfg["canonical_name"])
         count = _count_tiles_with_disk(project_dir, local_cfg)
         assert count >= 1, "Expected at least 1 tile with disk path after synthetic local"

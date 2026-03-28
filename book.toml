@@ -1,5 +1,5 @@
 [book]
-title = "BlueTopo (Development)"
+title = "NOAA Bathymetry (Development)"
 authors = ["Glen Rice (NOAA)", "Tashi Geleg (Lynker/NOAA)"]
 src = "docs"
 
@@ -7,7 +7,7 @@ src = "docs"
 build-dir = "book"
 
 [output.html]
-git-repository-url = "https://github.com/noaa-ocs-hydrography/BlueTopo"
+git-repository-url = "https://github.com/noaa-ocs-hydrography/noaabathymetry"
 default-theme = "ayu"
 preferred-dark-theme = "ayu"
 additional-css = ["docs/theme/sidebar-logo.css"]

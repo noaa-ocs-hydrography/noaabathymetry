@@ -1,6 +1,6 @@
-[BlueTopo](https://www.nauticalcharts.noaa.gov/data/bluetopo.html) is a compilation of the best available public bathymetric data of U.S. waters. Created by [NOAA Office of Coast Survey's](https://www.nauticalcharts.noaa.gov/) National Bathymetric Source project, it provides depth information nationwide with the vertical uncertainty tied to that depth estimate as well as information on the survey source.
+NOAA's [National Bathymetric Source](https://nauticalcharts.noaa.gov/learn/nbs.html) builds and publishes the best available high-resolution bathymetric data of U.S. waters. The program's workflow is designed for continuous throughput, ensuring the best bathymetric data is always available to professionals and the public. This data provides depth measurements nationwide, along with vertical uncertainty estimates and information on the originating survey source. It is available in multiple formats (GeoTIFF compilations like [BlueTopo](https://www.nauticalcharts.noaa.gov/data/bluetopo.html) and Modeling, BAG, and IHO S-102) hosted on a public S3 bucket.
 
-This package simplifies downloading bathymetric tiles from NOAA's public S3 bucket and assembling them into per-UTM-zone GDAL Virtual Rasters for use in GIS applications. It supports six S3-hosted data sources (BlueTopo, Modeling, BAG, S-102 v2.1/v2.2/v3.0).
+This package simplifies downloading bathymetric data from NOAA and optionally assembling them into per-UTM-zone GDAL Virtual Rasters for use in GIS applications. It supports six data sources (BlueTopo, Modeling, BAG, S-102 v2.1/v2.2/v3.0).
 
 > **Note:** The S-102 data available through this package are for test and evaluation and should not be used for navigation. For official S-102 data, see the [data](https://noaa-s102-pds.s3.amazonaws.com/index.html) available from [Precision Marine Navigation](https://oceanservice.noaa.gov/navigation/precision-navigation/).
 
@@ -33,9 +33,9 @@ Install conda if you haven't already: [conda installation](https://docs.conda.io
 Create an environment with the required packages:
 
 ```
-conda create -n bluetopo_env -c conda-forge 'gdal>=3.9'
-conda activate bluetopo_env
-pip install bluetopo
+conda create -n noaabathymetry_env -c conda-forge 'gdal>=3.9'
+conda activate noaabathymetry_env
+pip install noaabathymetry
 ```
 
 > **Note:** The `libgdal-hdf5` package is required for BAG and S-102 data sources. If you only need BlueTopo or Modeling data, `gdal>=3.4` alone is sufficient.
@@ -49,7 +49,7 @@ You can use the [Quickstart Helper](quickstart-helper.md) to draw your area of i
 ### Python API
 
 ```python
-from nbs.bluetopo import fetch_tiles, build_vrt
+from nbs.noaabathymetry import fetch_tiles, build_vrt
 
 result = fetch_tiles('/path/to/project', geometry='area_of_interest.gpkg')
 vrt_result = build_vrt('/path/to/project')

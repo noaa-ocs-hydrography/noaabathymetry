@@ -5,7 +5,7 @@ import re
 import pytest
 from osgeo import gdal
 
-from nbs.bluetopo._internal.config import (
+from nbs.noaabathymetry._internal.config import (
     DATA_SOURCES,
     KNOWN_RAT_FIELDS,
     parse_resolution,

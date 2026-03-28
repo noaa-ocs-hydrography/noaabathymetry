@@ -17,9 +17,9 @@ import platform
 import sys
 import traceback
 
-logger = logging.getLogger("bluetopo")
+logger = logging.getLogger("noaabathymetry")
 
-from nbs.bluetopo._internal.config import (
+from nbs.noaabathymetry._internal.config import (
     get_built_flags,
     get_disk_fields,
     get_utm_file_columns,
@@ -96,12 +96,12 @@ class DebugReport:
             self._collect_utm_details()
 
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"bluetopo_debug_{timestamp}.log"
+        filename = f"noaabathymetry_debug_{timestamp}.log"
         filepath = os.path.join(self.project_dir, filename)
 
         lines = [
             "=" * 72,
-            "  BlueTopo Debug Report",
+            "  noaabathymetry Debug Report",
             "=" * 72,
             f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} "
             f"{_safe(lambda: datetime.datetime.now().astimezone().tzname())}",
@@ -138,14 +138,14 @@ class DebugReport:
     # ------------------------------------------------------------------
 
     def _collect_environment(self):
-        """Section 1: BlueTopo version, Python version, GDAL version, platform."""
-        from nbs.bluetopo import __version__
+        """Section 1: Package version, Python version, GDAL version, platform."""
+        from nbs.noaabathymetry import __version__
         gdal_version = _safe(lambda: __import__("osgeo").gdal.VersionInfo())
         self.sections.append("\n".join([
             "-" * 72,
             "  1. ENVIRONMENT",
             "-" * 72,
-            f"  BlueTopo version : {__version__}",
+            f"  noaabathymetry   : {__version__}",
             f"  Python           : {sys.version.split()[0]}",
             f"  GDAL             : {gdal_version}",
             f"  Platform         : {platform.system()} {platform.release()} ({platform.machine()})",

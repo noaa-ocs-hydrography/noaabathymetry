@@ -1,4 +1,4 @@
-/* BlueTopo logo above sidebar navigation */
+/* NOAA logo above sidebar navigation */
 .sidebar-logo {
     display: block;
     text-align: center;
@@ -6,7 +6,7 @@
 }
 
 .sidebar-logo img {
-    max-width: 80%;
+    max-width: 90%;
     height: auto;
 }
 

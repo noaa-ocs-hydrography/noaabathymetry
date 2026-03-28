@@ -13,11 +13,11 @@
 
 ## Overview
 
-This package simplifies getting BlueTopo data in your area of interest.
+This package simplifies getting NOAA bathymetric data in your area of interest.
 
 For most use cases, the quickstart below is all you need.
 
-For more detailed guides, API reference, and troubleshooting, see the [full documentation](https://noaa-ocs-hydrography.github.io/BlueTopo/).
+For more detailed guides, API reference, and troubleshooting, see the [full documentation](https://noaa-ocs-hydrography.github.io/noaabathymetry/).
 
 ## Background
 
@@ -45,22 +45,22 @@ Install conda (If you have not already): [conda installation](https://docs.conda
 In the command line, create an environment with the required packages:
 
 ```
-conda create -n bluetopo_env -c conda-forge 'gdal>=3.9'
+conda create -n noaabathymetry_env -c conda-forge 'gdal>=3.9'
 ```
 
 ```
-conda activate bluetopo_env
+conda activate noaabathymetry_env
 ```
 
 ```
-pip install bluetopo
+pip install noaabathymetry
 ```
 
 ## Quickstart
 
 After installation, you have access to a Python API and two matching CLI commands: `fetch_tiles` for downloading tiles and `build_vrt` for assembling them into VRTs.
 
-See the Python API and CLI sections below to get started. You can also use the [Quickstart Helper](https://noaa-ocs-hydrography.github.io/BlueTopo/quickstart-helper.html) to draw your area of interest on a map and generate usage examples.
+See the Python API and CLI sections below to get started. You can also use the [Quickstart Helper](https://noaa-ocs-hydrography.github.io/noaabathymetry/quickstart-helper.html) to draw your area of interest on a map and generate usage examples.
 
 ## Python API
 
@@ -69,14 +69,14 @@ Define your area of interest using any of the geometry formats listed below, the
 To download files in your area of interest:
 
 ```python
-from nbs.bluetopo import fetch_tiles
+from nbs.noaabathymetry import fetch_tiles
 result = fetch_tiles('/path/to/project', geometry='area_of_interest.gpkg')
 ```
 
 To build a GDAL VRT of the downloaded files:
 
 ```python
-from nbs.bluetopo import build_vrt 
+from nbs.noaabathymetry import build_vrt 
 result = build_vrt('/path/to/project')
 ```
 

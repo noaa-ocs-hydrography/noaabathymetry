@@ -10,13 +10,13 @@ import logging
 import os
 import sqlite3
 
-from nbs.bluetopo._internal.config import (
+from nbs.noaabathymetry._internal.config import (
     get_catalog_fields,
     get_vrt_utm_fields,
     get_tiles_fields,
 )
 
-logger = logging.getLogger("bluetopo")
+logger = logging.getLogger("noaabathymetry")
 
 # Increment when a release includes breaking changes that make older
 # projects incompatible.  check_internal_version() compares this against the
@@ -147,7 +147,7 @@ def check_internal_version(conn):
         if has_data:
             raise RuntimeError(
                 "This project was created with an older version of "
-                "BlueTopo that predates internal version tracking. "
+                "noaabathymetry that predates internal version tracking. "
                 "This release includes significant changes that are "
                 "not compatible with existing projects. Please delete "
                 "the existing project directory and re-run fetch_tiles "
@@ -163,7 +163,7 @@ def check_internal_version(conn):
         if stored_version < INTERNAL_VERSION:
             raise RuntimeError(
                 f"This project was created with an older version of "
-                f"BlueTopo (internal version v{stored_version}, "
+                f"noaabathymetry (internal version v{stored_version}, "
                 f"current is v{INTERNAL_VERSION}). "
                 "This release includes significant changes that are "
                 "not compatible with existing projects. Please delete "

@@ -60,7 +60,7 @@ S-102 sources also create a `Data/` subdirectory for the CATALOG.XML file and pr
 
 ## Fetch-then-build lifecycle
 
-BlueTopo operates in two distinct steps.
+The package operates in two distinct steps.
 
 ### Step 1: fetch_tiles
 
@@ -291,9 +291,9 @@ result = fetch_tiles('/path/to/project', geometry='aoi.gpkg', debug=True)
 fetch_tiles -d /path/to/project -g aoi.gpkg --debug
 ```
 
-This writes a timestamped log file (e.g. `bluetopo_debug_20240315_143022.log`) to the project directory containing:
+This writes a timestamped log file (e.g. `noaabathymetry_debug_20240315_143022.log`) to the project directory containing:
 
-1. **Environment** — BlueTopo version, Python version, GDAL version, platform
+1. **Environment** — package version, Python version, GDAL version, platform
 2. **Configuration** — active data source settings, file slots, gpkg field mappings
 3. **Filesystem** — existence and size of registry DB, tile folder, VRT folder
 4. **Database schema** — column definitions for all tables

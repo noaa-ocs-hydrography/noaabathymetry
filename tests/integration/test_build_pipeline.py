@@ -11,14 +11,14 @@ import os
 import pytest
 from osgeo import gdal
 
-from nbs.bluetopo._internal.config import (
+from nbs.noaabathymetry._internal.config import (
     get_config,
     get_built_flags,
     get_utm_file_columns,
     parse_resolution,
 )
-from nbs.bluetopo._internal.db import connect as connect_to_survey_registry
-from nbs.bluetopo._internal.vrt import (
+from nbs.noaabathymetry._internal.db import connect as connect_to_survey_registry
+from nbs.noaabathymetry._internal.vrt import (
     create_vrt,
     add_vrt_rat,
     generate_hillshade,

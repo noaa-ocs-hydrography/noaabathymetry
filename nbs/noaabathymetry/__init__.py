@@ -1,4 +1,4 @@
-"""BlueTopo — NOAA NBS bathymetric data download & VRT builder."""
+"""noaabathymetry — NOAA NBS bathymetric data download & VRT builder."""
 
 import logging
 import sys
@@ -35,7 +35,7 @@ class _ColorFormatter(logging.Formatter):
             return f"{color}{msg}{self.RESET}"
         return msg
 
-_logger = logging.getLogger("bluetopo")
+_logger = logging.getLogger("noaabathymetry")
 _handler = logging.StreamHandler(sys.stderr)
 _handler.setFormatter(_ColorFormatter("[%(asctime)s] %(message)s", "%H:%M:%S",
                                       use_color=sys.stderr.isatty()))
@@ -44,7 +44,7 @@ _logger.setLevel(logging.INFO)
 _logger.propagate = False
 
 try:
-    __version__ = version("BlueTopo")
+    __version__ = version("noaabathymetry")
 except PackageNotFoundError:
     __version__ = "unknown"
 

@@ -104,7 +104,7 @@ or
 > \* The NBS may be actively updating the tiles in question.
 > \* You can rerun fetch_tiles at a later time to download these tiles.
 
-**Cause:** The NBS S3 bucket is temporarily unavailable, or tiles are being updated. When fetching the tile scheme geopackage or XML catalog, BlueTopo retries once after 5 seconds. For individual tiles, links from the geopackage may temporarily point to files being replaced.
+**Cause:** The NBS S3 bucket is temporarily unavailable, or tiles are being updated. When fetching the tile scheme geopackage or XML catalog, the package retries once after 5 seconds. For individual tiles, links from the geopackage may temporarily point to files being replaced.
 
 **Fix:** Wait and rerun `fetch_tiles`. If the problem persists across multiple runs over several hours, contact the NBS team at ocs.nbs@noaa.gov.
 
@@ -159,7 +159,7 @@ if result.not_found:
 >   BlueTopo_VRT/
 >   BlueTopo_VRT_4m_8m/
 
-**Cause:** This is an informational warning, not an error. When running `build_vrt` with resolution parameters (`--tile-resolution-filter` or `--vrt-resolution-target`), the output goes to a parameterized directory (e.g. `BlueTopo_VRT_tr8m/`). If other VRT directories exist from previous builds with different parameters, BlueTopo notes them.
+**Cause:** This is an informational warning, not an error. When running `build_vrt` with resolution parameters (`--tile-resolution-filter` or `--vrt-resolution-target`), the output goes to a parameterized directory (e.g. `BlueTopo_VRT_tr8m/`). If other VRT directories exist from previous builds with different parameters, the package notes them.
 
 **What to do:** This warning is safe to ignore. The other directories are not modified. If you no longer need them, you can delete them manually. Deleting the default `BlueTopo_VRT/` directory will cause the next default `build_vrt` run to rebuild it from scratch.
 

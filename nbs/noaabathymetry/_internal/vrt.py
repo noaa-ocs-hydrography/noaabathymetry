@@ -13,7 +13,7 @@ import os
 
 from osgeo import gdal
 
-from nbs.bluetopo._internal.config import (
+from nbs.noaabathymetry._internal.config import (
     parse_resolution,
     validate_vrt_resolution_target,
     get_built_flags,
@@ -22,7 +22,7 @@ from nbs.bluetopo._internal.config import (
     get_utm_file_columns,
 )
 
-logger = logging.getLogger("bluetopo")
+logger = logging.getLogger("noaabathymetry")
 
 # Process-global GDAL settings applied at import time.
 # These affect all GDAL usage in the process. If BlueTopo is used

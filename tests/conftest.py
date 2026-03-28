@@ -9,14 +9,14 @@ import numpy as np
 import pytest
 from osgeo import gdal, ogr, osr
 
-from nbs.bluetopo._internal.config import get_config
-from nbs.bluetopo._internal.db import connect as connect_to_survey_registry
+from nbs.noaabathymetry._internal.config import get_config
+from nbs.noaabathymetry._internal.db import connect as connect_to_survey_registry
 
 
 @pytest.fixture(autouse=True)
 def _caplog_for_bluetopo(caplog):
     """Bridge caplog with the 'bluetopo' logger (propagate=False)."""
-    bt_logger = logging.getLogger("bluetopo")
+    bt_logger = logging.getLogger("noaabathymetry")
     bt_logger.addHandler(caplog.handler)
     caplog.set_level(logging.DEBUG, logger="bluetopo")
     yield

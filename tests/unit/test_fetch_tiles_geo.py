@@ -6,14 +6,14 @@ import os
 import pytest
 from osgeo import gdal, ogr, osr
 
-from nbs.bluetopo._internal.config import get_config
-from nbs.bluetopo._internal.db import connect as connect_to_survey_registry
-from nbs.bluetopo._internal.spatial import (
+from nbs.noaabathymetry._internal.config import get_config
+from nbs.noaabathymetry._internal.db import connect as connect_to_survey_registry
+from nbs.noaabathymetry._internal.spatial import (
     get_tile_list,
     parse_geometry_input,
     transform_layer,
 )
-from nbs.bluetopo._internal.download import upsert_tiles, all_db_tiles
+from nbs.noaabathymetry._internal.download import upsert_tiles, all_db_tiles
 
 
 # ---------------------------------------------------------------------------

@@ -22,9 +22,9 @@ from unittest import mock
 
 import pytest
 
-from nbs.bluetopo._internal.config import get_config, get_local_config, KNOWN_RAT_FIELDS
-import nbs.bluetopo._internal.fetcher as fetch_tiles_mod
-import nbs.bluetopo._internal.builder as build_vrt_mod
+from nbs.noaabathymetry._internal.config import get_config, get_local_config, KNOWN_RAT_FIELDS
+import nbs.noaabathymetry._internal.fetcher as fetch_tiles_mod
+import nbs.noaabathymetry._internal.builder as build_vrt_mod
 
 
 # ---------------------------------------------------------------------------
@@ -353,7 +353,7 @@ class TestBuildVrtLocalResolution:
         project_dir = str(tmp_path / "project")
         os.makedirs(project_dir, exist_ok=True)
         # Create the registry DB file
-        from nbs.bluetopo._internal.db import connect as connect_to_survey_registry
+        from nbs.noaabathymetry._internal.db import connect as connect_to_survey_registry
         conn = connect_to_survey_registry(project_dir, cfg)
         conn.close()
         # Create the tile folder that main() expects
@@ -434,7 +434,7 @@ class TestBuildVrtLocalResolution:
         project_dir = str(tmp_path / "project")
         os.makedirs(project_dir)
         # Create DB but not the tile folder
-        from nbs.bluetopo._internal.db import connect as connect_to_survey_registry
+        from nbs.noaabathymetry._internal.db import connect as connect_to_survey_registry
         conn = connect_to_survey_registry(project_dir, cfg)
         conn.close()
 

@@ -8,7 +8,7 @@ import os
 
 import pytest
 
-from nbs.bluetopo._internal.config import (
+from nbs.noaabathymetry._internal.config import (
     get_config,
     get_catalog_fields,
     get_vrt_utm_fields,
@@ -16,7 +16,7 @@ from nbs.bluetopo._internal.config import (
     get_built_flags,
     get_utm_file_columns,
 )
-from nbs.bluetopo._internal.db import connect as connect_to_survey_registry
+from nbs.noaabathymetry._internal.db import connect as connect_to_survey_registry
 
 
 REMOTE_SOURCES = ["bluetopo", "modeling", "bag", "s102v21", "s102v22", "s102v30"]

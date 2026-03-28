@@ -15,13 +15,13 @@ import os
 import platform
 from dataclasses import dataclass, field
 
-from nbs.bluetopo._internal.config import (
+from nbs.noaabathymetry._internal.config import (
     make_resolution_label,
     parse_resolution,
     resolve_data_source,
 )
-from nbs.bluetopo._internal.db import check_internal_version, connect
-from nbs.bluetopo._internal.download import (
+from nbs.noaabathymetry._internal.db import check_internal_version, connect
+from nbs.noaabathymetry._internal.download import (
     _get_s3_client,
     all_db_tiles,
     build_download_plan,
@@ -33,9 +33,9 @@ from nbs.bluetopo._internal.download import (
     update_records,
     upsert_tiles,
 )
-from nbs.bluetopo._internal.spatial import get_tile_list, parse_geometry_input
+from nbs.noaabathymetry._internal.spatial import get_tile_list, parse_geometry_input
 
-logger = logging.getLogger("bluetopo")
+logger = logging.getLogger("noaabathymetry")
 
 
 @dataclass
@@ -141,7 +141,7 @@ def fetch_tiles(
 
     report = None
     if debug:
-        from nbs.bluetopo._internal.diagnostics import DebugReport
+        from nbs.noaabathymetry._internal.diagnostics import DebugReport
         report = DebugReport(project_dir, data_source, cfg)
 
     result = FetchResult(tile_resolution_filter=tile_resolution_filter)

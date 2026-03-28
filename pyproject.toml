@@ -3,30 +3,30 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "BlueTopo"
+name = "noaabathymetry"
 version = "0.8.0"
 requires-python = ">=3.9"
 authors = [
   { name = "Glen Rice", email = "ocs.nbs@noaa.gov" },
   { name = "Tashi Geleg", email = "ocs.nbs@noaa.gov" },
 ]
-description = "National Bathymetric Source Project BlueTopo"
+description = "NOAA National Bathymetric Source — download and build VRTs from BlueTopo, Modeling, BAG, and S-102 data"
 readme = "README.md"
 license = { file = "LICENSE" }
-keywords = ["BlueTopo", "National Bathymetric Source", "Bathymetry"]
+keywords = ["NOAA", "National Bathymetric Source", "Bathymetry", "BlueTopo"]
 dependencies = ["boto3", "tqdm"]
 
 [project.optional-dependencies]
 test = ["pytest", "pytest-cov", "moto[s3]", "h5py", "numpy"]
 
 [project.scripts]
-fetch_tiles = "nbs.bluetopo.cli:fetch_tiles_command"
-build_vrt = "nbs.bluetopo.cli:build_vrt_command"
+fetch_tiles = "nbs.noaabathymetry.cli:fetch_tiles_command"
+build_vrt = "nbs.noaabathymetry.cli:build_vrt_command"
 
 [project.urls]
 homepage = "https://www.nauticalcharts.noaa.gov/data/bluetopo.html"
-documentation = "https://noaa-ocs-hydrography.github.io/BlueTopo/"
-source = "https://github.com/noaa-ocs-hydrography/BlueTopo"
+documentation = "https://noaa-ocs-hydrography.github.io/noaabathymetry/"
+source = "https://github.com/noaa-ocs-hydrography/noaabathymetry"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

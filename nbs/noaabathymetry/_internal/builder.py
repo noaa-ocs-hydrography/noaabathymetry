@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 
 from osgeo import gdal
 
-from nbs.bluetopo._internal.config import (
+from nbs.noaabathymetry._internal.config import (
     get_built_flags,
     get_utm_file_columns,
     make_resolution_label,
@@ -30,8 +30,8 @@ from nbs.bluetopo._internal.config import (
     resolve_data_source,
 )
 
-from nbs.bluetopo._internal.db import check_internal_version, connect
-from nbs.bluetopo._internal.vrt import (
+from nbs.noaabathymetry._internal.db import check_internal_version, connect
+from nbs.noaabathymetry._internal.vrt import (
     add_vrt_rat,
     build_tile_paths,
     compute_overview_factors,
@@ -46,7 +46,7 @@ from nbs.bluetopo._internal.vrt import (
     update_utm,
 )
 
-logger = logging.getLogger("bluetopo")
+logger = logging.getLogger("noaabathymetry")
 
 
 def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
@@ -543,7 +543,7 @@ def build_vrt(project_dir: str, data_source: str = None,
 
     report = None
     if debug:
-        from nbs.bluetopo._internal.diagnostics import DebugReport
+        from nbs.noaabathymetry._internal.diagnostics import DebugReport
         report = DebugReport(project_dir, data_source, cfg)
 
     result = BuildResult(tile_resolution_filter=tile_resolution_filter,

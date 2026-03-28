@@ -92,7 +92,7 @@ Draw your area of interest on the map below to generate usage examples.
 <div style="display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px;">
 <div style="flex: 1; min-width: 200px;">
 <label for="path-input" style="font-weight: bold; font-size: 13px; color: #aaa;">What's your project directory?</label>
-<input id="path-input" type="text" value="~/my_bluetopo" placeholder="Enter your project directory" oninput="refreshExamples()" onblur="validatePath(this.value)" onfocus="clearValidation()" style="width: 100%; padding: 8px; margin-top: 4px; border: 1px solid #30363d; border-radius: 4px; background: #0d1117; color: #58a6ff; font-family: monospace; font-size: 14px; box-sizing: border-box; outline: none;" />
+<input id="path-input" type="text" value="~/my_bathymetry" placeholder="Enter your project directory" oninput="refreshExamples()" onblur="validatePath(this.value)" onfocus="clearValidation()" style="width: 100%; padding: 8px; margin-top: 4px; border: 1px solid #30363d; border-radius: 4px; background: #0d1117; color: #58a6ff; font-family: monospace; font-size: 14px; box-sizing: border-box; outline: none;" />
 <span id="path-warning" style="display: none; color: #d29922; font-size: 12px; margin-top: 4px;"></span>
 </div>
 <div style="display: flex; align-items: flex-end; gap: 8px; padding-bottom: 2px;">
@@ -221,7 +221,7 @@ function refreshExamples() {
     // Python with syntax highlighting
     var ed = esc(dir);
     var eg = esc(geojson);
-    var py = '<span class="kw">from</span> <span class="mod">nbs.bluetopo</span> <span class="kw">import</span> <span class="fn">fetch_tiles</span>' +
+    var py = '<span class="kw">from</span> <span class="mod">nbs.noaabathymetry</span> <span class="kw">import</span> <span class="fn">fetch_tiles</span>' +
         (includeBuild ? '<span class="punc">,</span> <span class="fn">build_vrt</span>' : '') +
         '\n<span class="var">fetch_result</span> <span class="op">=</span> <span class="fn">fetch_tiles</span><span class="punc">(</span><span class="str">\'' + ed + '\'</span><span class="punc">,</span> <span class="param">geometry</span><span class="op">=</span><span class="str">\'' + eg + '\'</span><span class="punc">)</span>';
     if (includeBuild) py += '\n<span class="var">build_result</span> <span class="op">=</span> <span class="fn">build_vrt</span><span class="punc">(</span><span class="str">\'' + ed + '\'</span><span class="punc">)</span>';

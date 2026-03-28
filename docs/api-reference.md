@@ -2,10 +2,10 @@
 
 ## Python API
 
-Both public functions are importable from `nbs.bluetopo`:
+Both public functions are importable from `nbs.noaabathymetry`:
 
 ```python
-from nbs.bluetopo import fetch_tiles, build_vrt
+from nbs.noaabathymetry import fetch_tiles, build_vrt
 ```
 
 ---
@@ -49,7 +49,7 @@ Discover, download, and update NBS tiles.
 **Example**
 
 ```python
-from nbs.bluetopo import fetch_tiles
+from nbs.noaabathymetry import fetch_tiles
 
 result = fetch_tiles(
     '/home/user/bathymetry',
@@ -123,7 +123,7 @@ Build a flat GDAL VRT per UTM zone from all source tiles.
 **Example**
 
 ```python
-from nbs.bluetopo import build_vrt
+from nbs.noaabathymetry import build_vrt
 
 result = build_vrt(
     '/home/user/bathymetry',
@@ -219,7 +219,7 @@ print(result)
 
 ## CLI Reference
 
-Two commands are installed when you `pip install bluetopo`.
+Two commands are installed when you `pip install noaabathymetry`.
 
 ### fetch_tiles command
 

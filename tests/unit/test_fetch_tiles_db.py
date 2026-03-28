@@ -4,18 +4,18 @@ import os
 
 import pytest
 
-from nbs.bluetopo._internal.config import (
+from nbs.noaabathymetry._internal.config import (
     get_config,
     get_disk_fields,
     get_utm_file_columns,
     get_vrt_utm_fields,
 )
-from nbs.bluetopo._internal.download import (
+from nbs.noaabathymetry._internal.download import (
     insert_new,
     update_records,
     all_db_tiles,
 )
-from nbs.bluetopo._internal.db import connect as connect_to_survey_registry
+from nbs.noaabathymetry._internal.db import connect as connect_to_survey_registry
 
 
 # ---------------------------------------------------------------------------

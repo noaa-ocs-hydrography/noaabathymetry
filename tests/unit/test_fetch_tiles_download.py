@@ -11,15 +11,15 @@ import pytest
 from moto import mock_aws
 from osgeo import gdal
 
-from nbs.bluetopo._internal.config import get_config, DATA_SOURCES
-from nbs.bluetopo._internal.db import connect as connect_to_survey_registry
-from nbs.bluetopo._internal.download import (
+from nbs.noaabathymetry._internal.config import get_config, DATA_SOURCES
+from nbs.noaabathymetry._internal.db import connect as connect_to_survey_registry
+from nbs.noaabathymetry._internal.download import (
     get_tessellation,
     get_xml,
     _get_s3_client,
     all_db_tiles,
 )
-import nbs.bluetopo._internal.download as fetch_tiles_module
+import nbs.noaabathymetry._internal.download as fetch_tiles_module
 
 BUCKET = "noaa-ocs-nationalbathymetry-pds"
 
@@ -106,7 +106,7 @@ class TestGetTessellation:
         client = boto3.client("s3", region_name="us-east-1")
         client.create_bucket(Bucket=BUCKET)
 
-        with mock.patch("nbs.bluetopo._internal.download.time.sleep"):
+        with mock.patch("nbs.noaabathymetry._internal.download.time.sleep"):
             with pytest.raises(RuntimeError):
                 get_tessellation(
                     conn, project_dir,
@@ -425,7 +425,7 @@ class TestGetTessellationS3AllSources:
             os.makedirs(project_dir, exist_ok=True)
             conn = connect_to_survey_registry(project_dir, cfg)
 
-            with mock.patch("nbs.bluetopo._internal.download.time.sleep"):
+            with mock.patch("nbs.noaabathymetry._internal.download.time.sleep"):
                 with pytest.raises(RuntimeError):
                     get_tessellation(
                         conn, project_dir, cfg["geom_prefix"],

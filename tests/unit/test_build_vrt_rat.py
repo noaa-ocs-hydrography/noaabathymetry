@@ -6,8 +6,8 @@ import os
 import pytest
 from osgeo import gdal
 
-from nbs.bluetopo._internal.config import get_config, get_local_config, KNOWN_RAT_FIELDS
-from nbs.bluetopo._internal.vrt import add_vrt_rat, create_vrt
+from nbs.noaabathymetry._internal.config import get_config, get_local_config, KNOWN_RAT_FIELDS
+from nbs.noaabathymetry._internal.vrt import add_vrt_rat, create_vrt
 
 # Minimal RAT fields for testing (subset of BlueTopo)
 MINI_RAT_FIELDS = {
