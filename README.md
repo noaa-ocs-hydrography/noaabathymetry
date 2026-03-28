@@ -1,4 +1,6 @@
-<img src="docs/images/NOAA-1.png" alt="NOAA" width="120">
+<p align="center">
+  <img src="docs/images/NOAA-1.png" alt="NOAA" width="120">
+</p>
 
 ---
 
@@ -8,7 +10,7 @@
     <a href="#installation">Installation</a> •
     <a href="#quickstart">Quickstart</a> •
     <a href="#cli">CLI</a> •
-    <a href="#other-data-sources">Data Sources</a> •
+    <a href="#data-sources">Data Sources</a> •
     <a href="#authors">Contact</a>
 </p>
 
@@ -63,7 +65,7 @@ See the Python API and CLI sections below to get started. You can also use the [
 
 Define your area of interest using any of the geometry formats listed below, then you can use the following in a Python shell or script.
 
-To download files in your area of interest:
+To download files in your area of interest (default data source is BlueTopo):
 
 ```python
 from nbs.noaabathymetry import fetch_tiles
@@ -121,7 +123,7 @@ result = fetch_tiles('/path/to/project', geometry='POLYGON((-76.1 36.9, -75.9 36
 result = fetch_tiles('/path/to/project', geometry='{"type":"Polygon","coordinates":[[[-76.1,36.9],[-75.9,36.9],[-75.9,37.1],[-76.1,37.1],[-76.1,36.9]]]}')
 ```
 
-## Other Data Sources
+## Data Sources
 
 BlueTopo, Modeling, and various S-102 versioned data are available as data sources. You can work with these using the `data_source` argument (e.g. `data_source='modeling'`). When not specified, `data_source` defaults to BlueTopo.
 
