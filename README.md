@@ -18,7 +18,7 @@
 
 ## Overview
 
-This package simplifies getting NOAA bathymetric data in your area of interest.
+Point this package at your area of interest and get the latest and best public bathymetric data from NOAA.
 
 For most use cases, the quickstart below is all you need.
 
@@ -28,14 +28,13 @@ For more detailed guides, API reference, and troubleshooting, see the [full docu
 
 NOAA's [National Bathymetric Source](https://nauticalcharts.noaa.gov/learn/nbs.html) builds and publishes the best available high-resolution bathymetric data of U.S. waters. The program's workflow is designed for continuous throughput, ensuring the best bathymetric data is always available to professionals and the public. This data provides depth measurements nationwide, along with vertical uncertainty estimates and information on the originating survey source. It is available in multiple formats (GeoTIFF compilations like [BlueTopo](https://www.nauticalcharts.noaa.gov/data/bluetopo.html) and Modeling, BAG, and IHO S-102) hosted on a public S3 bucket.
 
-This package simplifies downloading bathymetric data from NOAA and optionally assembling them into per-UTM-zone GDAL Virtual Rasters for use in GIS applications. It supports six data sources (BlueTopo, Modeling, BAG, S-102 v2.1/v2.2/v3.0).
+This package simplifies downloading bathymetric data from NOAA and optionally assembling it into per-UTM-zone GDAL Virtual Rasters for use in GIS applications. It supports six data sources (BlueTopo, Modeling, BAG, S-102 v2.1/v2.2/v3.0).
 
 ## Requirements
 
-This codebase is written for Python 3 and relies on the following python
-packages:
+This package requires Python and the following dependencies:
 
-- gdal / ogr
+- GDAL (install via conda)
 - boto3
 - tqdm
 
@@ -59,13 +58,13 @@ pip install noaabathymetry
 
 ## Quickstart
 
-After installation, you have access to a Python API and two matching CLI commands: `fetch_tiles` for downloading tiles and `build_vrt` for assembling them into VRTs.
+After installation, the package provides a Python API and two CLI commands: `fetch_tiles` for downloading tiles and `build_vrt` for assembling them into VRTs.
 
 See the Python API and CLI sections below to get started. You can also use the [Quickstart Helper](https://noaa-ocs-hydrography.github.io/noaabathymetry/quickstart-helper.html) to draw your area of interest on a map and generate usage examples.
 
 ## Python API
 
-Define your area of interest using any of the geometry formats listed below, then you can use the following in a Python shell or script.
+Define your area of interest using any of the geometry formats listed below. You can then use the following in a Python shell or script.
 
 To download files in your area of interest (default data source is [BlueTopo](https://www.nauticalcharts.noaa.gov/data/bluetopo.html)):
 
@@ -99,7 +98,7 @@ build_vrt -d /path/to/project
 
 Use `-h` for help and to see additional arguments.
 
-For most usecases, reusing the commands above to stay up to date in your area of interest is adequate.
+For most use cases, reusing the commands above to stay up to date in your area of interest is adequate.
 
 ## Geometry formats
 
