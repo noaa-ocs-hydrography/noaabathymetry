@@ -1,4 +1,4 @@
-"""Tests for RAT aggregation logic in build_vrt.py (requires GDAL)."""
+"""Tests for RAT aggregation logic in mosaic_tiles.py (requires GDAL)."""
 
 import logging
 import os
@@ -6,8 +6,8 @@ import os
 import pytest
 from osgeo import gdal
 
-from nbs.bluetopo._internal.config import get_config, get_local_config, KNOWN_RAT_FIELDS
-from nbs.bluetopo._internal.vrt import add_vrt_rat, create_vrt
+from nbs.noaabathymetry._internal.config import get_config, get_local_config, KNOWN_RAT_FIELDS
+from nbs.noaabathymetry._internal.mosaic import add_mosaic_rat, create_vrt
 
 # Minimal RAT fields for testing (subset of BlueTopo)
 MINI_RAT_FIELDS = {
@@ -25,11 +25,11 @@ def _make_bt_cfg():
     return cfg
 
 
-class TestAddVrtRat:
+class TestAddMosaicRat:
     def test_noop_when_no_rat(self):
         cfg = get_config("bag")
         # Should return immediately without error
-        add_vrt_rat([], "/dummy", "dummy.vrt", cfg)
+        add_mosaic_rat([], "/dummy", "dummy.vrt", cfg)
 
     def test_direct_method_writes_rat(self, make_geotiff, tmp_path):
         cfg = _make_bt_cfg()
@@ -51,7 +51,7 @@ class TestAddVrtRat:
         vrt_path = str(tmp_path / "utm19.vrt")
         create_vrt([tif], vrt_path, None, False, ["Elevation", "Uncertainty", "Contributor"])
 
-        add_vrt_rat(tiles, project_dir, vrt_path, cfg)
+        add_mosaic_rat(tiles, project_dir, vrt_path, cfg)
 
         ds = gdal.Open(vrt_path, 0)
         band = ds.GetRasterBand(3)
@@ -89,7 +89,7 @@ class TestAddVrtRat:
         vrt_path = str(tmp_path / "utm19.vrt")
         create_vrt([tif1, tif2], vrt_path, None, False,
                    ["Elevation", "Uncertainty", "Contributor"])
-        add_vrt_rat(tiles, project_dir, vrt_path, cfg)
+        add_mosaic_rat(tiles, project_dir, vrt_path, cfg)
 
         ds = gdal.Open(vrt_path, 0)
         band = ds.GetRasterBand(3)
@@ -127,7 +127,7 @@ class TestAddVrtRat:
         vrt_path = str(tmp_path / "utm19.vrt")
         create_vrt([tif1, tif2], vrt_path, None, False,
                    ["Elevation", "Uncertainty", "Contributor"])
-        add_vrt_rat(tiles, project_dir, vrt_path, cfg)
+        add_mosaic_rat(tiles, project_dir, vrt_path, cfg)
 
         ds = gdal.Open(vrt_path, 0)
         band = ds.GetRasterBand(3)
@@ -152,7 +152,7 @@ class TestAddVrtRat:
         vrt_path = str(tmp_path / "utm19.vrt")
         create_vrt([tif], vrt_path, None, False,
                    ["Elevation", "Uncertainty", "Contributor"])
-        add_vrt_rat(tiles, project_dir, vrt_path, cfg)
+        add_mosaic_rat(tiles, project_dir, vrt_path, cfg)
 
         ds = gdal.Open(vrt_path, 0)
         band = ds.GetRasterBand(3)
@@ -177,7 +177,7 @@ class TestAddVrtRat:
                    ["Elevation", "Uncertainty", "Contributor"])
 
         with pytest.raises(FileNotFoundError, match="T1"):
-            add_vrt_rat(tiles, project_dir, vrt_path, cfg)
+            add_mosaic_rat(tiles, project_dir, vrt_path, cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -215,7 +215,7 @@ class TestRatZeroFields:
         vrt_path = str(tmp_path / "utm19.vrt")
         create_vrt([tif], vrt_path, None, False,
                    ["Elevation", "Uncertainty", "Contributor"])
-        add_vrt_rat(tiles, project_dir, vrt_path, cfg)
+        add_mosaic_rat(tiles, project_dir, vrt_path, cfg)
 
         ds = gdal.Open(vrt_path, 0)
         band = ds.GetRasterBand(3)
@@ -260,7 +260,7 @@ class TestRatMultipleSurveys:
         vrt_path = str(tmp_path / "utm19.vrt")
         create_vrt([tif1, tif2], vrt_path, None, False,
                    ["Elevation", "Uncertainty", "Contributor"])
-        add_vrt_rat(tiles, project_dir, vrt_path, cfg)
+        add_mosaic_rat(tiles, project_dir, vrt_path, cfg)
 
         ds = gdal.Open(vrt_path, 0)
         band = ds.GetRasterBand(3)
@@ -290,7 +290,7 @@ class TestRatMultipleSurveys:
         create_vrt([tif], vrt_path, None, False,
                    ["Elevation", "Uncertainty", "Contributor"])
 
-        add_vrt_rat(tiles, project_dir, vrt_path, cfg)
+        add_mosaic_rat(tiles, project_dir, vrt_path, cfg)
 
         ds = gdal.Open(vrt_path, 0)
         band = ds.GetRasterBand(3)
@@ -307,7 +307,7 @@ class TestRatMultipleSurveys:
         create_vrt([dummy], vrt_path, None, False,
                    ["Elevation", "Uncertainty", "Contributor"])
 
-        add_vrt_rat([], project_dir, vrt_path, cfg)
+        add_mosaic_rat([], project_dir, vrt_path, cfg)
 
         ds = gdal.Open(vrt_path, 0)
         band = ds.GetRasterBand(3)
@@ -337,7 +337,7 @@ HSD_RAT_FIELDS = {
 
 class TestDynamicFieldDetection:
     def test_mixed_schemas_uses_common_subset(self, make_geotiff, tmp_path, caplog):
-        """Tile1 has 4 fields (BT), tile2 has 5 fields (HSD) -> VRT RAT uses 4 common fields."""
+        """Tile1 has 4 fields (BT), tile2 has 5 fields (HSD) -> mosaic RAT uses 4 common fields."""
         cfg = _make_bt_cfg()
         # Give config the full HSD superset so it must be trimmed
         cfg["rat_fields"] = dict(HSD_RAT_FIELDS)
@@ -366,7 +366,7 @@ class TestDynamicFieldDetection:
         vrt_path = str(tmp_path / "utm19.vrt")
         create_vrt([tif1, tif2], vrt_path, None, False,
                    ["Elevation", "Uncertainty", "Contributor"])
-        add_vrt_rat(tiles, project_dir, vrt_path, cfg)
+        add_mosaic_rat(tiles, project_dir, vrt_path, cfg)
 
         ds = gdal.Open(vrt_path, 0)
         band = ds.GetRasterBand(3)
@@ -398,7 +398,7 @@ class TestDynamicFieldDetection:
         vrt_path = str(tmp_path / "utm19.vrt")
         create_vrt([tif], vrt_path, None, False,
                    ["Elevation", "Uncertainty", "Contributor"])
-        add_vrt_rat(tiles, project_dir, vrt_path, cfg)
+        add_mosaic_rat(tiles, project_dir, vrt_path, cfg)
 
         ds = gdal.Open(vrt_path, 0)
         band = ds.GetRasterBand(3)
@@ -426,7 +426,7 @@ class TestDynamicFieldDetection:
         vrt_path = str(tmp_path / "utm19.vrt")
         create_vrt([tif], vrt_path, None, False,
                    ["Elevation", "Uncertainty", "Contributor"])
-        add_vrt_rat(tiles, project_dir, vrt_path, cfg)
+        add_mosaic_rat(tiles, project_dir, vrt_path, cfg)
 
         ds = gdal.Open(vrt_path, 0)
         band = ds.GetRasterBand(3)
@@ -459,7 +459,7 @@ class TestDynamicFieldDetection:
         vrt_path = str(tmp_path / "utm19.vrt")
         create_vrt([tif], vrt_path, None, False,
                    ["Elevation", "Uncertainty", "Contributor"])
-        add_vrt_rat(tiles, project_dir, vrt_path, cfg)
+        add_mosaic_rat(tiles, project_dir, vrt_path, cfg)
 
         ds = gdal.Open(vrt_path, 0)
         band = ds.GetRasterBand(3)
@@ -469,7 +469,7 @@ class TestDynamicFieldDetection:
         ds = None
 
     def test_minimal_value_count_only(self, make_geotiff, tmp_path):
-        """Tile with only value+count (2 of 4 config fields) -> VRT RAT has 2 columns."""
+        """Tile with only value+count (2 of 4 config fields) -> mosaic RAT has 2 columns."""
         cfg = _make_bt_cfg()
         project_dir = str(tmp_path)
 
@@ -492,7 +492,7 @@ class TestDynamicFieldDetection:
         vrt_path = str(tmp_path / "utm19.vrt")
         create_vrt([tif], vrt_path, None, False,
                    ["Elevation", "Uncertainty", "Contributor"])
-        add_vrt_rat(tiles, project_dir, vrt_path, cfg)
+        add_mosaic_rat(tiles, project_dir, vrt_path, cfg)
 
         ds = gdal.Open(vrt_path, 0)
         band = ds.GetRasterBand(3)
@@ -531,7 +531,7 @@ class TestDynamicFieldDetection:
         vrt_path = str(tmp_path / "utm19.vrt")
         create_vrt([tif1, tif2], vrt_path, None, False,
                    ["Elevation", "Uncertainty", "Contributor"])
-        add_vrt_rat(tiles, project_dir, vrt_path, cfg)
+        add_mosaic_rat(tiles, project_dir, vrt_path, cfg)
 
         ds = gdal.Open(vrt_path, 0)
         band = ds.GetRasterBand(3)

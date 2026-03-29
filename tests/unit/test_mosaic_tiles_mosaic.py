@@ -1,12 +1,12 @@
-"""Tests for VRT creation functions in build_vrt.py (requires GDAL)."""
+"""Tests for VRT creation functions in mosaic_tiles.py (requires GDAL)."""
 
 import os
 
 import pytest
 from osgeo import gdal
 
-from nbs.bluetopo._internal.config import get_config
-from nbs.bluetopo._internal.vrt import create_vrt, compute_overview_factors, generate_hillshade, select_tiles_by_utm
+from nbs.noaabathymetry._internal.config import get_config
+from nbs.noaabathymetry._internal.mosaic import create_vrt, compute_overview_factors, generate_hillshade, select_tiles_by_utm
 
 
 # ---------------------------------------------------------------------------
@@ -131,13 +131,13 @@ class TestComputeOverviewFactors:
         factors = compute_overview_factors({16}, overview_levels=self.LEVELS)
         assert factors == [2, 4, 8, 16]
 
-    def test_vrt_resolution_target_override(self):
-        """vrt_resolution_target=8 with 2m+16m tiles.
+    def test_mosaic_resolution_target_override(self):
+        """mosaic_resolution_target=8 with 2m+16m tiles.
 
         Targets above coarsest (16m): 32, 64, 128, 256.
         Factors relative to native=8: 32/8=4, 64/8=8, 128/8=16, 256/8=32.
         """
-        factors = compute_overview_factors({2, 16}, vrt_resolution_target=8,
+        factors = compute_overview_factors({2, 16}, mosaic_resolution_target=8,
                                           overview_levels=self.LEVELS)
         assert factors == [4, 8, 16, 32]
 
@@ -244,24 +244,24 @@ class TestCreateVrtEdge:
 
 
 # ---------------------------------------------------------------------------
-# vrt_resolution_target
+# mosaic_resolution_target
 # ---------------------------------------------------------------------------
 
 
-class TestCreateVrtResolutionTarget:
-    def test_vrt_resolution_target_sets_pixel_size(self, make_geotiff, tmp_path):
-        """VRT with vrt_resolution_target should have the requested pixel size."""
+class TestCreateVrtResolution:
+    def test_mosaic_resolution_target_sets_pixel_size(self, make_geotiff, tmp_path):
+        """VRT with mosaic_resolution_target should have the requested pixel size."""
         t1 = make_geotiff("tile1.tif", bands=3)
         vrt_path = str(tmp_path / "output.vrt")
-        create_vrt([t1], vrt_path, None, False, vrt_resolution_target=8.0)
+        create_vrt([t1], vrt_path, None, False, mosaic_resolution_target=8.0)
         ds = gdal.Open(vrt_path)
         gt = ds.GetGeoTransform()
         assert gt[1] == 8.0
         assert abs(gt[5]) == 8.0
         ds = None
 
-    def test_no_vrt_resolution_target_uses_highest(self, make_geotiff, tmp_path):
-        """VRT without vrt_resolution_target should use highest (source) resolution."""
+    def test_no_mosaic_resolution_target_uses_highest(self, make_geotiff, tmp_path):
+        """VRT without mosaic_resolution_target should use highest (source) resolution."""
         t1 = make_geotiff("tile1.tif", bands=3)  # source pixel size is 2m
         vrt_path = str(tmp_path / "output.vrt")
         create_vrt([t1], vrt_path, None, False)
@@ -270,33 +270,33 @@ class TestCreateVrtResolutionTarget:
         assert gt[1] == 2.0
         ds = None
 
-    def test_negative_vrt_resolution_target_raises(self, make_geotiff, tmp_path):
+    def test_negative_mosaic_resolution_target_raises(self, make_geotiff, tmp_path):
         t1 = make_geotiff("tile1.tif", bands=3)
         vrt_path = str(tmp_path / "output.vrt")
         with pytest.raises(ValueError, match="must be a positive number"):
-            create_vrt([t1], vrt_path, None, False, vrt_resolution_target=-8.0)
+            create_vrt([t1], vrt_path, None, False, mosaic_resolution_target=-8.0)
 
-    def test_zero_vrt_resolution_target_raises(self, make_geotiff, tmp_path):
+    def test_zero_mosaic_resolution_target_raises(self, make_geotiff, tmp_path):
         t1 = make_geotiff("tile1.tif", bands=3)
         vrt_path = str(tmp_path / "output.vrt")
         with pytest.raises(ValueError, match="must be a positive number"):
-            create_vrt([t1], vrt_path, None, False, vrt_resolution_target=0.0)
+            create_vrt([t1], vrt_path, None, False, mosaic_resolution_target=0.0)
 
-    def test_nonstandard_vrt_resolution_target(self, make_geotiff, tmp_path):
+    def test_nonstandard_mosaic_resolution_target(self, make_geotiff, tmp_path):
         """Non-standard resolution like 5m should work."""
         t1 = make_geotiff("tile1.tif", bands=3)
         vrt_path = str(tmp_path / "output.vrt")
-        create_vrt([t1], vrt_path, None, False, vrt_resolution_target=5.0)
+        create_vrt([t1], vrt_path, None, False, mosaic_resolution_target=5.0)
         ds = gdal.Open(vrt_path)
         gt = ds.GetGeoTransform()
         assert gt[1] == 5.0
         ds = None
 
-    def test_fractional_vrt_resolution_target(self, make_geotiff, tmp_path):
+    def test_fractional_mosaic_resolution_target(self, make_geotiff, tmp_path):
         """Fractional resolution like 0.5m should work."""
         t1 = make_geotiff("tile1.tif", bands=3)
         vrt_path = str(tmp_path / "output.vrt")
-        create_vrt([t1], vrt_path, None, False, vrt_resolution_target=0.5)
+        create_vrt([t1], vrt_path, None, False, mosaic_resolution_target=0.5)
         ds = gdal.Open(vrt_path)
         gt = ds.GetGeoTransform()
         assert gt[1] == 0.5

@@ -3,10 +3,10 @@
 Covers:
 - Schema creation with exact column sets for every data source
 - Metadata table structure and population
-- Field population after build_vrt for single-dataset and multi-subdataset sources
+- Field population after mosaic_tiles for single-dataset and multi-subdataset sources
 - built_hillshade flag behavior (on/off, default, second-pass)
 - Reproject mode field population (BlueTopo only)
-- vrt_resolution_target effect on vrt_resolution field
+- mosaic_resolution_target effect on mosaic_resolution field
 - Sequential vs parallel execution producing identical DB state
 """
 
@@ -17,22 +17,22 @@ import sqlite3
 import pytest
 from osgeo import gdal
 
-from nbs.bluetopo._internal.config import (
+from nbs.noaabathymetry._internal.config import (
     get_config,
     get_all_reset_flags,
     get_catalog_fields,
     get_tiles_fields,
     get_utm_file_columns,
-    get_vrt_built_flags,
-    get_vrt_utm_fields,
+    get_mosaic_built_flags,
+    get_mosaic_fields,
 )
-from nbs.bluetopo._internal.builder import build_vrt
-from nbs.bluetopo._internal.db import (
+from nbs.noaabathymetry._internal.builder import mosaic_tiles
+from nbs.noaabathymetry._internal.db import (
     INTERNAL_VERSION,
     check_internal_version,
     connect as connect_to_survey_registry,
 )
-from nbs.bluetopo._internal.vrt import update_utm, select_unbuilt_utms
+from nbs.noaabathymetry._internal.mosaic import update_utm, select_unbuilt_utms
 
 MINI_RAT_FIELDS = {
     "value": [int, gdal.GFU_MinMax],
@@ -61,7 +61,7 @@ def _query_utm_row(project_dir, cfg, utm="19", params_key=""):
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     cur.execute(
-        "SELECT * FROM vrt_utm WHERE utm = ? AND params_key = ?",
+        "SELECT * FROM mosaic_utm WHERE utm = ? AND params_key = ?",
         (utm, params_key),
     )
     row = cur.fetchone()
@@ -72,7 +72,7 @@ def _query_utm_row(project_dir, cfg, utm="19", params_key=""):
 
 def _setup_project(make_geotiff, tmp_path, source="bluetopo",
                    resolutions=None, utm="19", sub_dir=None):
-    """Create a project directory with tiles and DB ready for build_vrt()."""
+    """Create a project directory with tiles and DB ready for mosaic_tiles()."""
     cfg = get_config(source)
     _skip_if_driver_missing(cfg)
 
@@ -115,11 +115,11 @@ def _setup_project(make_geotiff, tmp_path, source="bluetopo",
             list(tile_rec.values()),
         )
 
-    built_flags = get_vrt_built_flags(cfg)
+    built_flags = get_mosaic_built_flags(cfg)
     flag_cols = ", ".join(built_flags + ["built_hillshade"])
     flag_vals = ", ".join(["0"] * (len(built_flags) + 1))
     cursor.execute(
-        f"INSERT INTO vrt_utm(utm, params_key, {flag_cols}) "
+        f"INSERT INTO mosaic_utm(utm, params_key, {flag_cols}) "
         f"VALUES(?, '', {flag_vals})",
         (utm,),
     )
@@ -137,13 +137,13 @@ class TestSchemaExact:
     """Verify every expected column exists for all sources."""
 
     @pytest.mark.parametrize("source", ALL_SOURCES)
-    def test_vrt_utm_columns_exact(self, tmp_path, source):
+    def test_mosaic_utm_columns_exact(self, tmp_path, source):
         cfg = get_config(source)
         conn = connect_to_survey_registry(str(tmp_path), cfg)
         cursor = conn.cursor()
-        cursor.execute("SELECT name FROM pragma_table_info('vrt_utm')")
+        cursor.execute("SELECT name FROM pragma_table_info('mosaic_utm')")
         actual = {row[0] for row in cursor.fetchall()}
-        expected = set(get_vrt_utm_fields(cfg).keys())
+        expected = set(get_mosaic_fields(cfg).keys())
         assert expected == actual, f"Missing: {expected - actual}, Extra: {actual - expected}"
         conn.close()
 
@@ -194,7 +194,7 @@ class TestMetadataPopulation:
 
     def test_internal_version_set_after_build(self, make_geotiff, tmp_path):
         project_dir, cfg = _setup_project(make_geotiff, tmp_path)
-        build_vrt(project_dir, "bluetopo")
+        mosaic_tiles(project_dir, "bluetopo")
         conn = sqlite3.connect(_db_path(project_dir, cfg))
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
@@ -217,9 +217,9 @@ class TestBuiltFlagHelpers:
         assert "built_hillshade" in flags
 
     @pytest.mark.parametrize("source", ALL_SOURCES)
-    def test_vrt_built_flags_excludes_hillshade(self, source):
+    def test_mosaic_built_flags_excludes_hillshade(self, source):
         cfg = get_config(source)
-        flags = get_vrt_built_flags(cfg)
+        flags = get_mosaic_built_flags(cfg)
         assert "built_hillshade" not in flags
 
 
@@ -232,30 +232,30 @@ class TestUpdateUtmHillshade:
     def test_hillshade_true_sets_flag_1(self, registry_db):
         cfg = get_config("bluetopo")
         conn, _ = registry_db(cfg, utms=[{"utm": "19", "built": 0, "built_hillshade": 0}])
-        fields = {"utm": "19", "utm_vrt": "p.vrt", "built_hillshade": 1}
+        fields = {"utm": "19", "utm_mosaic": "p.vrt", "built_hillshade": 1}
         update_utm(conn, fields, cfg)
         row = dict(conn.cursor().execute(
-            "SELECT * FROM vrt_utm WHERE utm = '19'").fetchone())
+            "SELECT * FROM mosaic_utm WHERE utm = '19'").fetchone())
         assert row["built_hillshade"] == 1
         assert row["built"] == 1
 
     def test_hillshade_false_sets_flag_0(self, registry_db):
         cfg = get_config("bluetopo")
         conn, _ = registry_db(cfg, utms=[{"utm": "19", "built": 0, "built_hillshade": 0}])
-        fields = {"utm": "19", "utm_vrt": "p.vrt", "built_hillshade": 0}
+        fields = {"utm": "19", "utm_mosaic": "p.vrt", "built_hillshade": 0}
         update_utm(conn, fields, cfg)
         row = dict(conn.cursor().execute(
-            "SELECT * FROM vrt_utm WHERE utm = '19'").fetchone())
+            "SELECT * FROM mosaic_utm WHERE utm = '19'").fetchone())
         assert row["built_hillshade"] == 0
         assert row["built"] == 1
 
     def test_missing_hillshade_defaults_to_0(self, registry_db):
         cfg = get_config("bluetopo")
         conn, _ = registry_db(cfg, utms=[{"utm": "19", "built": 0}])
-        fields = {"utm": "19", "utm_vrt": "p.vrt"}
+        fields = {"utm": "19", "utm_mosaic": "p.vrt"}
         update_utm(conn, fields, cfg)
         row = dict(conn.cursor().execute(
-            "SELECT * FROM vrt_utm WHERE utm = '19'").fetchone())
+            "SELECT * FROM mosaic_utm WHERE utm = '19'").fetchone())
         assert row["built_hillshade"] == 0
         assert row["built"] == 1
 
@@ -277,14 +277,14 @@ class TestUpdateUtmHillshade:
         }])
         fields = {
             "utm": "19",
-            "utm_subdataset1_vrt": "s1.vrt", "utm_subdataset1_ovr": None,
-            "utm_subdataset2_vrt": "s2.vrt", "utm_subdataset2_ovr": None,
-            "utm_combined_vrt": "c.vrt",
+            "utm_subdataset1_mosaic": "s1.vrt", "utm_subdataset1_ovr": None,
+            "utm_subdataset2_mosaic": "s2.vrt", "utm_subdataset2_ovr": None,
+            "utm_combined_mosaic": "c.vrt",
             "built_hillshade": 1,
         }
         update_utm(conn, fields, cfg)
         row = dict(conn.cursor().execute(
-            "SELECT * FROM vrt_utm WHERE utm = '19'").fetchone())
+            "SELECT * FROM mosaic_utm WHERE utm = '19'").fetchone())
         assert row["built_subdataset1"] == 1
         assert row["built_subdataset2"] == 1
         assert row["built_combined"] == 1
@@ -292,28 +292,28 @@ class TestUpdateUtmHillshade:
 
 
 # ---------------------------------------------------------------------------
-# Full pipeline: build_vrt field population
+# Full pipeline: mosaic_tiles field population
 # ---------------------------------------------------------------------------
 
 
 class TestBuildPopulatesSingleDataset:
-    """Verify all vrt_utm fields after build_vrt for a single-dataset source."""
+    """Verify all mosaic_utm fields after mosaic_tiles for a single-dataset source."""
 
     @pytest.fixture
     def built_row(self, make_geotiff, tmp_path):
         project_dir, cfg = _setup_project(make_geotiff, tmp_path, "bluetopo")
-        build_vrt(project_dir, "bluetopo")
+        mosaic_tiles(project_dir, "bluetopo")
         return _query_utm_row(project_dir, cfg), project_dir, cfg
 
-    def test_vrt_path_populated(self, built_row):
+    def test_mosaic_path_populated(self, built_row):
         row, project_dir, _ = built_row
-        assert row["utm_vrt"] is not None
-        assert os.path.isfile(os.path.join(project_dir, row["utm_vrt"]))
+        assert row["utm_mosaic"] is not None
+        assert os.path.isfile(os.path.join(project_dir, row["utm_mosaic"]))
 
-    def test_vrt_disk_file_size_positive(self, built_row):
+    def test_mosaic_disk_file_size_positive(self, built_row):
         row, _, _ = built_row
-        assert row["utm_vrt_disk_file_size"] is not None
-        assert row["utm_vrt_disk_file_size"] > 0
+        assert row["utm_mosaic_disk_file_size"] is not None
+        assert row["utm_mosaic_disk_file_size"] > 0
 
     def test_tile_count(self, built_row):
         row, _, _ = built_row
@@ -328,9 +328,9 @@ class TestBuildPopulatesSingleDataset:
         assert row["tiles_32m"] == 0
         assert row["tiles_64m"] == 0
 
-    def test_vrt_resolution_is_native(self, built_row):
+    def test_mosaic_resolution_is_native(self, built_row):
         row, _, _ = built_row
-        assert row["vrt_resolution"] == 2.0
+        assert row["mosaic_resolution"] == 2.0
 
     def test_built_timestamp_is_iso(self, built_row):
         row, _, _ = built_row
@@ -366,7 +366,7 @@ class TestBuildPopulatesSingleDataset:
 class TestBuildWithHillshade:
     def test_hillshade_fields_populated(self, make_geotiff, tmp_path):
         project_dir, cfg = _setup_project(make_geotiff, tmp_path)
-        result = build_vrt(project_dir, "bluetopo", hillshade=True)
+        result = mosaic_tiles(project_dir, "bluetopo", hillshade=True)
         row = _query_utm_row(project_dir, cfg)
         assert row["built_hillshade"] == 1
         assert row["hillshade"] is not None
@@ -381,20 +381,20 @@ class TestBuildWithHillshade:
 
 
 class TestBuildWithResolutionTarget:
-    def test_vrt_resolution_matches_target(self, make_geotiff, tmp_path):
+    def test_mosaic_resolution_matches_target(self, make_geotiff, tmp_path):
         project_dir, cfg = _setup_project(make_geotiff, tmp_path,
                                           resolutions=[("2m", 2), ("4m", 4)])
-        build_vrt(project_dir, "bluetopo", vrt_resolution_target=4.0)
+        mosaic_tiles(project_dir, "bluetopo", mosaic_resolution_target=4.0)
         row = _query_utm_row(project_dir, cfg, params_key="_tr4m")
         assert row is not None
-        assert row["vrt_resolution"] == 4.0
+        assert row["mosaic_resolution"] == 4.0
 
     def test_native_resolution_without_target(self, make_geotiff, tmp_path):
         project_dir, cfg = _setup_project(make_geotiff, tmp_path,
                                           resolutions=[("2m", 2), ("4m", 4)])
-        build_vrt(project_dir, "bluetopo")
+        mosaic_tiles(project_dir, "bluetopo")
         row = _query_utm_row(project_dir, cfg)
-        assert row["vrt_resolution"] == 2.0
+        assert row["mosaic_resolution"] == 2.0
 
 
 class TestBuildReproject:
@@ -402,19 +402,19 @@ class TestBuildReproject:
 
     def test_reproject_fields(self, make_geotiff, tmp_path):
         project_dir, cfg = _setup_project(make_geotiff, tmp_path)
-        build_vrt(project_dir, "bluetopo", reproject=True)
+        mosaic_tiles(project_dir, "bluetopo", reproject=True)
         row = _query_utm_row(project_dir, cfg, params_key="_3857")
         assert row is not None
         # Output is a GeoTIFF, not a VRT
-        assert row["utm_vrt"] is not None
-        assert row["utm_vrt"].endswith(".tif")
-        assert os.path.isfile(os.path.join(project_dir, row["utm_vrt"]))
-        assert row["utm_vrt_disk_file_size"] > 0
+        assert row["utm_mosaic"] is not None
+        assert row["utm_mosaic"].endswith(".tif")
+        assert os.path.isfile(os.path.join(project_dir, row["utm_mosaic"]))
+        assert row["utm_mosaic_disk_file_size"] > 0
         assert row["built"] == 1
 
     def test_reproject_tile_counts(self, make_geotiff, tmp_path):
         project_dir, cfg = _setup_project(make_geotiff, tmp_path)
-        build_vrt(project_dir, "bluetopo", reproject=True)
+        mosaic_tiles(project_dir, "bluetopo", reproject=True)
         row = _query_utm_row(project_dir, cfg, params_key="_3857")
         assert row["tile_count"] == 2
         assert row["tiles_2m"] == 1
@@ -422,16 +422,16 @@ class TestBuildReproject:
 
     def test_reproject_metadata(self, make_geotiff, tmp_path):
         project_dir, cfg = _setup_project(make_geotiff, tmp_path)
-        build_vrt(project_dir, "bluetopo", reproject=True)
+        mosaic_tiles(project_dir, "bluetopo", reproject=True)
         row = _query_utm_row(project_dir, cfg, params_key="_3857")
         assert row["built_timestamp"] is not None
         assert row["build_duration_seconds"] > 0
-        assert row["vrt_resolution"] == 2.0
+        assert row["mosaic_resolution"] == 2.0
         assert row["built_hillshade"] == 0
 
     def test_reproject_with_hillshade(self, make_geotiff, tmp_path):
         project_dir, cfg = _setup_project(make_geotiff, tmp_path)
-        build_vrt(project_dir, "bluetopo", reproject=True, hillshade=True)
+        mosaic_tiles(project_dir, "bluetopo", reproject=True, hillshade=True)
         row = _query_utm_row(project_dir, cfg, params_key="_3857")
         assert row["built_hillshade"] == 1
         assert row["hillshade"] is not None
@@ -440,22 +440,22 @@ class TestBuildReproject:
 
     def test_reproject_with_resolution_target(self, make_geotiff, tmp_path):
         project_dir, cfg = _setup_project(make_geotiff, tmp_path)
-        build_vrt(project_dir, "bluetopo", reproject=True,
-                  vrt_resolution_target=4.0)
+        mosaic_tiles(project_dir, "bluetopo", reproject=True,
+                  mosaic_resolution_target=4.0)
         row = _query_utm_row(project_dir, cfg, params_key="_tr4m_3857")
         assert row is not None
-        assert row["vrt_resolution"] == 4.0
+        assert row["mosaic_resolution"] == 4.0
         assert row["built"] == 1
 
     def test_reproject_build_result_paths_are_absolute(self, make_geotiff, tmp_path):
         project_dir, cfg = _setup_project(make_geotiff, tmp_path)
-        result = build_vrt(project_dir, "bluetopo", reproject=True)
+        result = mosaic_tiles(project_dir, "bluetopo", reproject=True)
         assert len(result.built) == 1
         entry = result.built[0]
-        # vrt is always an absolute path
-        assert entry["vrt"] is not None
-        assert os.path.isabs(entry["vrt"])
-        assert os.path.isfile(entry["vrt"])
+        # mosaic is always an absolute path
+        assert entry["mosaic"] is not None
+        assert os.path.isabs(entry["mosaic"])
+        assert os.path.isfile(entry["mosaic"])
         # ovr is an absolute path when present
         if entry["ovr"] is not None:
             assert os.path.isabs(entry["ovr"])
@@ -478,7 +478,7 @@ class TestSecondPassHillshade:
         project_dir, cfg = _setup_project(make_geotiff, tmp_path)
 
         # First build: no hillshade
-        result1 = build_vrt(project_dir, "bluetopo")
+        result1 = mosaic_tiles(project_dir, "bluetopo")
         assert len(result1.built) == 1
         row = _query_utm_row(project_dir, cfg)
         assert row["built"] == 1
@@ -486,7 +486,7 @@ class TestSecondPassHillshade:
         assert row["hillshade"] is None
 
         # Second build: hillshade=True, but zone already built
-        result2 = build_vrt(project_dir, "bluetopo", hillshade=True)
+        result2 = mosaic_tiles(project_dir, "bluetopo", hillshade=True)
         # Zone was already built so it's skipped (not rebuilt)
         assert len(result2.built) == 0
 
@@ -497,7 +497,7 @@ class TestSecondPassHillshade:
         assert os.path.isfile(os.path.join(project_dir, row["hillshade"]))
         assert row["hillshade_disk_file_size"] > 0
 
-        # BuildResult.hillshades should capture the second-pass generation
+        # MosaicResult.hillshades should capture the second-pass generation
         assert len(result2.hillshades) == 1
         assert result2.hillshades[0]["utm"] == "19"
         assert os.path.isabs(result2.hillshades[0]["hillshade"])
@@ -507,7 +507,7 @@ class TestSecondPassHillshade:
         project_dir, cfg = _setup_project(make_geotiff, tmp_path)
 
         # Build with hillshade
-        build_vrt(project_dir, "bluetopo", hillshade=True)
+        mosaic_tiles(project_dir, "bluetopo", hillshade=True)
         row = _query_utm_row(project_dir, cfg)
         assert row["built_hillshade"] == 1
         hs_path = os.path.join(project_dir, row["hillshade"])
@@ -517,7 +517,7 @@ class TestSecondPassHillshade:
         os.remove(hs_path)
 
         # Rebuild with hillshade — should detect and regenerate
-        build_vrt(project_dir, "bluetopo", hillshade=True)
+        mosaic_tiles(project_dir, "bluetopo", hillshade=True)
         row = _query_utm_row(project_dir, cfg)
         assert row["built_hillshade"] == 1
         assert os.path.isfile(os.path.join(project_dir, row["hillshade"]))
@@ -540,26 +540,26 @@ class TestSequentialVsParallel:
         # Sequential build
         seq_dir, cfg = _setup_project(
             make_geotiff, tmp_path / "seq", resolutions=[("2m", 2), ("4m", 4)])
-        build_vrt(seq_dir, "bluetopo", workers=1)
+        mosaic_tiles(seq_dir, "bluetopo", workers=1)
         seq_row = _query_utm_row(seq_dir, cfg)
 
         # Parallel build (workers=2, though only 1 UTM zone)
         par_dir, _ = _setup_project(
             make_geotiff, tmp_path / "par", resolutions=[("2m", 2), ("4m", 4)])
-        build_vrt(par_dir, "bluetopo", workers=2)
+        mosaic_tiles(par_dir, "bluetopo", workers=2)
         par_row = _query_utm_row(par_dir, cfg)
 
         seq_cmp = self._get_comparable_fields(seq_row)
         par_cmp = self._get_comparable_fields(par_row)
 
         # Core fields should match
-        for key in ("tile_count", "tiles_2m", "tiles_4m", "vrt_resolution",
+        for key in ("tile_count", "tiles_2m", "tiles_4m", "mosaic_resolution",
                      "overview_count", "built", "built_hillshade"):
             assert seq_cmp[key] == par_cmp[key], f"Mismatch on {key}"
 
         # Both should have non-null VRT paths
-        assert seq_row["utm_vrt"] is not None
-        assert par_row["utm_vrt"] is not None
+        assert seq_row["utm_mosaic"] is not None
+        assert par_row["utm_mosaic"] is not None
 
 
 # ---------------------------------------------------------------------------
@@ -599,7 +599,7 @@ class TestBuildPopulatesMultiSubdataset:
             )
 
         cursor.execute(
-            "INSERT INTO vrt_utm(utm, params_key, built_subdataset1, "
+            "INSERT INTO mosaic_utm(utm, params_key, built_subdataset1, "
             "built_subdataset2, built_combined, built_hillshade) "
             "VALUES('19', '', 0, 0, 0, 0)"
         )
@@ -607,17 +607,17 @@ class TestBuildPopulatesMultiSubdataset:
         conn.close()
         return project_dir, cfg
 
-    def test_subdataset_vrts_populated(self, s102v22_project):
+    def test_subdataset_mosaics_populated(self, s102v22_project):
         project_dir, cfg = s102v22_project
-        build_vrt(project_dir, "s102v22")
+        mosaic_tiles(project_dir, "s102v22")
         row = _query_utm_row(project_dir, cfg)
-        assert row["utm_subdataset1_vrt"] is not None
-        assert row["utm_subdataset2_vrt"] is not None
-        assert row["utm_combined_vrt"] is not None
+        assert row["utm_subdataset1_mosaic"] is not None
+        assert row["utm_subdataset2_mosaic"] is not None
+        assert row["utm_combined_mosaic"] is not None
 
     def test_subdataset_built_flags(self, s102v22_project):
         project_dir, cfg = s102v22_project
-        build_vrt(project_dir, "s102v22")
+        mosaic_tiles(project_dir, "s102v22")
         row = _query_utm_row(project_dir, cfg)
         assert row["built_subdataset1"] == 1
         assert row["built_subdataset2"] == 1
@@ -626,25 +626,25 @@ class TestBuildPopulatesMultiSubdataset:
 
     def test_subdataset_disk_file_sizes(self, s102v22_project):
         project_dir, cfg = s102v22_project
-        build_vrt(project_dir, "s102v22")
+        mosaic_tiles(project_dir, "s102v22")
         row = _query_utm_row(project_dir, cfg)
-        assert row["utm_subdataset1_vrt_disk_file_size"] is not None
-        assert row["utm_subdataset1_vrt_disk_file_size"] > 0
-        assert row["utm_combined_vrt_disk_file_size"] is not None
-        assert row["utm_combined_vrt_disk_file_size"] > 0
+        assert row["utm_subdataset1_mosaic_disk_file_size"] is not None
+        assert row["utm_subdataset1_mosaic_disk_file_size"] > 0
+        assert row["utm_combined_mosaic_disk_file_size"] is not None
+        assert row["utm_combined_mosaic_disk_file_size"] > 0
 
     def test_subdataset_metadata(self, s102v22_project):
         project_dir, cfg = s102v22_project
-        build_vrt(project_dir, "s102v22")
+        mosaic_tiles(project_dir, "s102v22")
         row = _query_utm_row(project_dir, cfg)
         assert row["tile_count"] == 2
-        assert row["vrt_resolution"] == 2.0
+        assert row["mosaic_resolution"] == 2.0
         assert row["built_timestamp"] is not None
         assert row["build_duration_seconds"] > 0
 
     def test_subdataset_with_hillshade(self, s102v22_project):
         project_dir, cfg = s102v22_project
-        build_vrt(project_dir, "s102v22", hillshade=True)
+        mosaic_tiles(project_dir, "s102v22", hillshade=True)
         row = _query_utm_row(project_dir, cfg)
         assert row["built_hillshade"] == 1
         assert row["hillshade"] is not None
@@ -686,7 +686,7 @@ class TestBuildPopulatesBag:
             )
 
         cursor.execute(
-            "INSERT INTO vrt_utm(utm, params_key, built, built_hillshade) "
+            "INSERT INTO mosaic_utm(utm, params_key, built, built_hillshade) "
             "VALUES('19', '', 0, 0)"
         )
         conn.commit()
@@ -695,14 +695,14 @@ class TestBuildPopulatesBag:
 
     def test_bag_build_populates_fields(self, bag_project):
         project_dir, cfg = bag_project
-        build_vrt(project_dir, "bag")
+        mosaic_tiles(project_dir, "bag")
         row = _query_utm_row(project_dir, cfg)
         assert row["built"] == 1
-        assert row["utm_vrt"] is not None
+        assert row["utm_mosaic"] is not None
         assert row["tile_count"] == 2
-        assert row["vrt_resolution"] == 2.0
+        assert row["mosaic_resolution"] == 2.0
         assert row["built_hillshade"] == 0
-        assert row["utm_vrt_disk_file_size"] > 0
+        assert row["utm_mosaic_disk_file_size"] > 0
         assert row["build_duration_seconds"] > 0
 
 
@@ -714,7 +714,7 @@ class TestBuildPopulatesBag:
 class TestTileResolutionFilter:
     def test_filter_creates_params_partition(self, make_geotiff, tmp_path):
         project_dir, cfg = _setup_project(make_geotiff, tmp_path)
-        build_vrt(project_dir, "bluetopo", tile_resolution_filter=[4])
+        mosaic_tiles(project_dir, "bluetopo", tile_resolution_filter=[4])
         row = _query_utm_row(project_dir, cfg, params_key="_4m")
         assert row is not None
         assert row["built"] == 1
@@ -725,9 +725,9 @@ class TestTileResolutionFilter:
     def test_filter_does_not_affect_default_partition(self, make_geotiff, tmp_path):
         project_dir, cfg = _setup_project(make_geotiff, tmp_path)
         # Build default first
-        build_vrt(project_dir, "bluetopo")
+        mosaic_tiles(project_dir, "bluetopo")
         # Then build filtered
-        build_vrt(project_dir, "bluetopo", tile_resolution_filter=[4])
+        mosaic_tiles(project_dir, "bluetopo", tile_resolution_filter=[4])
         default_row = _query_utm_row(project_dir, cfg)
         filtered_row = _query_utm_row(project_dir, cfg, params_key="_4m")
         # Default has both tiles, filtered has only 4m
@@ -743,9 +743,9 @@ class TestTileResolutionFilter:
 class TestEdgeCases:
     def test_already_built_zone_skipped(self, make_geotiff, tmp_path):
         project_dir, cfg = _setup_project(make_geotiff, tmp_path)
-        r1 = build_vrt(project_dir, "bluetopo")
+        r1 = mosaic_tiles(project_dir, "bluetopo")
         assert len(r1.built) == 1
-        r2 = build_vrt(project_dir, "bluetopo")
+        r2 = mosaic_tiles(project_dir, "bluetopo")
         assert len(r2.built) == 0
         assert "19" in r2.skipped
 
@@ -757,23 +757,23 @@ class TestEdgeCases:
         conn = connect_to_survey_registry(project_dir, cfg)
         check_internal_version(conn)
         conn.cursor().execute(
-            "INSERT INTO vrt_utm(utm, params_key, built, built_hillshade) "
+            "INSERT INTO mosaic_utm(utm, params_key, built, built_hillshade) "
             "VALUES('19', '', 0, 0)")
         conn.commit()
         conn.close()
-        result = build_vrt(project_dir, "bluetopo")
+        result = mosaic_tiles(project_dir, "bluetopo")
         assert len(result.built) == 0
 
     def test_build_then_rebuild_preserves_hillshade_flag(self, make_geotiff, tmp_path):
         """Build with hillshade, then run without. built_hillshade should stay 1
         because the zone is skipped (already built)."""
         project_dir, cfg = _setup_project(make_geotiff, tmp_path)
-        build_vrt(project_dir, "bluetopo", hillshade=True)
+        mosaic_tiles(project_dir, "bluetopo", hillshade=True)
         row = _query_utm_row(project_dir, cfg)
         assert row["built_hillshade"] == 1
 
         # Second run without hillshade — zone is skipped
-        build_vrt(project_dir, "bluetopo", hillshade=False)
+        mosaic_tiles(project_dir, "bluetopo", hillshade=False)
         row = _query_utm_row(project_dir, cfg)
         # Flag preserved because zone wasn't rebuilt
         assert row["built_hillshade"] == 1

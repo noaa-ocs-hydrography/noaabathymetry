@@ -1,7 +1,7 @@
 """
 diagnostics.py - Diagnostic report generation for troubleshooting.
 
-When debug=True is passed to fetch_tiles() or build_vrt(), a report file
+When debug=True is passed to fetch_tiles() or mosaic_tiles(), a report file
 is written to the project directory capturing environment, config, DB state,
 filesystem state, tile anomalies, and any errors encountered during the run.
 
@@ -17,10 +17,10 @@ import platform
 import sys
 import traceback
 
-logger = logging.getLogger("bluetopo")
+logger = logging.getLogger("noaabathymetry")
 
-from nbs.bluetopo._internal.config import (
-    get_vrt_built_flags,
+from nbs.noaabathymetry._internal.config import (
+    get_mosaic_built_flags,
     get_disk_fields,
     get_utm_file_columns,
     get_verified_fields,
@@ -67,7 +67,7 @@ class DebugReport:
         self.exception_text = traceback.format_exc()
 
     def add_result(self, result):
-        """Capture the ``FetchResult`` or ``BuildResult`` for inclusion in the report."""
+        """Capture the ``FetchResult`` or ``MosaicResult`` for inclusion in the report."""
         if result is None:
             return
         lines = []
@@ -96,12 +96,12 @@ class DebugReport:
             self._collect_utm_details()
 
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"bluetopo_debug_{timestamp}.log"
+        filename = f"noaabathymetry_debug_{timestamp}.log"
         filepath = os.path.join(self.project_dir, filename)
 
         lines = [
             "=" * 72,
-            "  BlueTopo Debug Report",
+            "  noaabathymetry Debug Report",
             "=" * 72,
             f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} "
             f"{_safe(lambda: datetime.datetime.now().astimezone().tzname())}",
@@ -138,14 +138,14 @@ class DebugReport:
     # ------------------------------------------------------------------
 
     def _collect_environment(self):
-        """Section 1: BlueTopo version, Python version, GDAL version, platform."""
-        from nbs.bluetopo import __version__
+        """Section 1: package version, Python version, GDAL version, platform."""
+        from nbs.noaabathymetry import __version__
         gdal_version = _safe(lambda: __import__("osgeo").gdal.VersionInfo())
         self.sections.append("\n".join([
             "-" * 72,
             "  1. ENVIRONMENT",
             "-" * 72,
-            f"  BlueTopo version : {__version__}",
+            f"  noaabathymetry   : {__version__}",
             f"  Python           : {sys.version.split()[0]}",
             f"  GDAL             : {gdal_version}",
             f"  Platform         : {platform.system()} {platform.release()} ({platform.machine()})",
@@ -178,12 +178,12 @@ class DebugReport:
         ]))
 
     def _collect_filesystem(self):
-        """Section 3: existence and size of registry DB, tile folder, VRT folder."""
+        """Section 3: existence and size of registry DB, tile folder, mosaic folder."""
         pd = self.project_dir
         ds = self.data_source
         db_path = os.path.join(pd, f"{ds.lower()}_registry.db")
         tile_dir = os.path.join(pd, ds)
-        vrt_dir = os.path.join(pd, f"{ds}_VRT")
+        mosaic_dir = os.path.join(pd, f"{ds}_Mosaic")
 
         def _dir_info(path):
             if not os.path.isdir(path):
@@ -206,11 +206,11 @@ class DebugReport:
             f"  Project dir  : {pd} ({'exists' if os.path.isdir(pd) else 'DOES NOT EXIST'})",
             f"  Registry DB  : {_file_info(db_path)}",
             f"  Tile folder  : {ds}/ — {_dir_info(tile_dir)}",
-            f"  VRT folder   : {ds}_VRT/ — {_dir_info(vrt_dir)}",
+            f"  Mosaic folder : {ds}_Mosaic/ — {_dir_info(mosaic_dir)}",
         ]))
 
     def _collect_db_schema(self):
-        """Section 4: column definitions for tiles, vrt_utm, and catalog tables."""
+        """Section 4: column definitions for tiles, mosaic_utm, and catalog tables."""
         try:
             cursor = self.conn.cursor()
             lines = [
@@ -218,7 +218,7 @@ class DebugReport:
                 "  4. DATABASE SCHEMA",
                 "-" * 72,
             ]
-            for table in ["tiles", "vrt_utm", self.cfg["catalog_table"]]:
+            for table in ["tiles", "mosaic_utm", self.cfg["catalog_table"]]:
                 cursor.execute(f"SELECT name, type FROM pragma_table_info('{table}')")
                 cols = cursor.fetchall()
                 lines.append(f"  Table: {table} ({len(cols)} columns)")
@@ -234,7 +234,7 @@ class DebugReport:
             cursor = self.conn.cursor()
             disk_fields = get_disk_fields(self.cfg)
             verified_fields = get_verified_fields(self.cfg)
-            built_flags = get_vrt_built_flags(self.cfg)
+            built_flags = get_mosaic_built_flags(self.cfg)
 
             cursor.execute("SELECT COUNT(*) FROM tiles")
             total_tiles = cursor.fetchone()[0]
@@ -248,12 +248,12 @@ class DebugReport:
             unverified = cursor.fetchone()[0]
             pending = total_tiles - verified - unverified
 
-            cursor.execute("SELECT COUNT(*) FROM vrt_utm WHERE params_key = ''")
+            cursor.execute("SELECT COUNT(*) FROM mosaic_utm WHERE params_key = ''")
             total_utms = cursor.fetchone()[0]
             built_check = " AND ".join(f"{f} = 1" for f in built_flags)
-            cursor.execute(f"SELECT COUNT(*) FROM vrt_utm WHERE params_key = '' AND {built_check}")
+            cursor.execute(f"SELECT COUNT(*) FROM mosaic_utm WHERE params_key = '' AND {built_check}")
             built_utms = cursor.fetchone()[0]
-            cursor.execute("SELECT COUNT(DISTINCT params_key) FROM vrt_utm WHERE params_key != ''")
+            cursor.execute("SELECT COUNT(DISTINCT params_key) FROM mosaic_utm WHERE params_key != ''")
             param_partitions = cursor.fetchone()[0]
 
             lines = [
@@ -346,13 +346,13 @@ class DebugReport:
             self.sections.append(f"  6. TILE DETAILS\n  ERROR: {e}")
 
     def _collect_utm_details(self):
-        """Section 7: VRT/OVR paths and build status per UTM zone."""
+        """Section 7: Mosaic/OVR paths and build status per UTM zone."""
         try:
             cursor = self.conn.cursor()
             utm_cols = get_utm_file_columns(self.cfg)
-            built_flags = get_vrt_built_flags(self.cfg)
+            built_flags = get_mosaic_built_flags(self.cfg)
 
-            cursor.execute("SELECT * FROM vrt_utm ORDER BY params_key, utm")
+            cursor.execute("SELECT * FROM mosaic_utm ORDER BY params_key, utm")
             utms = [dict(row) for row in cursor.fetchall()]
 
             lines = [

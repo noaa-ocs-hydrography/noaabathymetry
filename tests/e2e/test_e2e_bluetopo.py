@@ -7,8 +7,8 @@ import os
 
 import pytest
 
-from nbs.bluetopo._internal.config import get_config
-from nbs.bluetopo._internal.download import _get_s3_client
+from nbs.noaabathymetry._internal.config import get_config
+from nbs.noaabathymetry._internal.download import _get_s3_client
 
 
 @pytest.mark.network

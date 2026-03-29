@@ -1,7 +1,7 @@
 """Full pipeline integration tests using synthetic data (no network).
 
 Creates synthetic GeoTIFFs, populates a registry DB, and runs the
-build_vrt pipeline to verify end-to-end VRT creation.
+mosaic_tiles pipeline to verify end-to-end VRT creation.
 
 Tests the flat pipeline: tiles -> UTM VRT directly.
 """
@@ -11,16 +11,16 @@ import os
 import pytest
 from osgeo import gdal
 
-from nbs.bluetopo._internal.config import (
+from nbs.noaabathymetry._internal.config import (
     get_config,
-    get_vrt_built_flags,
+    get_mosaic_built_flags,
     get_utm_file_columns,
     parse_resolution,
 )
-from nbs.bluetopo._internal.db import connect as connect_to_survey_registry
-from nbs.bluetopo._internal.vrt import (
+from nbs.noaabathymetry._internal.db import connect as connect_to_survey_registry
+from nbs.noaabathymetry._internal.mosaic import (
     create_vrt,
-    add_vrt_rat,
+    add_mosaic_rat,
     generate_hillshade,
     update_utm,
     select_unbuilt_utms,
@@ -91,7 +91,7 @@ class TestBluetopoPipeline:
 
         # Insert unbuilt UTM
         cursor.execute(
-            "INSERT INTO vrt_utm(utm, built) VALUES(?, ?)",
+            "INSERT INTO mosaic_utm(utm, built) VALUES(?, ?)",
             ("19", 0),
         )
         conn.commit()
@@ -138,9 +138,9 @@ class TestBluetopoPipeline:
         factors = compute_overview_factors(resolutions, overview_levels=cfg["overview_levels"])
 
         # Create UTM VRT directly from source tiles
-        vrt_dir = os.path.join(project_dir, "BlueTopo_VRT")
-        os.makedirs(vrt_dir, exist_ok=True)
-        rel_path = os.path.join("BlueTopo_VRT", "BlueTopo_Fetched_UTM19.vrt")
+        mosaic_dir = os.path.join(project_dir, "BlueTopo_Mosaic")
+        os.makedirs(mosaic_dir, exist_ok=True)
+        rel_path = os.path.join("BlueTopo_Mosaic", "BlueTopo_Fetched_UTM19.vrt")
         utm_vrt = os.path.join(project_dir, rel_path)
         create_vrt(tile_paths, utm_vrt, factors or None, True, cfg["band_descriptions"])
 
@@ -155,9 +155,9 @@ class TestBluetopoPipeline:
         resolutions.discard(None)
         factors = compute_overview_factors(resolutions, overview_levels=cfg["overview_levels"])
 
-        vrt_dir = os.path.join(project_dir, "BlueTopo_VRT")
-        os.makedirs(vrt_dir, exist_ok=True)
-        utm_vrt = os.path.join(project_dir, "BlueTopo_VRT", "BlueTopo_Fetched_UTM19.vrt")
+        mosaic_dir = os.path.join(project_dir, "BlueTopo_Mosaic")
+        os.makedirs(mosaic_dir, exist_ok=True)
+        utm_vrt = os.path.join(project_dir, "BlueTopo_Mosaic", "BlueTopo_Fetched_UTM19.vrt")
         create_vrt(tile_paths, utm_vrt, factors or None, True, cfg["band_descriptions"])
 
         ds = gdal.Open(utm_vrt)
@@ -177,14 +177,14 @@ class TestBluetopoPipeline:
         resolutions.discard(None)
         factors = compute_overview_factors(resolutions, overview_levels=cfg["overview_levels"])
 
-        vrt_dir = os.path.join(project_dir, "BlueTopo_VRT")
-        os.makedirs(vrt_dir, exist_ok=True)
-        rel_path = os.path.join("BlueTopo_VRT", "BlueTopo_Fetched_UTM19.vrt")
+        mosaic_dir = os.path.join(project_dir, "BlueTopo_Mosaic")
+        os.makedirs(mosaic_dir, exist_ok=True)
+        rel_path = os.path.join("BlueTopo_Mosaic", "BlueTopo_Fetched_UTM19.vrt")
         utm_vrt = os.path.join(project_dir, rel_path)
         create_vrt(tile_paths, utm_vrt, factors or None, True, cfg["band_descriptions"])
 
         # Update UTM record
-        fields = {"utm_vrt": rel_path, "utm_ovr": None, "utm": "19"}
+        fields = {"utm_mosaic": rel_path, "utm_ovr": None, "utm": "19"}
         if os.path.isfile(utm_vrt + ".ovr"):
             fields["utm_ovr"] = rel_path + ".ovr"
         update_utm(conn, fields, cfg)
@@ -203,13 +203,13 @@ class TestBluetopoPipeline:
         resolutions.discard(None)
         factors = compute_overview_factors(resolutions, overview_levels=cfg["overview_levels"])
 
-        vrt_dir = os.path.join(project_dir, "BlueTopo_VRT")
-        os.makedirs(vrt_dir, exist_ok=True)
-        utm_vrt = os.path.join(project_dir, "BlueTopo_VRT", "BlueTopo_Fetched_UTM19.vrt")
+        mosaic_dir = os.path.join(project_dir, "BlueTopo_Mosaic")
+        os.makedirs(mosaic_dir, exist_ok=True)
+        utm_vrt = os.path.join(project_dir, "BlueTopo_Mosaic", "BlueTopo_Fetched_UTM19.vrt")
         create_vrt(tile_paths, utm_vrt, factors or None, True, cfg["band_descriptions"])
 
         # Add RAT
-        add_vrt_rat(tiles, project_dir, utm_vrt, cfg)
+        add_mosaic_rat(tiles, project_dir, utm_vrt, cfg)
 
         ds = gdal.Open(utm_vrt, 0)
         band = ds.GetRasterBand(cfg["rat_band"])
@@ -231,9 +231,9 @@ class TestBluetopoPipeline:
         resolutions.discard(None)
         factors = compute_overview_factors(resolutions, overview_levels=cfg["overview_levels"])
 
-        vrt_dir = os.path.join(project_dir, "BlueTopo_VRT")
-        os.makedirs(vrt_dir, exist_ok=True)
-        utm_vrt = os.path.join(project_dir, "BlueTopo_VRT", "BlueTopo_Fetched_UTM19.vrt")
+        mosaic_dir = os.path.join(project_dir, "BlueTopo_Mosaic")
+        os.makedirs(mosaic_dir, exist_ok=True)
+        utm_vrt = os.path.join(project_dir, "BlueTopo_Mosaic", "BlueTopo_Fetched_UTM19.vrt")
         create_vrt(tile_paths, utm_vrt, factors or None, True, cfg["band_descriptions"])
 
         hs_path = utm_vrt.replace(".vrt", "_hillshade.tif")
@@ -257,7 +257,7 @@ class TestNoTilesPipeline:
         conn = connect_to_survey_registry(project_dir, cfg)
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO vrt_utm(utm, built) VALUES(?, ?)",
+            "INSERT INTO mosaic_utm(utm, built) VALUES(?, ?)",
             ("19", 0),
         )
         conn.commit()

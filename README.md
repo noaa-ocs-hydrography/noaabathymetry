@@ -1,4 +1,8 @@
-[![alt text](https://www.nauticalcharts.noaa.gov/data/images/bluetopo/logo.png)](https://www.nauticalcharts.noaa.gov/data/bluetopo.html)
+<p align="center">
+  <a href="https://nauticalcharts.noaa.gov/learn/nbs.html"><img src="docs/images/NOAA-1.png" alt="NOAA" width="180"></a>
+  <br>
+  <em>National Bathymetric Source</em>
+</p>
 
 ---
 
@@ -8,33 +12,29 @@
     <a href="#installation">Installation</a> •
     <a href="#quickstart">Quickstart</a> •
     <a href="#cli">CLI</a> •
+    <a href="#data-sources">Data Sources</a> •
     <a href="#authors">Contact</a>
 </p>
 
 ## Overview
 
-This package simplifies getting BlueTopo data in your area of interest.
+Point this package at your area of interest and get the latest and best public bathymetric data from NOAA.
 
 For most use cases, the quickstart below is all you need.
 
-For more detailed guides, API reference, and troubleshooting, see the [full documentation](https://noaa-ocs-hydrography.github.io/BlueTopo/).
+For more detailed guides, API reference, and troubleshooting, see the [full documentation](https://noaa-ocs-hydrography.github.io/noaabathymetry/).
 
 ## Background
 
-[BlueTopo](https://www.nauticalcharts.noaa.gov/data/bluetopo.html) is a compilation of the best available public bathymetric data of U.S. waters.
+NOAA's [National Bathymetric Source](https://nauticalcharts.noaa.gov/learn/nbs.html) builds and publishes the best available high-resolution bathymetric data of U.S. waters. The program's workflow is designed for continuous throughput, ensuring the best bathymetric data is always available to professionals and the public. This data provides depth measurements nationwide, along with vertical uncertainty estimates and information on the originating survey source. It is available in multiple formats (GeoTIFF compilations like [BlueTopo](https://www.nauticalcharts.noaa.gov/data/bluetopo.html) and Modeling, BAG, and IHO S-102) hosted on a public S3 bucket.
 
-Created by [NOAA Office of Coast Survey's](https://www.nauticalcharts.noaa.gov/) National Bathymetric Source project, [BlueTopo data](https://www.nauticalcharts.noaa.gov/data/bluetopo_specs.html) intends to provide depth information nationwide with the vertical uncertainty tied to that depth estimate as well as information on the survey source that it originated from.
-
-This data is presented in a multiband high resolution GeoTIFF with an associated raster attribute table.
-
-For answers to frequently asked questions, visit the [FAQ](https://www.nauticalcharts.noaa.gov/data/bluetopo_faq.html).
+This package simplifies downloading bathymetric data from NOAA and optionally assembling it into per-UTM-zone GDAL Virtual Rasters for use in GIS applications. It supports six data sources (BlueTopo, Modeling, BAG, S-102 v2.1/v2.2/v3.0).
 
 ## Requirements
 
-This codebase is written for Python 3 and relies on the following python
-packages:
+This package requires Python and the following dependencies, which are handled by the installation guide below:
 
-- gdal / ogr
+- GDAL
 - boto3
 - tqdm
 
@@ -45,60 +45,60 @@ Install conda (If you have not already): [conda installation](https://docs.conda
 In the command line, create an environment with the required packages:
 
 ```
-conda create -n bluetopo_env -c conda-forge 'gdal>=3.9'
+conda create -n noaabathymetry_env -c conda-forge 'gdal>=3.9'
 ```
 
 ```
-conda activate bluetopo_env
+conda activate noaabathymetry_env
 ```
 
 ```
-pip install bluetopo
+pip install noaabathymetry   # installs boto3 and tqdm automatically
 ```
 
 ## Quickstart
 
-After installation, you have access to a Python API and two matching CLI commands: `fetch_tiles` for downloading tiles and `build_vrt` for assembling them into VRTs.
+After installation, the package provides a Python API and a CLI with two subcommands: `nbs fetch` for downloading tiles and `nbs mosaic` for assembling them into mosaics.
 
-See the Python API and CLI sections below to get started. You can also use the [Quickstart Helper](https://noaa-ocs-hydrography.github.io/BlueTopo/quickstart-helper.html) to draw your area of interest on a map and generate usage examples.
+See the Python API and CLI sections below to get started. You can also use the [Quickstart Helper](https://noaa-ocs-hydrography.github.io/noaabathymetry/quickstart-helper.html) to draw your area of interest on a map and generate usage examples.
 
 ## Python API
 
-Define your area of interest using any of the geometry formats listed below, then you can use the following in a Python shell or script.
+Define your area of interest using any of the geometry formats listed below. You can then use the following in a Python shell or script.
 
-To download files in your area of interest:
+To download files in your area of interest (default data source is [BlueTopo](https://www.nauticalcharts.noaa.gov/data/bluetopo.html)):
 
 ```python
-from nbs.bluetopo import fetch_tiles
+from nbs.noaabathymetry import fetch_tiles
 result = fetch_tiles('/path/to/project', geometry='area_of_interest.gpkg')
 ```
 
-To build a GDAL VRT of the downloaded files:
+To mosaic the downloaded files:
 
 ```python
-from nbs.bluetopo import build_vrt 
-result = build_vrt('/path/to/project')
+from nbs.noaabathymetry import mosaic_tiles 
+result = mosaic_tiles('/path/to/project')
 ```
 
 ## CLI
 
 You can also use the command line. Confirm the environment we created during installation is activated.
 
-To fetch the latest BlueTopo data, pass a directory path and a geometry input of your area of interest:
+To fetch the latest data (default data source is [BlueTopo](https://www.nauticalcharts.noaa.gov/data/bluetopo.html)), pass a directory path and a geometry input of your area of interest:
 
 ```
-fetch_tiles -d /path/to/project -g area_of_interest.gpkg
+nbs fetch -d /path/to/project -g area_of_interest.gpkg
 ```
 
-Pass the same directory path to `build_vrt` to create a VRT from the fetched data:
+Pass the same directory path to `nbs mosaic` to mosaic the fetched data:
 
 ```
-build_vrt -d /path/to/project
+nbs mosaic -d /path/to/project
 ```
 
 Use `-h` for help and to see additional arguments.
 
-For most usecases, reusing the commands above to stay up to date in your area of interest is adequate.
+For most use cases, reusing the commands above to stay up to date in your area of interest is adequate.
 
 ## Geometry formats
 
@@ -124,9 +124,9 @@ result = fetch_tiles('/path/to/project', geometry='POLYGON((-76.1 36.9, -75.9 36
 result = fetch_tiles('/path/to/project', geometry='{"type":"Polygon","coordinates":[[[-76.1,36.9],[-75.9,36.9],[-75.9,37.1],[-76.1,37.1],[-76.1,36.9]]]}')
 ```
 
-## Other Data Sources
+## Data Sources
 
-In addition to BlueTopo, Modeling, and various S-102 versioned data is also available. You can work with these using the `data_source` argument (e.g. `data_source='modeling'`). When not specified, `data_source` defaults to BlueTopo.
+BlueTopo, Modeling, and various S-102 versioned data are available as data sources. You can work with these using the `data_source` argument (e.g. `data_source='modeling'`). When not specified, `data_source` defaults to BlueTopo.
 
 The primary difference between BlueTopo and Modeling data is the vertical datum. Modeling data is on a low water datum.
 

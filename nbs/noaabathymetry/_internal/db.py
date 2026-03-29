@@ -2,7 +2,7 @@
 db.py - SQLite registry database operations.
 
 Creates and maintains the survey registry database that tracks tile
-downloads, VRT build state, and catalog metadata.  The schema is
+downloads, mosaic build state, and catalog metadata.  The schema is
 driven by config file_slots and subdataset definitions.
 """
 
@@ -11,13 +11,13 @@ import logging
 import os
 import sqlite3
 
-from nbs.bluetopo._internal.config import (
+from nbs.noaabathymetry._internal.config import (
     get_catalog_fields,
-    get_vrt_utm_fields,
+    get_mosaic_fields,
     get_tiles_fields,
 )
 
-logger = logging.getLogger("bluetopo")
+logger = logging.getLogger("noaabathymetry")
 
 # Increment when a release includes breaking changes that make older
 # projects incompatible.  check_internal_version() compares this against the
@@ -32,7 +32,7 @@ def connect(project_dir: str, cfg: dict) -> sqlite3.Connection:
 
     - **catalog** (or **tileset**) -- tracks downloaded tessellation and XML files.
     - **tiles** -- one row per tile with links, disk paths, checksums, and verified flags.
-    - **vrt_utm** -- VRT/OVR paths and built flags per UTM zone.
+    - **mosaic_utm** -- mosaic/OVR paths and built flags per UTM zone.
     - **metadata** -- key-value pairs (e.g. internal version tracking).
 
     On first run, tables are created.  On subsequent runs, any new columns
@@ -52,7 +52,7 @@ def connect(project_dir: str, cfg: dict) -> sqlite3.Connection:
     """
     data_source = cfg["canonical_name"]
     catalog_fields = get_catalog_fields(cfg)
-    vrt_utm_fields = get_vrt_utm_fields(cfg)
+    mosaic_utm_fields = get_mosaic_fields(cfg)
     tiles_fields = get_tiles_fields(cfg)
     catalog_table = cfg["catalog_table"]
     catalog_pk = cfg["catalog_pk"]
@@ -75,7 +75,7 @@ def connect(project_dir: str, cfg: dict) -> sqlite3.Connection:
         )
         cursor.execute(
             """
-            CREATE TABLE IF NOT EXISTS vrt_utm (
+            CREATE TABLE IF NOT EXISTS mosaic_utm (
             utm text NOT NULL,
             params_key text NOT NULL DEFAULT '',
             PRIMARY KEY (utm, params_key)
@@ -128,7 +128,7 @@ def connect(project_dir: str, cfg: dict) -> sqlite3.Connection:
         # subdatasets) without requiring users to recreate their database.
         table_field_pairs = [
             (catalog_table, catalog_fields),
-            ("vrt_utm", vrt_utm_fields),
+            ("mosaic_utm", mosaic_utm_fields),
             ("tiles", tiles_fields),
         ]
         for table_name, field_dict in table_field_pairs:
@@ -163,7 +163,7 @@ def connect(project_dir: str, cfg: dict) -> sqlite3.Connection:
 def check_internal_version(conn):
     """Check the project's internal version and set it if absent.
 
-    Call this at the beginning of ``fetch_tiles`` or ``build_vrt``
+    Call this at the beginning of ``fetch_tiles`` or ``mosaic_tiles``
     (not from worker processes or diagnostics).
 
     For new projects (no version stored), the current internal version
@@ -190,11 +190,11 @@ def check_internal_version(conn):
         if has_data:
             raise RuntimeError(
                 "This project was created with an older version of "
-                "BlueTopo that predates internal version tracking. "
+                "noaabathymetry that predates internal version tracking. "
                 "This release includes significant changes that are "
                 "not compatible with existing projects. Please delete "
-                "the existing project directory and re-run fetch_tiles "
-                "and build_vrt, or use a new directory."
+                "the existing project directory and re-run fetch "
+                "and mosaic, or use a new directory."
             )
         cursor.execute(
             "UPDATE metadata SET internal_version = ? WHERE id = 1",
@@ -205,10 +205,10 @@ def check_internal_version(conn):
         if stored_version < INTERNAL_VERSION:
             raise RuntimeError(
                 f"This project was created with an older version of "
-                f"BlueTopo (internal version v{stored_version}, "
+                f"noaabathymetry (internal version v{stored_version}, "
                 f"current is v{INTERNAL_VERSION}). "
                 "This release includes significant changes that are "
                 "not compatible with existing projects. Please delete "
-                "the existing project directory and re-run fetch_tiles "
-                "and build_vrt, or use a new directory."
+                "the existing project directory and re-run fetch "
+                "and mosaic, or use a new directory."
             )

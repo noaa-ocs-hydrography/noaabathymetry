@@ -1,6 +1,6 @@
-[BlueTopo](https://www.nauticalcharts.noaa.gov/data/bluetopo.html) is a compilation of the best available public bathymetric data of U.S. waters. Created by [NOAA Office of Coast Survey's](https://www.nauticalcharts.noaa.gov/) National Bathymetric Source project, it provides depth information nationwide with the vertical uncertainty tied to that depth estimate as well as information on the survey source.
+NOAA's [National Bathymetric Source](https://nauticalcharts.noaa.gov/learn/nbs.html) builds and publishes the best available high-resolution bathymetric data of U.S. waters. The program's workflow is designed for continuous throughput, ensuring the best bathymetric data is always available to professionals and the public. This data provides depth measurements nationwide, along with vertical uncertainty estimates and information on the originating survey source. It is available in multiple formats (GeoTIFF compilations like [BlueTopo](https://www.nauticalcharts.noaa.gov/data/bluetopo.html) and Modeling, BAG, and IHO S-102) hosted on a public S3 bucket.
 
-This package simplifies downloading bathymetric tiles from NOAA's public S3 bucket and assembling them into per-UTM-zone GDAL Virtual Rasters for use in GIS applications. It supports six S3-hosted data sources (BlueTopo, Modeling, BAG, S-102 v2.1/v2.2/v3.0).
+This package simplifies downloading bathymetric data from NOAA and optionally assembling them into per-UTM-zone GDAL Virtual Rasters for use in GIS applications. It supports six data sources (BlueTopo, Modeling, BAG, S-102 v2.1/v2.2/v3.0).
 
 > **Note:** The S-102 data available through this package are for test and evaluation and should not be used for navigation. For official S-102 data, see the [data](https://noaa-s102-pds.s3.amazonaws.com/index.html) available from [Precision Marine Navigation](https://oceanservice.noaa.gov/navigation/precision-navigation/).
 
@@ -8,7 +8,7 @@ This package simplifies downloading bathymetric tiles from NOAA's public S3 buck
 
 This package gives you a straightforward way to get high-resolution bathymetric data from NOAA's National Bathymetric Source.
 
-Point the package at your area of interest and it handles discovery, download, checksum verification, and optional VRT assembly, ready to open in QGIS, ArcGIS, or any GDAL-compatible tool.
+Point the package at your area of interest and it handles discovery, download, checksum verification, and optional mosaic assembly, ready to open in QGIS, ArcGIS, or any GDAL-compatible tool.
 
 Common use cases include:
 
@@ -33,29 +33,29 @@ Install conda if you haven't already: [conda installation](https://docs.conda.io
 Create an environment with the required packages:
 
 ```
-conda create -n bluetopo_env -c conda-forge 'gdal>=3.9'
-conda activate bluetopo_env
-pip install bluetopo
+conda create -n noaabathymetry_env -c conda-forge 'gdal>=3.9'
+conda activate noaabathymetry_env
+pip install noaabathymetry
 ```
 
 > **Note:** The `libgdal-hdf5` package is required for BAG and S-102 data sources. If you only need BlueTopo or Modeling data, `gdal>=3.4` alone is sufficient.
 
 ## Quick start
 
-After installation, you have access to a Python API and two matching CLI commands: `fetch_tiles` for downloading tiles and `build_vrt` for assembling them into VRTs.
+After installation, you have access to a Python API and a CLI with two subcommands: `nbs fetch` for downloading tiles and `nbs mosaic` for assembling them into mosaics.
 
 You can use the [Quickstart Helper](quickstart-helper.md) to draw your area of interest on a map and generate usage examples.
 
 ### Python API
 
 ```python
-from nbs.bluetopo import fetch_tiles, build_vrt
+from nbs.noaabathymetry import fetch_tiles, mosaic_tiles
 
 result = fetch_tiles('/path/to/project', geometry='area_of_interest.gpkg')
-vrt_result = build_vrt('/path/to/project')
+mosaic_result = mosaic_tiles('/path/to/project')
 ```
 
-Both functions return structured result objects ([`FetchResult`](api-reference.md#fetchresult), [`BuildResult`](api-reference.md#buildresult)) you can inspect:
+Both functions return structured result objects ([`FetchResult`](api-reference.md#fetchresult), [`MosaicResult`](api-reference.md#mosaicresult)) you can inspect:
 
 ```python
 result = fetch_tiles('/path/to/project', geometry='area_of_interest.gpkg')
@@ -64,9 +64,9 @@ print(f"Failed: {len(result.failed)}")
 print(f"Not found: {len(result.not_found)}")
 print(f"Already up to date: {len(result.existing)}")
 
-vrt_result = build_vrt('/path/to/project')
-print(f"Built {len(vrt_result.built)} UTM zone VRTs")
-print(f"Skipped {len(vrt_result.skipped)} already up-to-date zones")
+mosaic_result = mosaic_tiles('/path/to/project')
+print(f"Built {len(mosaic_result.built)} UTM zone mosaics")
+print(f"Skipped {len(mosaic_result.skipped)} already up-to-date zones")
 ```
 
 ### CLI
@@ -74,8 +74,8 @@ print(f"Skipped {len(vrt_result.skipped)} already up-to-date zones")
 The same workflow is available from the command line:
 
 ```
-fetch_tiles -d /path/to/project -g area_of_interest.gpkg
-build_vrt -d /path/to/project
+nbs fetch -d /path/to/project -g area_of_interest.gpkg
+nbs mosaic -d /path/to/project
 ```
 
 ### Geometry formats
@@ -108,12 +108,12 @@ You can specify any S3-hosted source by name with the `data_source` parameter:
 
 ```python
 result = fetch_tiles('/path/to/project', geometry='aoi.gpkg', data_source='bag')
-vrt_result = build_vrt('/path/to/project', data_source='bag')
+mosaic_result = mosaic_tiles('/path/to/project', data_source='bag')
 ```
 
 ```
-fetch_tiles -d /path/to/project -g aoi.gpkg -s modeling
-build_vrt -d /path/to/project -s modeling
+nbs fetch -d /path/to/project -g aoi.gpkg -s modeling
+nbs mosaic -d /path/to/project -s modeling
 ```
 
 See [Data Sources](data-sources.md) for details on all available sources.

@@ -9,18 +9,18 @@ import numpy as np
 import pytest
 from osgeo import gdal, ogr, osr
 
-from nbs.bluetopo._internal.config import get_config
-from nbs.bluetopo._internal.db import connect as connect_to_survey_registry
+from nbs.noaabathymetry._internal.config import get_config
+from nbs.noaabathymetry._internal.db import connect as connect_to_survey_registry
 
 
 @pytest.fixture(autouse=True)
-def _caplog_for_bluetopo(caplog):
-    """Bridge caplog with the 'bluetopo' logger (propagate=False)."""
-    bt_logger = logging.getLogger("bluetopo")
-    bt_logger.addHandler(caplog.handler)
-    caplog.set_level(logging.DEBUG, logger="bluetopo")
+def _caplog_for_noaabathymetry(caplog):
+    """Bridge caplog with the 'noaabathymetry' logger (propagate=False)."""
+    nbs_logger = logging.getLogger("noaabathymetry")
+    nbs_logger.addHandler(caplog.handler)
+    caplog.set_level(logging.DEBUG, logger="noaabathymetry")
     yield
-    bt_logger.removeHandler(caplog.handler)
+    nbs_logger.removeHandler(caplog.handler)
 
 
 # ---------------------------------------------------------------------------
@@ -840,7 +840,7 @@ def registry_db(tmp_path):
                 placeholders = ", ".join(["?"] * len(utm))
                 vals = list(utm.values())
                 cursor.execute(
-                    f"INSERT OR REPLACE INTO vrt_utm({cols}) VALUES({placeholders})",
+                    f"INSERT OR REPLACE INTO mosaic_utm({cols}) VALUES({placeholders})",
                     vals,
                 )
 

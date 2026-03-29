@@ -1,6 +1,6 @@
 # Data Sources
 
-BlueTopo supports six S3-hosted data sources from the NOAA National Bathymetric Source (NBS) project that can be fetched by name.
+This package supports six S3-hosted data sources from the NOAA National Bathymetric Source (NBS) project that can be fetched by name.
 
 ## S3 sources
 
@@ -19,7 +19,9 @@ These sources are fetched from NOAA's public S3 bucket. Pass the source key as t
 
 ## BlueTopo
 
-The default and most commonly used source. A publicly available national bathymetric compilation on NOAA's S3 bucket.
+[BlueTopo](https://www.nauticalcharts.noaa.gov/data/bluetopo.html) is a compilation of the best available public bathymetric data of U.S. waters. Created by [NOAA Office of Coast Survey's](https://www.nauticalcharts.noaa.gov/) National Bathymetric Source project, it provides depth information nationwide with the vertical uncertainty tied to that depth estimate as well as information on the survey source.
+
+It is the default and most commonly used data source.
 
 **Source key:** `bluetopo`
 
@@ -121,7 +123,7 @@ Requires a CATALOG.XML file downloaded from S3 (handled automatically by `fetch_
 
 ## S102 v2.2
 
-IHO S-102 v2.2 with dual subdatasets: bathymetry coverage and a quality-of-survey layer. The VRT build produces separate subdataset VRTs plus a combined VRT.
+IHO S-102 v2.2 with dual subdatasets: bathymetry coverage and a quality-of-survey layer. The mosaic build produces separate subdataset VRTs plus a combined VRT.
 
 **Source key:** `s102v22`
 

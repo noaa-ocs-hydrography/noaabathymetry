@@ -12,7 +12,7 @@ import os
 
 from osgeo import ogr, osr
 
-logger = logging.getLogger("bluetopo")
+logger = logging.getLogger("noaabathymetry")
 
 # "Memory" was merged into "MEM" in GDAL 3.11; older versions only know "Memory".
 _ogr_mem_driver = ogr.GetDriverByName("MEM")

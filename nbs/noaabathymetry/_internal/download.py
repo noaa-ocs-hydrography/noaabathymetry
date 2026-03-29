@@ -31,7 +31,7 @@ from botocore.client import Config
 from osgeo import ogr
 from tqdm import tqdm
 
-from nbs.bluetopo._internal.config import (
+from nbs.noaabathymetry._internal.config import (
     _timestamp,
     get_all_reset_flags,
     get_disk_fields,
@@ -39,7 +39,7 @@ from nbs.bluetopo._internal.config import (
     get_verified_fields,
 )
 
-logger = logging.getLogger("bluetopo")
+logger = logging.getLogger("noaabathymetry")
 
 
 # ---------------------------------------------------------------------------
@@ -552,11 +552,11 @@ def execute_downloads(download_dict, data_source):
 # ---------------------------------------------------------------------------
 
 def update_records(conn, download_dict, successful_downloads, cfg):
-    """Update ``tiles`` and ``vrt_utm`` tables after successful downloads.
+    """Update ``tiles`` and ``mosaic_utm`` tables after successful downloads.
 
     For each successfully downloaded tile, sets disk paths and verified
-    flags in ``tiles``, ensures a ``vrt_utm`` row exists for the
-    affected UTM zone, and resets all build flags so ``build_vrt``
+    flags in ``tiles``, ensures a ``mosaic_utm`` row exists for the
+    affected UTM zone, and resets all build flags so ``mosaic_tiles``
     will rebuild affected zones.
 
     Parameters
@@ -628,7 +628,7 @@ def update_records(conn, download_dict, successful_downloads, cfg):
             vals = [utm, ""] + [0] * (len(insert_cols) - 2)
             insert_rows.append(tuple(vals))
         cursor.executemany(
-            f"INSERT OR IGNORE INTO vrt_utm({insert_col_str}) VALUES({insert_ph})",
+            f"INSERT OR IGNORE INTO mosaic_utm({insert_col_str}) VALUES({insert_ph})",
             insert_rows,
         )
 
@@ -640,7 +640,7 @@ def update_records(conn, download_dict, successful_downloads, cfg):
         reset_clause = ", ".join(reset_parts)
         utm_ph = ", ".join(["?"] * len(affected_utms))
         cursor.execute(
-            f"UPDATE vrt_utm SET {reset_clause} WHERE utm IN ({utm_ph})",
+            f"UPDATE mosaic_utm SET {reset_clause} WHERE utm IN ({utm_ph})",
             list(affected_utms),
         )
 
@@ -788,7 +788,7 @@ def upsert_tiles(conn, project_dir, tile_scheme, cfg):
                     f"Unexpected date format '{delivered_date}' for tile "
                     f"{db_tile['tilename']}. Expected 'YYYY-MM-DD HH:MM:SS'. "
                     f"The tilescheme format may have changed. "
-                    f"Please contact NBS or update BlueTopo.\n{debug_info}")
+                    f"Please contact NBS or update noaabathymetry.\n{debug_info}")
             _date_validated = True
 
         # String comparison works chronologically for YYYY-MM-DD [HH:MM:SS] format.

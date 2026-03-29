@@ -1,10 +1,10 @@
 """
-build_vrt.py - Orchestrate GDAL Virtual Raster creation from downloaded tiles.
+builder.py - Orchestrate mosaic creation from downloaded tiles.
 
 Thin orchestrator that coordinates:
 1. Data source resolution
-2. UTM zone discovery and missing VRT detection
-3. Per-UTM VRT creation with adaptive overviews
+2. UTM zone discovery and missing mosaic detection
+3. Per-UTM mosaic creation with adaptive overviews
 4. RAT aggregation for sources that support it
 """
 
@@ -19,21 +19,21 @@ from dataclasses import dataclass, field
 
 from osgeo import gdal
 
-from nbs.bluetopo._internal.config import (
-    get_vrt_built_flags,
+from nbs.noaabathymetry._internal.config import (
+    get_mosaic_built_flags,
     get_all_reset_flags,
     get_utm_file_columns,
     make_resolution_label,
-    make_vrt_dir_name,
+    make_mosaic_dir_name,
     make_params_key,
     parse_resolution,
-    validate_vrt_resolution_target,
+    validate_mosaic_resolution_target,
     resolve_data_source,
 )
 
-from nbs.bluetopo._internal.db import check_internal_version, connect
-from nbs.bluetopo._internal.vrt import (
-    add_vrt_rat,
+from nbs.noaabathymetry._internal.db import check_internal_version, connect
+from nbs.noaabathymetry._internal.mosaic import (
+    add_mosaic_rat,
     build_tile_paths,
     compute_overview_factors,
     configure_gdal_for_worker,
@@ -47,14 +47,14 @@ from nbs.bluetopo._internal.vrt import (
     update_utm,
 )
 
-logger = logging.getLogger("bluetopo")
+logger = logging.getLogger("noaabathymetry")
 
 
-def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
-                     vrt_dir_name, params_key, relative_to_vrt,
-                     vrt_resolution_target, tile_resolution_filter,
+def _build_utm_zone(project_dir, cfg, data_source, utm, mosaic_dir,
+                     mosaic_dir_name, params_key, relative_to_vrt,
+                     mosaic_resolution_target, tile_resolution_filter,
                      hillshade, total_workers=1):
-    """Build one UTM zone VRT.  Designed to run in a worker process.
+    """Build one UTM zone mosaic.  Designed to run in a worker process.
 
     Opens a read-only DB connection for tile selection and RAT
     aggregation (schema migration is already done by the main process).
@@ -80,7 +80,7 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
             # Compute overview factors once — all subdatasets share the same grid resolution.
             factors = compute_overview_factors(
                 resolutions=tile_resolutions,
-                vrt_resolution_target=vrt_resolution_target,
+                mosaic_resolution_target=mosaic_resolution_target,
                 overview_levels=cfg.get("overview_levels"),
                 filter_coarsest=cfg.get("overview_filter_coarsest", True),
             )
@@ -91,14 +91,14 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
                 tile_paths = build_tile_paths(tiles, project_dir, cfg, sd)
                 if not tile_paths:
                     continue
-                rel_path = os.path.join(vrt_dir_name,
+                rel_path = os.path.join(mosaic_dir_name,
                                         f"{data_source}_Fetched_UTM{utm}{sd['suffix']}{params_key}.vrt")
                 utm_sd_vrt = os.path.join(project_dir, rel_path)
                 create_vrt(tile_paths, utm_sd_vrt, factors or None, relative_to_vrt,
-                           sd["band_descriptions"], vrt_resolution_target=vrt_resolution_target)
+                           sd["band_descriptions"], mosaic_resolution_target=mosaic_resolution_target)
                 sd_vrt_paths.append(utm_sd_vrt)
-                fields[f"utm{suffix_label}_vrt"] = rel_path
-                fields[f"utm{suffix_label}_vrt_disk_file_size"] = os.path.getsize(utm_sd_vrt)
+                fields[f"utm{suffix_label}_mosaic"] = rel_path
+                fields[f"utm{suffix_label}_mosaic_disk_file_size"] = os.path.getsize(utm_sd_vrt)
                 fields[f"utm{suffix_label}_ovr"] = None
                 fields[f"utm{suffix_label}_ovr_disk_file_size"] = None
                 ovr_abs = os.path.join(project_dir, rel_path + ".ovr")
@@ -110,7 +110,7 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
                         f"Overview failed to create for utm{utm}. "
                         "Please try again. If error persists, please contact NBS.")
 
-            rel_combined = os.path.join(vrt_dir_name,
+            rel_combined = os.path.join(mosaic_dir_name,
                                         f"{data_source}_Fetched_UTM{utm}{params_key}.vrt")
             utm_combined_vrt = os.path.join(project_dir, rel_combined)
             combined_bands = []
@@ -118,11 +118,11 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
                 combined_bands.extend(sd["band_descriptions"])
             create_vrt(sd_vrt_paths, utm_combined_vrt, None, relative_to_vrt,
                        combined_bands, separate=True)
-            fields["utm_combined_vrt"] = rel_combined
-            fields["utm_combined_vrt_disk_file_size"] = os.path.getsize(utm_combined_vrt)
+            fields["utm_combined_mosaic"] = rel_combined
+            fields["utm_combined_mosaic_disk_file_size"] = os.path.getsize(utm_combined_vrt)
 
             # Build metadata
-            native_res = vrt_resolution_target if vrt_resolution_target else (min(tile_resolutions) if tile_resolutions else None)
+            native_res = mosaic_resolution_target if mosaic_resolution_target else (min(tile_resolutions) if tile_resolutions else None)
             if native_res is None:
                 raise ValueError(
                     f"No parseable tile resolutions found for UTM {utm}. "
@@ -132,7 +132,7 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
             ovw_count = len(factors) if factors else 0
             fields["tile_count"] = tile_count
             fields["tile_count_plus_overviews"] = tile_count * (1 + ovw_count)
-            fields["vrt_resolution"] = native_res
+            fields["mosaic_resolution"] = native_res
             fields["overview_count"] = ovw_count
             fields["overview_resolutions"] = (
                 ",".join(str(int(f * native_res)) for f in factors) if factors else None
@@ -147,10 +147,10 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
                 fields[f"tiles_{res}m"] = res_counts.get(res, 0)
 
             if cfg["has_rat"]:
-                add_vrt_rat(tiles, project_dir, utm_combined_vrt, cfg, utm=utm)
+                add_mosaic_rat(tiles, project_dir, utm_combined_vrt, cfg, utm=utm)
 
             result = {"utm": utm, "fields": fields,
-                      "vrt": os.path.join(project_dir, rel_combined), "ovr": None}
+                      "mosaic": os.path.join(project_dir, rel_combined), "ovr": None}
 
             if hillshade:
                 logger.info("[UTM%s] Generating hillshade...", utm)
@@ -167,22 +167,22 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
                 return None
             factors = compute_overview_factors(
                 resolutions=tile_resolutions,
-                vrt_resolution_target=vrt_resolution_target,
+                mosaic_resolution_target=mosaic_resolution_target,
                 overview_levels=cfg.get("overview_levels"),
                 filter_coarsest=cfg.get("overview_filter_coarsest", True),
             )
-            rel_path = os.path.join(vrt_dir_name,
+            rel_path = os.path.join(mosaic_dir_name,
                                     f"{data_source}_Fetched_UTM{utm}{params_key}.vrt")
             utm_vrt = os.path.join(project_dir, rel_path)
             create_vrt(tile_paths, utm_vrt, factors or None, relative_to_vrt,
-                       cfg["band_descriptions"], vrt_resolution_target=vrt_resolution_target)
+                       cfg["band_descriptions"], mosaic_resolution_target=mosaic_resolution_target)
 
             if cfg["has_rat"]:
-                add_vrt_rat(tiles, project_dir, utm_vrt, cfg, utm=utm)
+                add_mosaic_rat(tiles, project_dir, utm_vrt, cfg, utm=utm)
 
-            fields = {"utm_vrt": rel_path, "utm_ovr": None,
+            fields = {"utm_mosaic": rel_path, "utm_ovr": None,
                       "utm": utm, "params_key": params_key}
-            fields["utm_vrt_disk_file_size"] = os.path.getsize(utm_vrt)
+            fields["utm_mosaic_disk_file_size"] = os.path.getsize(utm_vrt)
             fields["utm_ovr_disk_file_size"] = None
             ovr_path = os.path.join(project_dir, rel_path + ".ovr")
             if os.path.isfile(ovr_path):
@@ -194,7 +194,7 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
                     "Please try again. If error persists, please contact NBS.")
 
             # Build metadata
-            native_res = vrt_resolution_target if vrt_resolution_target else (min(tile_resolutions) if tile_resolutions else None)
+            native_res = mosaic_resolution_target if mosaic_resolution_target else (min(tile_resolutions) if tile_resolutions else None)
             if native_res is None:
                 raise ValueError(
                     f"No parseable tile resolutions found for UTM {utm}. "
@@ -204,7 +204,7 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
             ovw_count = len(factors) if factors else 0
             fields["tile_count"] = tile_count
             fields["tile_count_plus_overviews"] = tile_count * (1 + ovw_count)
-            fields["vrt_resolution"] = native_res
+            fields["mosaic_resolution"] = native_res
             fields["overview_count"] = ovw_count
             fields["overview_resolutions"] = (
                 ",".join(str(int(f * native_res)) for f in factors) if factors else None
@@ -219,7 +219,7 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
                 fields[f"tiles_{res}m"] = res_counts.get(res, 0)
 
             result = {"utm": utm, "fields": fields,
-                      "vrt": utm_vrt,
+                      "mosaic": utm_vrt,
                       "ovr": ovr_path if os.path.isfile(ovr_path) else None}
 
             if hillshade:
@@ -238,9 +238,9 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
         worker_conn.close()
 
 
-def _reproject_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
-                         vrt_dir_name, params_key, relative_to_vrt,
-                         vrt_resolution_target, tile_resolution_filter,
+def _reproject_utm_zone(project_dir, cfg, data_source, utm, mosaic_dir,
+                         mosaic_dir_name, params_key, relative_to_vrt,
+                         mosaic_resolution_target, tile_resolution_filter,
                          hillshade, total_workers=1):
     """Reproject one UTM zone to EPSG:3857.  Designed to run in a worker process.
 
@@ -319,7 +319,7 @@ def _reproject_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
             # Combine per-resolution VRTs into a single VRT at the finest
             # resolution.  Sources are continuous rasters (not individual
             # tiles), so the combined grid won't straddle tile boundaries.
-            target_res = vrt_resolution_target if vrt_resolution_target is not None else min(tile_resolutions)
+            target_res = mosaic_resolution_target if mosaic_resolution_target is not None else min(tile_resolutions)
             combined_vrt = f"/vsimem/_reproject_UTM{utm}_combined.vrt"
             combined_opts = gdal.BuildVRTOptions(
                 options=f"-allow_projection_difference -resolution user "
@@ -336,11 +336,11 @@ def _reproject_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
             # output is a single GeoTIFF that needs overviews at every scale.
             factors = compute_overview_factors(
                 resolutions=tile_resolutions,
-                vrt_resolution_target=target_res,
+                mosaic_resolution_target=target_res,
                 overview_levels=[16, 32, 64, 128, 256, 512],
                 filter_coarsest=False,
             )
-            rel_path = os.path.join(vrt_dir_name,
+            rel_path = os.path.join(mosaic_dir_name,
                                     f"{data_source}_Fetched_UTM{utm}{params_key}.tif")
             output_3857 = os.path.join(project_dir, rel_path)
             reproject_to_web_mercator(combined_vrt, output_3857,
@@ -349,12 +349,12 @@ def _reproject_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
 
             # Add RAT
             if cfg["has_rat"]:
-                add_vrt_rat(tiles, project_dir, output_3857, cfg, utm=utm)
+                add_mosaic_rat(tiles, project_dir, output_3857, cfg, utm=utm)
 
             # Build fields dict matching _build_utm_zone structure
-            fields = {"utm_vrt": rel_path, "utm_ovr": None,
+            fields = {"utm_mosaic": rel_path, "utm_ovr": None,
                       "utm": utm, "params_key": params_key}
-            fields["utm_vrt_disk_file_size"] = os.path.getsize(output_3857)
+            fields["utm_mosaic_disk_file_size"] = os.path.getsize(output_3857)
             fields["utm_ovr_disk_file_size"] = None
             ovr_path = output_3857 + ".ovr"
             if os.path.isfile(ovr_path):
@@ -370,7 +370,7 @@ def _reproject_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
             ovw_count = len(factors) if factors else 0
             fields["tile_count"] = tile_count
             fields["tile_count_plus_overviews"] = tile_count * (1 + ovw_count)
-            fields["vrt_resolution"] = target_res
+            fields["mosaic_resolution"] = target_res
             fields["overview_count"] = ovw_count
             fields["overview_resolutions"] = (
                 ",".join(str(int(f * target_res)) for f in factors) if factors else None
@@ -385,7 +385,7 @@ def _reproject_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
                 fields[f"tiles_{res}m"] = res_counts.get(res, 0)
 
             result = {"utm": utm, "fields": fields,
-                      "vrt": output_3857,
+                      "mosaic": output_3857,
                       "ovr": ovr_path if os.path.isfile(ovr_path) else None}
 
             if hillshade:
@@ -411,14 +411,14 @@ def _reproject_utm_zone(project_dir, cfg, data_source, utm, vrt_dir,
 
 
 @dataclass
-class BuildResult:
-    """Result of a build_vrt operation.
+class MosaicResult:
+    """Result of a mosaic_tiles operation.
 
     Attributes
     ----------
     built : list[dict]
         UTM zones that were built. Each dict has ``utm`` (str),
-        ``vrt`` (str), ``ovr`` (str or None), and ``hillshade``
+        ``mosaic`` (str), ``ovr`` (str or None), and ``hillshade``
         (str or None) keys.
     skipped : list[str]
         UTM zones that were already up to date or had no tiles after
@@ -427,7 +427,7 @@ class BuildResult:
         UTM zones that failed during the build. Each dict has
         ``utm`` (str) and ``reason`` (str) keys.
     missing_reset : list[str]
-        UTM zones reset due to missing VRT files on disk.
+        UTM zones reset due to missing mosaic files on disk.
     hillshades : list[dict]
         UTM zones where a hillshade was generated. Includes both
         first-pass (during full build) and second-pass (for
@@ -435,8 +435,8 @@ class BuildResult:
         ``hillshade`` (str, absolute path) keys.
     tile_resolution_filter : list[int] | None
         Resolution filter that was active, or None if unfiltered.
-    vrt_resolution_target : float | None
-        VRT pixel size override that was active, or None for native resolution.
+    mosaic_resolution_target : float | None
+        Mosaic pixel size override that was active, or None for native resolution.
     """
     built: list = field(default_factory=list)
     skipped: list = field(default_factory=list)
@@ -444,7 +444,7 @@ class BuildResult:
     missing_reset: list = field(default_factory=list)
     hillshades: list = field(default_factory=list)
     tile_resolution_filter: list = None
-    vrt_resolution_target: float = None
+    mosaic_resolution_target: float = None
 
 
 _SYSTEM_FILES = {'.DS_Store', 'Thumbs.db', 'desktop.ini'}
@@ -484,7 +484,7 @@ def _verify_dir_absent(project_dir, dir_name):
         ) from e
 
 
-def _validate_output_dir(project_dir, conn, cfg, params_key, vrt_dir_name):
+def _validate_output_dir(project_dir, conn, cfg, params_key, mosaic_dir_name):
     """Validate that output_dir is not in conflict with another build config.
 
     Checks the DB for rows where a different params_key uses the same
@@ -501,9 +501,9 @@ def _validate_output_dir(project_dir, conn, cfg, params_key, vrt_dir_name):
 
     # Check: does this params_key already have a DIFFERENT output_dir?
     cursor.execute(
-        "SELECT DISTINCT output_dir FROM vrt_utm "
+        "SELECT DISTINCT output_dir FROM mosaic_utm "
         "WHERE params_key = ? AND output_dir IS NOT NULL AND output_dir != ?",
-        (params_key, vrt_dir_name),
+        (params_key, mosaic_dir_name),
     )
     old_dirs = [row["output_dir"] for row in cursor.fetchall()]
     for old_dir in old_dirs:
@@ -518,50 +518,50 @@ def _validate_output_dir(project_dir, conn, cfg, params_key, vrt_dir_name):
         for f in all_flags:
             set_parts.append(f"{f} = 0")
         cursor.execute(
-            f"UPDATE vrt_utm SET {', '.join(set_parts)} "
+            f"UPDATE mosaic_utm SET {', '.join(set_parts)} "
             "WHERE params_key = ?",
-            (vrt_dir_name, params_key),
+            (mosaic_dir_name, params_key),
         )
         conn.commit()
 
     # Check: does any OTHER params_key use this output_dir?
     cursor.execute(
-        "SELECT DISTINCT params_key FROM vrt_utm "
+        "SELECT DISTINCT params_key FROM mosaic_utm "
         "WHERE output_dir = ? AND output_dir IS NOT NULL AND params_key != ?",
-        (vrt_dir_name, params_key),
+        (mosaic_dir_name, params_key),
     )
     conflicts = [row["params_key"] for row in cursor.fetchall()]
     for conflict_pk in conflicts:
-        if os.path.isdir(os.path.join(project_dir, vrt_dir_name)):
+        if os.path.isdir(os.path.join(project_dir, mosaic_dir_name)):
             raise ValueError(
-                f"Output directory '{vrt_dir_name}' is already in use by "
-                f"a different build configuration. Delete '{vrt_dir_name}' "
+                f"Output directory '{mosaic_dir_name}' is already in use by "
+                f"a different build configuration. Delete '{mosaic_dir_name}' "
                 "first to rebuild with your new parameters, or choose a "
                 "different output directory."
             )
         # Conflicting dir reported gone — verify filesystem before resetting DB
-        _verify_dir_absent(project_dir, vrt_dir_name)
+        _verify_dir_absent(project_dir, mosaic_dir_name)
         set_parts = ["output_dir = NULL"] + [f"{col} = NULL" for col in utm_cols]
         for f in all_flags:
             set_parts.append(f"{f} = 0")
         cursor.execute(
-            f"UPDATE vrt_utm SET {', '.join(set_parts)} "
+            f"UPDATE mosaic_utm SET {', '.join(set_parts)} "
             "WHERE params_key = ? AND output_dir = ?",
-            (conflict_pk, vrt_dir_name),
+            (conflict_pk, mosaic_dir_name),
         )
         conn.commit()
 
 
-def build_vrt(project_dir: str, data_source: str = None,
-              relative_to_vrt: bool = True,
-              vrt_resolution_target: float = None,
-              tile_resolution_filter: list = None,
-              hillshade: bool = False,
-              workers: int = None,
-              reproject: bool = False,
-              output_dir: str = None,
-              debug: bool = False) -> BuildResult:
-    """Build a flat GDAL VRT per UTM zone from all source tiles.
+def mosaic_tiles(project_dir: str, data_source: str = None,
+                 relative_to_vrt: bool = True,
+                 mosaic_resolution_target: float = None,
+                 tile_resolution_filter: list = None,
+                 hillshade: bool = False,
+                 workers: int = None,
+                 reproject: bool = False,
+                 output_dir: str = None,
+                 debug: bool = False) -> MosaicResult:
+    """Build a per-UTM-zone mosaic from all source tiles.
 
     Parameters
     ----------
@@ -571,7 +571,7 @@ def build_vrt(project_dir: str, data_source: str = None,
         A known source name, a local directory path, or None (defaults to ``"bluetopo"``).
     relative_to_vrt : bool
         Store referenced file paths as relative to the VRT's directory.
-    vrt_resolution_target : float | None
+    mosaic_resolution_target : float | None
         Force output pixel size (in meters).  Must be a positive number.
     tile_resolution_filter : list | None
         Only include tiles at these resolutions (meters).
@@ -582,15 +582,15 @@ def build_vrt(project_dir: str, data_source: str = None,
         None or 1 = sequential.  Must be a positive integer at most
         ``os.cpu_count()``.
     reproject : bool
-        If True, reproject to EPSG:3857 (Web Mercator) GeoTIFFs instead
-        of building native UTM VRTs.  Uses a temporary VRT as an
-        intermediary for correct multi-resolution tile ordering.
+        If True, reproject to EPSG:3857 (Web Mercator) GeoTIFFs.
+        Uses a temporary VRT as an intermediary for correct
+        multi-resolution tile behavior.
     debug : bool
         If True, writes a diagnostic report to the project directory.
 
     Returns
     -------
-    BuildResult
+    MosaicResult
         Structured result with built, skipped, failed, missing_reset, and hillshades.
     """
     if workers is not None:
@@ -621,7 +621,7 @@ def build_vrt(project_dir: str, data_source: str = None,
         min_ver = cfg["min_gdal_version"]
         raise RuntimeError(
             f"Please update GDAL to >={min_ver // 1000000}.{(min_ver % 1000000) // 10000} "
-            "to run build_vrt.\nSome users have encountered issues with "
+            "to run mosaic.\nSome users have encountered issues with "
             "conda's installation of GDAL 3.4. "
             "Try more recent versions of GDAL if you also "
             "encounter issues in your conda environment."
@@ -641,15 +641,15 @@ def build_vrt(project_dir: str, data_source: str = None,
 
     if not os.path.isfile(os.path.join(project_dir, f"{data_source.lower()}_registry.db")):
         raise ValueError("SQLite database not found. Confirm correct folder. "
-                         "Note: fetch_tiles must be run at least once prior to build_vrt")
+                         "Note: fetch must be run at least once prior to mosaic")
 
     if not os.path.isdir(os.path.join(project_dir, data_source)):
         raise ValueError(f"Tile downloads folder not found for {data_source}. "
                          "Confirm correct folder. "
-                         "Note: fetch_tiles must be run at least once prior to build_vrt")
+                         "Note: fetch must be run at least once prior to mosaic")
 
-    if vrt_resolution_target is not None:
-        validate_vrt_resolution_target(vrt_resolution_target)
+    if mosaic_resolution_target is not None:
+        validate_mosaic_resolution_target(mosaic_resolution_target)
 
     if output_dir is not None and ("/" in output_dir or "\\" in output_dir):
         raise ValueError(
@@ -659,14 +659,14 @@ def build_vrt(project_dir: str, data_source: str = None,
 
     report = None
     if debug:
-        from nbs.bluetopo._internal.diagnostics import DebugReport
+        from nbs.noaabathymetry._internal.diagnostics import DebugReport
         report = DebugReport(project_dir, data_source, cfg)
 
-    result = BuildResult(tile_resolution_filter=tile_resolution_filter,
-                         vrt_resolution_target=vrt_resolution_target)
+    result = MosaicResult(tile_resolution_filter=tile_resolution_filter,
+                          mosaic_resolution_target=mosaic_resolution_target)
     try:
         result = _run_build(project_dir, cfg, data_source, relative_to_vrt,
-                            vrt_resolution_target, result, report,
+                            mosaic_resolution_target, result, report,
                             tile_resolution_filter=tile_resolution_filter,
                             hillshade=hillshade, workers=workers,
                             reproject=reproject, output_dir=output_dir)
@@ -686,14 +686,14 @@ def build_vrt(project_dir: str, data_source: str = None,
 
 
 def _run_build(project_dir, cfg, data_source, relative_to_vrt,
-               vrt_resolution_target, result, report=None,
+               mosaic_resolution_target, result, report=None,
                tile_resolution_filter=None, hillshade=False,
                workers=None, reproject=False, output_dir=None):
-    """Core build pipeline, separated so the debug wrapper in build_vrt()
+    """Core build pipeline, separated so the debug wrapper in mosaic_tiles()
     can handle report lifecycle without re-indenting the main logic.
 
     Steps: connect DB → seed parameterized rows (if needed) → detect
-    missing VRTs → build per-UTM VRTs with overviews and RATs →
+    missing mosaics → build per-UTM mosaics with overviews and RATs →
     optionally generate hillshade GeoTIFFs.
 
     When reproject=True, runs an alternative path: builds a temporary
@@ -701,29 +701,29 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
     GeoTIFF with overviews and RAT.
     """
     start = datetime.datetime.now()
-    logger.info("═══ Begin %s: Building VRTs in %s ═══", data_source, project_dir)
+    logger.info("═══ Begin %s: Building Mosaics in %s ═══", data_source, project_dir)
 
     conn = connect(project_dir, cfg)
     check_internal_version(conn)
     if report:
         report.set_conn(conn)
     try:
-        vrt_dir_name = make_vrt_dir_name(data_source, tile_resolution_filter,
-                                         vrt_resolution_target, reproject,
+        mosaic_dir_name = make_mosaic_dir_name(data_source, tile_resolution_filter,
+                                         mosaic_resolution_target, reproject,
                                          output_dir=output_dir)
         params_key = make_params_key(data_source, tile_resolution_filter,
-                                     vrt_resolution_target, reproject)
+                                     mosaic_resolution_target, reproject)
 
         # Stamp output_dir on any rows that don't have one yet.
         # Always use the auto-generated name so that custom output_dir
         # requests are detected as conflicts by _validate_output_dir.
-        auto_vrt_dir_name = f"{data_source}_VRT{params_key}"
+        auto_mosaic_dir_name = f"{data_source}_Mosaic{params_key}"
         if isinstance(conn, sqlite3.Connection):
             cursor = conn.cursor()
             cursor.execute(
-                "UPDATE vrt_utm SET output_dir = ? "
+                "UPDATE mosaic_utm SET output_dir = ? "
                 "WHERE params_key = ? AND output_dir IS NULL",
-                (auto_vrt_dir_name, params_key),
+                (auto_mosaic_dir_name, params_key),
             )
             if cursor.rowcount > 0:
                 conn.commit()
@@ -732,37 +732,37 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
             if tile_resolution_filter:
                 logger.info("Tile resolution filter: %s",
                             make_resolution_label(tile_resolution_filter))
-            if vrt_resolution_target is not None:
-                logger.info("VRT resolution target: %gm", vrt_resolution_target)
+            if mosaic_resolution_target is not None:
+                logger.info("Mosaic resolution target: %gm", mosaic_resolution_target)
             if reproject:
                 logger.info("Reprojecting to EPSG:3857 (Web Mercator)")
             if output_dir:
                 logger.info("Output directory: %s", output_dir)
-            ensure_params_rows(conn, cfg, params_key, output_dir=vrt_dir_name)
+            ensure_params_rows(conn, cfg, params_key, output_dir=mosaic_dir_name)
 
         # Validate output_dir: check for conflicts with other params_keys
-        _validate_output_dir(project_dir, conn, cfg, params_key, vrt_dir_name)
+        _validate_output_dir(project_dir, conn, cfg, params_key, mosaic_dir_name)
 
         result.missing_reset = missing_utms(project_dir, conn, cfg, params_key)
         if result.missing_reset:
-            logger.info("%d utm vrt(s) missing on disk. Added to build list.",
+            logger.info("%d utm mosaic(s) missing on disk. Added to build list.",
                        len(result.missing_reset))
         utms_to_build = select_unbuilt_utms(conn, cfg, params_key)
 
-        vrt_dir = os.path.join(project_dir, vrt_dir_name)
-        os.makedirs(vrt_dir, exist_ok=True)
+        mosaic_dir = os.path.join(project_dir, mosaic_dir_name)
+        os.makedirs(mosaic_dir, exist_ok=True)
 
-        # Warn about other VRT directories that may contain stale data
-        other_vrt_dirs = [
+        # Warn about other mosaic directories that may contain stale data
+        other_mosaic_dirs = [
             d for d in glob.glob(os.path.join(project_dir,
-                                              f"{data_source}_VRT*"))
-            if os.path.isdir(d) and os.path.basename(d) != vrt_dir_name
+                                              f"{data_source}_Mosaic*"))
+            if os.path.isdir(d) and os.path.basename(d) != mosaic_dir_name
         ]
-        if other_vrt_dirs:
-            logger.info("Note: %d other VRT director(ies) "
+        if other_mosaic_dirs:
+            logger.info("Note: %d other mosaic director(ies) "
                         "exist that may contain stale data:",
-                        len(other_vrt_dirs))
-            for d in sorted(other_vrt_dirs):
+                        len(other_mosaic_dirs))
+            for d in sorted(other_mosaic_dirs):
                 logger.info("  %s/", os.path.basename(d))
 
         if utms_to_build:
@@ -771,17 +771,17 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                 worker_fn = _reproject_utm_zone
                 label = "Reprojecting"
                 worker_args = lambda utm: (
-                    project_dir, cfg, data_source, utm, vrt_dir,
-                    vrt_dir_name, params_key, relative_to_vrt,
-                    vrt_resolution_target, tile_resolution_filter,
+                    project_dir, cfg, data_source, utm, mosaic_dir,
+                    mosaic_dir_name, params_key, relative_to_vrt,
+                    mosaic_resolution_target, tile_resolution_filter,
                     hillshade, actual_workers)
             else:
                 worker_fn = _build_utm_zone
                 label = "Building"
                 worker_args = lambda utm: (
-                    project_dir, cfg, data_source, utm, vrt_dir,
-                    vrt_dir_name, params_key, relative_to_vrt,
-                    vrt_resolution_target, tile_resolution_filter,
+                    project_dir, cfg, data_source, utm, mosaic_dir,
+                    mosaic_dir_name, params_key, relative_to_vrt,
+                    mosaic_resolution_target, tile_resolution_filter,
                     hillshade, actual_workers)
 
             num_zones = len(utms_to_build)
@@ -824,7 +824,7 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
 
                         built_entry = {
                             "utm": zone_result["utm"],
-                            "vrt": zone_result.get("vrt"),
+                            "mosaic": zone_result.get("mosaic"),
                             "ovr": zone_result.get("ovr"),
                             "hillshade": zone_result.get("hillshade"),
                         }
@@ -856,7 +856,7 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
 
                         built_entry = {
                             "utm": zone_result["utm"],
-                            "vrt": zone_result.get("vrt"),
+                            "mosaic": zone_result.get("mosaic"),
                             "ovr": zone_result.get("ovr"),
                             "hillshade": zone_result.get("hillshade"),
                         }
@@ -881,7 +881,7 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                             "recently fetched tiles.")
             logger.info("Note: deleting the %s folder will "
                         "allow you to recreate from scratch if necessary",
-                        vrt_dir_name)
+                        mosaic_dir_name)
 
         # Second pass: generate hillshade for already-built zones that lack it
         hillshade_count = 0
@@ -890,12 +890,12 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
             hillshade_count = sum(1 for e in result.built if e.get("hillshade"))
 
             # Detect missing hillshade files and reset their flags
-            vrt_built_flags = get_vrt_built_flags(cfg)
-            vrt_built_clause = " AND ".join(f"{f} = 1" for f in vrt_built_flags)
+            mosaic_built_flags = get_mosaic_built_flags(cfg)
+            mosaic_built_clause = " AND ".join(f"{f} = 1" for f in mosaic_built_flags)
             hs_cursor = conn.cursor()
             hs_cursor.execute(
-                f"SELECT utm, hillshade FROM vrt_utm WHERE params_key = ? "
-                f"AND ({vrt_built_clause}) AND built_hillshade = 1",
+                f"SELECT utm, hillshade FROM mosaic_utm WHERE params_key = ? "
+                f"AND ({mosaic_built_clause}) AND built_hillshade = 1",
                 (params_key,),
             )
             missing_hs = []
@@ -908,15 +908,15 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                             len(missing_hs))
                 utm_ph = ", ".join(["?"] * len(missing_hs))
                 hs_cursor.execute(
-                    f"UPDATE vrt_utm SET hillshade = NULL, hillshade_disk_file_size = NULL, "
+                    f"UPDATE mosaic_utm SET hillshade = NULL, hillshade_disk_file_size = NULL, "
                     f"built_hillshade = 0 WHERE params_key = ? AND utm IN ({utm_ph})",
                     [params_key] + missing_hs,
                 )
                 conn.commit()
 
             hs_cursor.execute(
-                f"SELECT * FROM vrt_utm WHERE params_key = ? "
-                f"AND ({vrt_built_clause}) "
+                f"SELECT * FROM mosaic_utm WHERE params_key = ? "
+                f"AND ({mosaic_built_clause}) "
                 f"AND (built_hillshade IS NULL OR built_hillshade != 1)",
                 (params_key,),
             )
@@ -927,22 +927,22 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                             len(hs_zones))
                 for hz in hs_zones:
                     utm = hz["utm"]
-                    # Determine VRT/GeoTIFF path
-                    vrt_col = "utm_combined_vrt" if cfg["subdatasets"] else "utm_vrt"
-                    vrt_rel = hz[vrt_col]
-                    if not vrt_rel:
+                    # Determine mosaic/GeoTIFF path
+                    mosaic_col = "utm_combined_mosaic" if cfg["subdatasets"] else "utm_mosaic"
+                    mosaic_rel = hz[mosaic_col]
+                    if not mosaic_rel:
                         continue
-                    abs_vrt = os.path.join(project_dir, vrt_rel)
-                    if vrt_rel.endswith(".tif"):
-                        hs_path = abs_vrt.replace(".tif", "_hillshade.tif")
+                    abs_mosaic = os.path.join(project_dir, mosaic_rel)
+                    if mosaic_rel.endswith(".tif"):
+                        hs_path = abs_mosaic.replace(".tif", "_hillshade.tif")
                     else:
-                        hs_path = abs_vrt.replace(".vrt", "_hillshade.tif")
+                        hs_path = abs_mosaic.replace(".vrt", "_hillshade.tif")
                     try:
                         logger.info("[UTM%s] Generating hillshade...", utm)
-                        generate_hillshade(abs_vrt, hs_path)
+                        generate_hillshade(abs_mosaic, hs_path)
                         hs_rel = os.path.relpath(hs_path, project_dir)
                         hs_cursor.execute(
-                            "UPDATE vrt_utm SET hillshade = ?, hillshade_disk_file_size = ?, "
+                            "UPDATE mosaic_utm SET hillshade = ?, hillshade_disk_file_size = ?, "
                             "built_hillshade = 1 WHERE utm = ? AND params_key = ?",
                             (hs_rel, os.path.getsize(hs_path), utm, params_key),
                         )
@@ -956,7 +956,7 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
 
         all_utms_cursor = conn.cursor()
         all_utms_cursor.execute(
-            "SELECT utm FROM vrt_utm WHERE params_key = ?", (params_key,))
+            "SELECT utm FROM mosaic_utm WHERE params_key = ?", (params_key,))
         all_utm_names = {row["utm"] for row in all_utms_cursor.fetchall()}
         built_utm_names = {e["utm"] for e in result.built}
         failed_utm_names = {f["utm"] for f in result.failed}
@@ -978,7 +978,7 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                     len(result.skipped), skipped_reason)
         logger.info("Total:   %d UTM zones", len(all_utm_names))
 
-        logger.info("═══ Complete %s: Building VRTs (%s) ═══",
+        logger.info("═══ Complete %s: Building Mosaics (%s) ═══",
                     data_source, datetime.datetime.now() - start)
     finally:
         if not report:

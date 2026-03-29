@@ -1,4 +1,4 @@
-"""End-to-end pipeline tests that exercise fetch_tiles + build_vrt.
+"""End-to-end pipeline tests that exercise fetch_tiles + mosaic_tiles.
 
 Tests are split into two categories:
 
@@ -34,16 +34,16 @@ import sqlite3
 import pytest
 from osgeo import gdal, ogr
 
-from nbs.bluetopo._internal.config import (
+from nbs.noaabathymetry._internal.config import (
     get_config,
     get_disk_field,
     get_disk_fields,
-    get_vrt_built_flags,
+    get_mosaic_built_flags,
     get_utm_file_columns,
 )
-from nbs.bluetopo._internal.fetcher import fetch_tiles as fetch_main
-from nbs.bluetopo._internal.db import connect as connect_to_survey_registry
-from nbs.bluetopo._internal.builder import build_vrt as build_main
+from nbs.noaabathymetry._internal.fetcher import fetch_tiles as fetch_main
+from nbs.noaabathymetry._internal.db import connect as connect_to_survey_registry
+from nbs.noaabathymetry._internal.builder import mosaic_tiles as build_main
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -107,7 +107,7 @@ def _skip_if_gdal_too_old(cfg):
 
 
 def _skip_if_gdal_missing_drivers(cfg):
-    """Skip the test if GDAL is missing required drivers for build_vrt."""
+    """Skip the test if GDAL is missing required drivers for mosaic_tiles."""
     missing = [d for d in cfg.get("required_gdal_drivers", [])
                if gdal.GetDriverByName(d) is None]
     if missing:
@@ -200,39 +200,39 @@ def assert_fetch_results(project_dir, cfg, successful, failed):
 def assert_build_results(project_dir, cfg, scenario):
     """Verify post-build state."""
     data_source = cfg["canonical_name"]
-    vrt_dir = os.path.join(project_dir, f"{data_source}_VRT")
-    assert os.path.isdir(vrt_dir), f"VRT directory missing: {vrt_dir}"
+    mosaic_dir = os.path.join(project_dir, f"{data_source}_Mosaic")
+    assert os.path.isdir(mosaic_dir), f"Mosaic directory missing: {mosaic_dir}"
 
-    # At least 1 UTM VRT file
+    # At least 1 UTM mosaic file
     utm_zones = _get_utm_zones(project_dir, cfg)
     assert len(utm_zones) >= 1, "Expected at least 1 UTM zone"
 
-    utm_vrts_found = []
+    mosaics_found = []
     for zone in utm_zones:
-        vrt_path = os.path.join(vrt_dir, f"{data_source}_Fetched_UTM{zone}.vrt")
+        vrt_path = os.path.join(mosaic_dir, f"{data_source}_Fetched_UTM{zone}.vrt")
         if os.path.isfile(vrt_path):
-            utm_vrts_found.append(vrt_path)
+            mosaics_found.append(vrt_path)
 
-    assert len(utm_vrts_found) >= 1, \
-        f"Expected at least 1 UTM VRT in {vrt_dir}"
+    assert len(mosaics_found) >= 1, \
+        f"Expected at least 1 UTM mosaic in {mosaic_dir}"
 
-    # Cross-UTM scenarios should produce 2+ VRT files
+    # Cross-UTM scenarios should produce 2+ mosaic files
     if "cross_utm" in scenario:
-        assert len(utm_vrts_found) >= 2, \
-            f"Cross-UTM scenario expected 2+ UTM VRTs, got {len(utm_vrts_found)}"
+        assert len(mosaics_found) >= 2, \
+            f"Cross-UTM scenario expected 2+ UTM mosaics, got {len(mosaics_found)}"
 
-    # Each VRT openable by GDAL with correct band count
+    # Each mosaic openable by GDAL with correct band count
     expected_bands = _expected_band_count(cfg)
-    for vrt_path in utm_vrts_found:
+    for vrt_path in mosaics_found:
         ds = gdal.Open(vrt_path)
-        assert ds is not None, f"GDAL cannot open VRT: {vrt_path}"
+        assert ds is not None, f"GDAL cannot open mosaic: {vrt_path}"
         assert ds.RasterCount == expected_bands, \
             f"Expected {expected_bands} bands, got {ds.RasterCount} in {vrt_path}"
         ds = None
 
-    # Sources with RAT: verify RAT present on UTM VRT
+    # Sources with RAT: verify RAT present on UTM mosaic
     if cfg["has_rat"]:
-        for vrt_path in utm_vrts_found:
+        for vrt_path in mosaics_found:
             ds = gdal.Open(vrt_path, 0)
             band = ds.GetRasterBand(cfg["rat_band"])
             rat = band.GetDefaultRAT()
@@ -567,7 +567,7 @@ class TestSyntheticLocal:
     """5 fetch + build tests: create local source from scratch, no S3.
 
     Each source uses its native file format (BAG, S102 HDF5, or GeoTIFF)
-    so GDAL can open them with the correct driver during VRT build.
+    so GDAL can open them with the correct driver during mosaic build.
     """
 
     @pytest.mark.parametrize("source", ALL_REMOTE_SOURCES)
@@ -593,7 +593,7 @@ class TestSyntheticLocal:
         )
 
         # Verify tiles were fetched
-        from nbs.bluetopo._internal.config import get_local_config
+        from nbs.noaabathymetry._internal.config import get_local_config
         local_cfg = get_local_config(cfg["canonical_name"])
         count = _count_tiles_with_disk(project_dir, local_cfg)
         assert count >= 1, "Expected at least 1 tile with disk path after synthetic local"
@@ -664,17 +664,17 @@ class TestDeleteTileRefetch:
 
 
 # ===========================================================================
-# D. Delete VRT + Rebuild Tests (2 tests)
+# D. Delete Mosaic + Rebuild Tests (2 tests)
 # ===========================================================================
 
 
 @pytest.mark.network
 @pytest.mark.slow
-class TestDeleteVRTRebuild:
-    """3 tests: delete VRT file, verify rebuild."""
+class TestDeleteMosaicRebuild:
+    """3 tests: delete mosaic file, verify rebuild."""
 
     @pytest.mark.parametrize("source", ["bluetopo", "s102v22", "s102v30"])
-    def test_rebuild_deleted_vrt(self, source, tmp_path, make_polygon):
+    def test_rebuild_deleted_mosaic(self, source, tmp_path, make_polygon):
         cfg = get_config(source)
         _skip_if_gdal_too_old(cfg)
         _skip_if_gdal_missing_drivers(cfg)
@@ -700,18 +700,18 @@ class TestDeleteVRTRebuild:
             data_source=source,
         )
 
-        # Find a UTM VRT file to delete
-        vrt_dir = os.path.join(project_dir, f"{data_source}_VRT")
-        assert os.path.isdir(vrt_dir), f"VRT directory missing: {vrt_dir}"
+        # Find a UTM mosaic file to delete
+        mosaic_dir = os.path.join(project_dir, f"{data_source}_Mosaic")
+        assert os.path.isdir(mosaic_dir), f"Mosaic directory missing: {mosaic_dir}"
 
         utm_zones = _get_utm_zones(project_dir, cfg)
         assert len(utm_zones) >= 1
 
         target_zone = utm_zones[0]
-        vrt_path = os.path.join(vrt_dir, f"{data_source}_Fetched_UTM{target_zone}.vrt")
-        assert os.path.isfile(vrt_path), f"UTM VRT not found: {vrt_path}"
+        vrt_path = os.path.join(mosaic_dir, f"{data_source}_Fetched_UTM{target_zone}.vrt")
+        assert os.path.isfile(vrt_path), f"UTM mosaic not found: {vrt_path}"
 
-        # Delete the VRT (and ovr if present)
+        # Delete the mosaic (and ovr if present)
         os.remove(vrt_path)
         ovr_path = vrt_path + ".ovr"
         if os.path.isfile(ovr_path):
@@ -723,6 +723,6 @@ class TestDeleteVRTRebuild:
             data_source=source,
         )
 
-        # Verify VRT is restored
+        # Verify mosaic is restored
         assert os.path.isfile(vrt_path), \
-            f"UTM VRT was not restored after rebuild: {vrt_path}"
+            f"UTM mosaic was not restored after rebuild: {vrt_path}"

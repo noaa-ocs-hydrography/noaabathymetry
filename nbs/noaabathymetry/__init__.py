@@ -1,10 +1,10 @@
-"""BlueTopo — NOAA NBS bathymetric data download & VRT builder."""
+"""noaabathymetry — NOAA NBS bathymetric data download & mosaic builder."""
 
 import logging
 import sys
 from importlib.metadata import version, PackageNotFoundError
 
-from ._internal.builder import build_vrt, BuildResult
+from ._internal.builder import mosaic_tiles, MosaicResult
 from ._internal.fetcher import fetch_tiles, FetchResult
 
 class _ColorFormatter(logging.Formatter):
@@ -35,7 +35,7 @@ class _ColorFormatter(logging.Formatter):
             return f"{color}{msg}{self.RESET}"
         return msg
 
-_logger = logging.getLogger("bluetopo")
+_logger = logging.getLogger("noaabathymetry")
 _handler = logging.StreamHandler(sys.stderr)
 _handler.setFormatter(_ColorFormatter("[%(asctime)s] %(message)s", "%H:%M:%S",
                                       use_color=sys.stderr.isatty()))
@@ -44,8 +44,8 @@ _logger.setLevel(logging.INFO)
 _logger.propagate = False
 
 try:
-    __version__ = version("BlueTopo")
+    __version__ = version("noaabathymetry")
 except PackageNotFoundError:
     __version__ = "unknown"
 
-__all__ = ["fetch_tiles", "build_vrt", "FetchResult", "BuildResult", "__version__"]
+__all__ = ["fetch_tiles", "mosaic_tiles", "FetchResult", "MosaicResult", "__version__"]

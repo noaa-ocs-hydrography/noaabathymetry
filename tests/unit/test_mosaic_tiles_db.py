@@ -1,20 +1,20 @@
-"""Tests for database functions in build_vrt.py (SQLite only, no GDAL VRT creation)."""
+"""Tests for database functions in mosaic_tiles.py (SQLite only, no GDAL VRT creation)."""
 
 import os
 import sqlite3
 
 import pytest
 
-from nbs.bluetopo._internal.config import (
+from nbs.noaabathymetry._internal.config import (
     get_config,
     get_catalog_fields,
-    get_vrt_utm_fields,
+    get_mosaic_fields,
     get_tiles_fields,
-    get_vrt_built_flags,
+    get_mosaic_built_flags,
     get_utm_file_columns,
 )
-from nbs.bluetopo._internal.db import connect as connect_to_survey_registry
-from nbs.bluetopo._internal.vrt import (
+from nbs.noaabathymetry._internal.db import connect as connect_to_survey_registry
+from nbs.noaabathymetry._internal.mosaic import (
     select_tiles_by_utm,
     select_unbuilt_utms,
     update_utm,
@@ -38,7 +38,7 @@ class TestConnectToSurveyRegistry:
         tables = {row[0] for row in cursor.fetchall()}
         assert cfg["catalog_table"] in tables
         assert "tiles" in tables
-        assert "vrt_utm" in tables
+        assert "mosaic_utm" in tables
         conn.close()
 
     @pytest.mark.parametrize("source", ["bluetopo", "bag", "s102v22", "s102v30"])
@@ -60,10 +60,10 @@ class TestConnectToSurveyRegistry:
         expected_tiles = set(get_tiles_fields(cfg).keys())
         assert expected_tiles.issubset(tiles_cols)
 
-        # Check vrt_utm columns
-        cursor.execute("SELECT name FROM pragma_table_info('vrt_utm')")
+        # Check mosaic_utm columns
+        cursor.execute("SELECT name FROM pragma_table_info('mosaic_utm')")
         utm_cols = {row[0] for row in cursor.fetchall()}
-        expected_utm = set(get_vrt_utm_fields(cfg).keys())
+        expected_utm = set(get_mosaic_fields(cfg).keys())
         assert expected_utm.issubset(utm_cols)
         conn.close()
 
@@ -206,13 +206,13 @@ class TestUpdateUtm:
         conn, _ = registry_db(cfg, utms=[
             {"utm": "19", "built": 0},
         ])
-        fields = {"utm": "19", "utm_vrt": "path/utm.vrt", "utm_ovr": "path/utm.ovr"}
+        fields = {"utm": "19", "utm_mosaic": "path/utm.vrt", "utm_ovr": "path/utm.ovr"}
         update_utm(conn, fields, cfg)
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM vrt_utm WHERE utm = '19'")
+        cursor.execute("SELECT * FROM mosaic_utm WHERE utm = '19'")
         row = dict(cursor.fetchone())
         assert row["built"] == 1
-        assert row["utm_vrt"] == "path/utm.vrt"
+        assert row["utm_mosaic"] == "path/utm.vrt"
 
     @pytest.mark.parametrize("source", ["s102v22", "s102v30"])
     def test_multi_subdataset_sets_combined(self, registry_db, source):
@@ -222,15 +222,15 @@ class TestUpdateUtm:
         ])
         fields = {
             "utm": "19",
-            "utm_subdataset1_vrt": "p1.vrt",
+            "utm_subdataset1_mosaic": "p1.vrt",
             "utm_subdataset1_ovr": "p1.ovr",
-            "utm_subdataset2_vrt": "p2.vrt",
+            "utm_subdataset2_mosaic": "p2.vrt",
             "utm_subdataset2_ovr": "p2.ovr",
-            "utm_combined_vrt": "combined.vrt",
+            "utm_combined_mosaic": "combined.vrt",
         }
         update_utm(conn, fields, cfg)
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM vrt_utm WHERE utm = '19'")
+        cursor.execute("SELECT * FROM mosaic_utm WHERE utm = '19'")
         row = dict(cursor.fetchone())
         assert row["built_subdataset1"] == 1
         assert row["built_subdataset2"] == 1
@@ -246,31 +246,31 @@ class TestMissingUtms:
     def test_resets_when_vrt_missing(self, registry_db):
         cfg = get_config("bluetopo")
         conn, project_dir = registry_db(cfg, utms=[
-            {"utm": "19", "built": 1, "utm_vrt": "missing.vrt", "utm_ovr": "missing.ovr"},
+            {"utm": "19", "built": 1, "utm_mosaic": "missing.vrt", "utm_ovr": "missing.ovr"},
         ])
         reset = missing_utms(project_dir, conn, cfg)
         assert reset == ["19"]
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM vrt_utm WHERE utm = '19'")
+        cursor.execute("SELECT * FROM mosaic_utm WHERE utm = '19'")
         row = dict(cursor.fetchone())
         assert row["built"] == 0
-        assert row["utm_vrt"] is None
+        assert row["utm_mosaic"] is None
 
     @pytest.mark.parametrize("source", ["s102v22", "s102v30"])
     def test_multi_subdataset_resets(self, registry_db, source):
         cfg = get_config(source)
         conn, project_dir = registry_db(cfg, utms=[
             {"utm": "19", "built_subdataset1": 1, "built_subdataset2": 1,
-             "built_combined": 1, "utm_subdataset1_vrt": "missing.vrt",
+             "built_combined": 1, "utm_subdataset1_mosaic": "missing.vrt",
              "utm_subdataset1_ovr": "missing.ovr",
-             "utm_subdataset2_vrt": "missing.vrt",
+             "utm_subdataset2_mosaic": "missing.vrt",
              "utm_subdataset2_ovr": "missing.ovr",
-             "utm_combined_vrt": "missing.vrt"},
+             "utm_combined_mosaic": "missing.vrt"},
         ])
         reset = missing_utms(project_dir, conn, cfg)
         assert reset == ["19"]
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM vrt_utm WHERE utm = '19'")
+        cursor.execute("SELECT * FROM mosaic_utm WHERE utm = '19'")
         row = dict(cursor.fetchone())
         assert row["built_subdataset1"] == 0
         assert row["built_combined"] == 0
@@ -286,7 +286,7 @@ class TestMissingUtms:
         rel_vrt = os.path.relpath(vrt_path, str(tmp_path))
         rel_ovr = os.path.relpath(ovr_path, str(tmp_path))
         conn, project_dir = registry_db(cfg, utms=[
-            {"utm": "19", "built": 1, "utm_vrt": rel_vrt, "utm_ovr": rel_ovr},
+            {"utm": "19", "built": 1, "utm_mosaic": rel_vrt, "utm_ovr": rel_ovr},
         ])
         reset = missing_utms(project_dir, conn, cfg)
         assert reset == []
@@ -304,12 +304,12 @@ class TestUpdateEdge:
         conn, _ = registry_db(cfg, utms=[
             {"utm": "19", "built": 0},
         ])
-        fields = {"utm": "19", "utm_vrt": "path.vrt"}
+        fields = {"utm": "19", "utm_mosaic": "path.vrt"}
         update_utm(conn, fields, cfg)
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM vrt_utm WHERE utm = '19'")
+        cursor.execute("SELECT * FROM mosaic_utm WHERE utm = '19'")
         row = dict(cursor.fetchone())
-        assert row["utm_vrt"] == "path.vrt"
+        assert row["utm_mosaic"] == "path.vrt"
         assert row["utm_ovr"] is None
         assert row["built"] == 1
 
@@ -353,12 +353,12 @@ class TestEnsureParamsRows:
         ])
         ensure_params_rows(conn, cfg, "_4m")
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM vrt_utm WHERE params_key = '_4m' ORDER BY utm")
+        cursor.execute("SELECT * FROM mosaic_utm WHERE params_key = '_4m' ORDER BY utm")
         rows = [dict(r) for r in cursor.fetchall()]
         assert len(rows) == 2
         assert {r["utm"] for r in rows} == {"19", "20"}
         assert all(r["built"] == 0 for r in rows)
-        assert all(r["utm_vrt"] is None for r in rows)
+        assert all(r["utm_mosaic"] is None for r in rows)
 
     def test_no_duplicate_on_second_call(self, registry_db):
         cfg = get_config("bluetopo")
@@ -368,7 +368,7 @@ class TestEnsureParamsRows:
         ensure_params_rows(conn, cfg, "_4m")
         ensure_params_rows(conn, cfg, "_4m")
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM vrt_utm WHERE params_key = '_4m'")
+        cursor.execute("SELECT COUNT(*) FROM mosaic_utm WHERE params_key = '_4m'")
         assert cursor.fetchone()[0] == 1
 
     def test_noop_when_default_empty(self, registry_db):
@@ -376,7 +376,7 @@ class TestEnsureParamsRows:
         conn, _ = registry_db(cfg)
         ensure_params_rows(conn, cfg, "_4m")
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM vrt_utm WHERE params_key = '_4m'")
+        cursor.execute("SELECT COUNT(*) FROM mosaic_utm WHERE params_key = '_4m'")
         assert cursor.fetchone()[0] == 0
 
     def test_seeds_new_utms_only(self, registry_db):
@@ -388,11 +388,11 @@ class TestEnsureParamsRows:
         ensure_params_rows(conn, cfg, "_4m")
         # Add a new default UTM
         conn.cursor().execute(
-            "INSERT INTO vrt_utm(utm, params_key, built) VALUES(?, '', 0)", ("20",))
+            "INSERT INTO mosaic_utm(utm, params_key, built) VALUES(?, '', 0)", ("20",))
         conn.commit()
         ensure_params_rows(conn, cfg, "_4m")
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM vrt_utm WHERE params_key = '_4m'")
+        cursor.execute("SELECT COUNT(*) FROM mosaic_utm WHERE params_key = '_4m'")
         assert cursor.fetchone()[0] == 2
 
     @pytest.mark.parametrize("source", ["s102v22", "s102v30"])
@@ -404,7 +404,7 @@ class TestEnsureParamsRows:
         ])
         ensure_params_rows(conn, cfg, "_4m")
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM vrt_utm WHERE params_key = '_4m'")
+        cursor.execute("SELECT * FROM mosaic_utm WHERE params_key = '_4m'")
         row = dict(cursor.fetchone())
         assert row["built_subdataset1"] == 0
         assert row["built_subdataset2"] == 0
@@ -425,19 +425,19 @@ class TestCompositeKeyIsolation:
         ensure_params_rows(conn, cfg, "_4m")
         # Update only the parameterized row
         fields = {"utm": "19", "params_key": "_4m",
-                  "utm_vrt": "p.vrt", "utm_ovr": "p.ovr"}
+                  "utm_mosaic": "p.vrt", "utm_ovr": "p.ovr"}
         update_utm(conn, fields, cfg)
         cursor = conn.cursor()
         # Default partition should still be unbuilt
-        cursor.execute("SELECT * FROM vrt_utm WHERE utm = '19' AND params_key = ''")
+        cursor.execute("SELECT * FROM mosaic_utm WHERE utm = '19' AND params_key = ''")
         default = dict(cursor.fetchone())
         assert default["built"] == 0
-        assert default["utm_vrt"] is None
+        assert default["utm_mosaic"] is None
         # Parameterized partition should be built
-        cursor.execute("SELECT * FROM vrt_utm WHERE utm = '19' AND params_key = '_4m'")
+        cursor.execute("SELECT * FROM mosaic_utm WHERE utm = '19' AND params_key = '_4m'")
         param = dict(cursor.fetchone())
         assert param["built"] == 1
-        assert param["utm_vrt"] == "p.vrt"
+        assert param["utm_mosaic"] == "p.vrt"
 
     def test_select_unbuilt_filters_by_params_key(self, registry_db):
         cfg = get_config("bluetopo")
@@ -453,7 +453,7 @@ class TestCompositeKeyIsolation:
     def test_missing_utms_filters_by_params_key(self, registry_db, tmp_path):
         cfg = get_config("bluetopo")
         conn, project_dir = registry_db(cfg, utms=[
-            {"utm": "19", "built": 1, "utm_vrt": "exists.vrt", "utm_ovr": None},
+            {"utm": "19", "built": 1, "utm_mosaic": "exists.vrt", "utm_ovr": None},
         ])
         # Create the file for the default partition
         with open(os.path.join(project_dir, "exists.vrt"), "w") as f:
@@ -461,7 +461,7 @@ class TestCompositeKeyIsolation:
         # Seed and mark parameterized as built with a missing VRT
         ensure_params_rows(conn, cfg, "_4m")
         fields = {"utm": "19", "params_key": "_4m",
-                  "utm_vrt": "missing_param.vrt", "utm_ovr": None}
+                  "utm_mosaic": "missing_param.vrt", "utm_ovr": None}
         update_utm(conn, fields, cfg)
         # missing_utms on default should find 0
         assert missing_utms(project_dir, conn, cfg, "") == []

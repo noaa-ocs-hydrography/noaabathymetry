@@ -3,28 +3,28 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "BlueTopo"
+name = "noaabathymetry"
 version = "0.8.0"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 authors = [
   { name = "Glen Rice", email = "ocs.nbs@noaa.gov" },
   { name = "Tashi Geleg", email = "ocs.nbs@noaa.gov" },
 ]
-description = "National Bathymetric Source Project BlueTopo"
+description = "NOAA National Bathymetric Source data download and mosaic builder"
 readme = "README.md"
 license = { file = "LICENSE" }
-keywords = ["BlueTopo", "National Bathymetric Source", "Bathymetry"]
+keywords = ["NOAA", "National Bathymetric Source", "Bathymetry", "noaabathymetry"]
 dependencies = ["boto3", "tqdm"]
 
 [project.optional-dependencies]
 test = ["pytest", "pytest-cov", "moto[s3]", "h5py", "numpy"]
 
 [project.scripts]
-fetch_tiles = "nbs.bluetopo.cli:fetch_tiles_command"
-build_vrt = "nbs.bluetopo.cli:build_vrt_command"
+nbs = "nbs.noaabathymetry.cli:main"
 
 [project.urls]
 homepage = "https://www.nauticalcharts.noaa.gov/data/bluetopo.html"
+# update when the repo is renamed to noaabathymetry
 documentation = "https://noaa-ocs-hydrography.github.io/BlueTopo/"
 source = "https://github.com/noaa-ocs-hydrography/BlueTopo"
 
