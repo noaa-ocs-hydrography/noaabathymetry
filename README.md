@@ -22,7 +22,7 @@ Point this package at your area of interest and get the latest and best public b
 
 For most use cases, the quickstart below is all you need.
 
-For more detailed guides, API reference, and troubleshooting, see the [full documentation](https://noaa-ocs-hydrography.github.io/noaabathymetry/).
+For more detailed guides, API reference, and troubleshooting, see the [full documentation](https://noaa-ocs-hydrography.github.io/BlueTopo/).
 
 ## Background
 
@@ -60,7 +60,7 @@ pip install noaabathymetry   # installs boto3 and tqdm automatically
 
 After installation, the package provides a Python API and a CLI with two subcommands: `nbs fetch` for downloading tiles and `nbs mosaic` for assembling them into mosaics.
 
-See the Python API and CLI sections below to get started. You can also use the [Quickstart Helper](https://noaa-ocs-hydrography.github.io/noaabathymetry/quickstart-helper.html) to draw your area of interest on a map and generate usage examples.
+See the Python API and CLI sections below to get started. You can also use the [Quickstart Helper](https://noaa-ocs-hydrography.github.io/BlueTopo/quickstart-helper.html) to draw your area of interest on a map and generate usage examples.
 
 ## Python API
 
