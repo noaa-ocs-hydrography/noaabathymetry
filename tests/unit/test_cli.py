@@ -201,6 +201,7 @@ class TestMissingRequired:
             with pytest.raises(SystemExit):
                 main()
 
+
     def test_no_subcommand_prints_help(self, capsys):
         from nbs.noaabathymetry.cli import main
         with mock.patch("sys.argv", ["nbs"]):

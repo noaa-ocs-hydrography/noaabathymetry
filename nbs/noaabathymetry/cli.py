@@ -46,7 +46,7 @@ def _add_fetch_parser(subparsers):
     parser = subparsers.add_parser("fetch", help="Download tiles from NOAA NBS.")
     parser.add_argument(
         "-d", "--dir", "--directory",
-        help="The directory path to use. Required argument.",
+        help="Absolute path to the project directory.",
         type=str, dest="dir", required=True,
     )
     parser.add_argument(
@@ -78,7 +78,7 @@ def _add_mosaic_parser(subparsers):
     parser = subparsers.add_parser("mosaic", help="Build mosaics from downloaded tiles.")
     parser.add_argument(
         "-d", "--dir", "--directory",
-        help="The directory path to use. Required argument.",
+        help="Absolute path to the project directory.",
         type=str, dest="dir", required=True,
     )
     parser.add_argument(
