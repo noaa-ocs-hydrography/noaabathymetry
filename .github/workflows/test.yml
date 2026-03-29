@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main, dev]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -26,6 +29,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           channels: conda-forge
           channel-priority: strict
+          conda-remove-defaults: true
 
       - name: Install GDAL and HDF5
         run: conda install -y 'gdal>=3.4,<4' libgdal-hdf5
