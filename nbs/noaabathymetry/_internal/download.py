@@ -65,6 +65,43 @@ def _stream_hash(path):
     return h.hexdigest()
 
 
+def _md5_hash(path):
+    """Compute MD5 of a file by streaming in 64 KB chunks."""
+    h = hashlib.md5()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _get_s3_etag(client, bucket, key):
+    """Return the ETag of an S3 object via HeadObject, or None on error."""
+    try:
+        response = client.head_object(Bucket=bucket, Key=key)
+        return response.get("ETag", "").strip('"')
+    except Exception:
+        logger.debug("HeadObject failed for s3://%s/%s", bucket, key, exc_info=True)
+        return None
+
+
+def _local_matches_s3(local_path, client, bucket, key):
+    """Return True if the local file's MD5 matches the S3 object's ETag.
+
+    Returns False (and logs at DEBUG) on any error so the caller
+    falls through to a normal download.
+    """
+    try:
+        if not os.path.isfile(local_path):
+            return False
+        etag = _get_s3_etag(client, bucket, key)
+        if etag is None or "-" in etag:
+            return False
+        return _md5_hash(local_path) == etag
+    except Exception:
+        logger.debug("Cache check failed for %s", local_path, exc_info=True)
+        return False
+
+
 def _s3_key_from_url(url):
     """Extract the S3 object key from a virtual-hosted S3 URL.
 
@@ -134,6 +171,21 @@ def get_tessellation(conn, project_dir, prefix, data_source, cfg,
     catalog_table = cfg["catalog_table"]
     catalog_pk = cfg["catalog_pk"]
     cursor = conn.cursor()
+
+    # Cache check: skip download if local file matches S3 (MD5 vs ETag)
+    if local_dir is None:
+        cursor.execute(f"SELECT location FROM {catalog_table} WHERE {catalog_pk} = 'Tessellation'")
+        row = cursor.fetchone()
+        if row and row["location"]:
+            cached_path = os.path.join(project_dir, row["location"])
+            if os.path.isfile(cached_path):
+                client = _get_s3_client()
+                source_key, _ = _list_s3_latest(
+                    client, bucket, prefix, "geometry", data_source, retry=False)
+                if source_key and _local_matches_s3(cached_path, client, bucket, source_key):
+                    logger.info("%s: Tessellation up to date", data_source)
+                    return cached_path
+
     cursor.execute(f"SELECT * FROM {catalog_table} WHERE {catalog_pk} = 'Tessellation'")
     for tilescheme in [dict(row) for row in cursor.fetchall()]:
         try:
@@ -210,6 +262,27 @@ def get_xml(conn, project_dir, prefix, data_source, cfg,
     catalog_table = cfg["catalog_table"]
     catalog_pk = cfg["catalog_pk"]
     cursor = conn.cursor()
+
+    # Cache check: skip download if local file matches S3 (MD5 vs ETag)
+    cursor.execute(f"SELECT location FROM {catalog_table} WHERE {catalog_pk} = 'XML'")
+    row = cursor.fetchone()
+    if row and row["location"]:
+        cached_path = os.path.join(project_dir, row["location"])
+        if os.path.isfile(cached_path):
+            client = _get_s3_client()
+            source_key, all_objects = _list_s3_latest(
+                client, bucket, prefix, "XML", data_source, retry=False)
+            if source_key and all_objects:
+                # Apply same timestamped-preference logic as the download path
+                if len(all_objects) > 1:
+                    timestamped = [o for o in all_objects
+                                   if os.path.basename(o["Key"]).upper() != "CATALOG.XML"]
+                    if timestamped:
+                        source_key = timestamped[0]["Key"]
+                if _local_matches_s3(cached_path, client, bucket, source_key):
+                    logger.info("%s: XML up to date", data_source)
+                    return cached_path
+
     cursor.execute(f"SELECT * FROM {catalog_table} WHERE {catalog_pk} = 'XML'")
     for record in [dict(row) for row in cursor.fetchall()]:
         try:

@@ -17,6 +17,9 @@ from nbs.noaabathymetry._internal.download import (
     get_tessellation,
     get_xml,
     _get_s3_client,
+    _md5_hash,
+    _get_s3_etag,
+    _local_matches_s3,
     all_db_tiles,
 )
 import nbs.noaabathymetry._internal.download as fetch_tiles_module
@@ -488,6 +491,234 @@ class TestGetTessellationLocalAllSources:
                 f"{name}: expected ZZZ (reverse sort), got {os.path.basename(result)}"
             )
             conn.close()
+
+
+# ---------------------------------------------------------------------------
+# all_db_tiles
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# MD5 / ETag caching helpers
+# ---------------------------------------------------------------------------
+
+
+class TestMd5Hash:
+    def test_correct_md5(self, tmp_path):
+        path = str(tmp_path / "test.bin")
+        content = b"hello world"
+        with open(path, "wb") as f:
+            f.write(content)
+        expected = hashlib.md5(content).hexdigest()
+        assert _md5_hash(path) == expected
+
+    def test_empty_file(self, tmp_path):
+        path = str(tmp_path / "empty.bin")
+        with open(path, "wb") as f:
+            pass
+        expected = hashlib.md5(b"").hexdigest()
+        assert _md5_hash(path) == expected
+
+
+class TestGetS3Etag:
+    @mock_aws
+    def test_returns_etag(self):
+        client = boto3.client("s3", region_name="us-east-1")
+        client.create_bucket(Bucket=BUCKET)
+        content = b"test content"
+        client.put_object(Bucket=BUCKET, Key="test.txt", Body=content)
+        etag = _get_s3_etag(client, BUCKET, "test.txt")
+        expected = hashlib.md5(content).hexdigest()
+        assert etag == expected
+
+    @mock_aws
+    def test_returns_none_on_missing_key(self):
+        client = boto3.client("s3", region_name="us-east-1")
+        client.create_bucket(Bucket=BUCKET)
+        assert _get_s3_etag(client, BUCKET, "nonexistent.txt") is None
+
+    def test_returns_none_on_error(self):
+        assert _get_s3_etag(None, BUCKET, "key") is None
+
+
+class TestLocalMatchesS3:
+    @mock_aws
+    def test_match(self, tmp_path):
+        content = b"matching content"
+        path = str(tmp_path / "file.bin")
+        with open(path, "wb") as f:
+            f.write(content)
+        client = boto3.client("s3", region_name="us-east-1")
+        client.create_bucket(Bucket=BUCKET)
+        client.put_object(Bucket=BUCKET, Key="file.bin", Body=content)
+        assert _local_matches_s3(path, client, BUCKET, "file.bin") is True
+
+    @mock_aws
+    def test_mismatch(self, tmp_path):
+        path = str(tmp_path / "file.bin")
+        with open(path, "wb") as f:
+            f.write(b"local content")
+        client = boto3.client("s3", region_name="us-east-1")
+        client.create_bucket(Bucket=BUCKET)
+        client.put_object(Bucket=BUCKET, Key="file.bin", Body=b"different content")
+        assert _local_matches_s3(path, client, BUCKET, "file.bin") is False
+
+    @mock_aws
+    def test_file_not_exists(self, tmp_path):
+        client = boto3.client("s3", region_name="us-east-1")
+        client.create_bucket(Bucket=BUCKET)
+        client.put_object(Bucket=BUCKET, Key="file.bin", Body=b"content")
+        assert _local_matches_s3(str(tmp_path / "nope"), client, BUCKET, "file.bin") is False
+
+    def test_etag_with_hyphen(self, tmp_path):
+        path = str(tmp_path / "file.bin")
+        with open(path, "wb") as f:
+            f.write(b"content")
+        with mock.patch.object(fetch_tiles_module, "_get_s3_etag", return_value="abc-3"):
+            assert _local_matches_s3(path, None, BUCKET, "key") is False
+
+    def test_returns_false_on_error(self):
+        assert _local_matches_s3("/no/such/path", None, None, None) is False
+
+
+# ---------------------------------------------------------------------------
+# get_tessellation – cache check
+# ---------------------------------------------------------------------------
+
+
+class TestGetTessellationCacheCheck:
+    @mock_aws
+    def test_skips_download_when_content_matches(self, tmp_path, monkeypatch):
+        """Second call with unchanged S3 content returns cached path."""
+        monkeypatch.setattr(fetch_tiles_module, "_get_s3_client", _mock_s3_client)
+        cfg = get_config("bluetopo")
+        project_dir = str(tmp_path)
+        conn = connect_to_survey_registry(project_dir, cfg)
+
+        client = boto3.client("s3", region_name="us-east-1")
+        client.create_bucket(Bucket=BUCKET)
+        key = "BlueTopo/_BlueTopo_Tile_Scheme/BlueTopo_Tile_Scheme.gpkg"
+        content = b"gpkg content that stays the same"
+        client.put_object(Bucket=BUCKET, Key=key, Body=content)
+
+        # First call: downloads
+        result1 = get_tessellation(
+            conn, project_dir,
+            "BlueTopo/_BlueTopo_Tile_Scheme/BlueTopo_Tile_Scheme",
+            "BlueTopo", cfg,
+        )
+        assert os.path.isfile(result1)
+
+        # Second call: should skip download (content unchanged)
+        with mock.patch.object(
+            fetch_tiles_module, "pull", side_effect=AssertionError("should not download")
+        ):
+            result2 = get_tessellation(
+                conn, project_dir,
+                "BlueTopo/_BlueTopo_Tile_Scheme/BlueTopo_Tile_Scheme",
+                "BlueTopo", cfg,
+            )
+        assert result2 == result1
+        assert os.path.isfile(result2)
+
+    @mock_aws
+    def test_downloads_when_content_differs(self, tmp_path, monkeypatch):
+        """Second call with changed S3 content re-downloads."""
+        monkeypatch.setattr(fetch_tiles_module, "_get_s3_client", _mock_s3_client)
+        cfg = get_config("bluetopo")
+        project_dir = str(tmp_path)
+        conn = connect_to_survey_registry(project_dir, cfg)
+
+        client = boto3.client("s3", region_name="us-east-1")
+        client.create_bucket(Bucket=BUCKET)
+        key = "BlueTopo/_BlueTopo_Tile_Scheme/BlueTopo_Tile_Scheme.gpkg"
+        client.put_object(Bucket=BUCKET, Key=key, Body=b"version 1")
+
+        result1 = get_tessellation(
+            conn, project_dir,
+            "BlueTopo/_BlueTopo_Tile_Scheme/BlueTopo_Tile_Scheme",
+            "BlueTopo", cfg,
+        )
+        with open(result1, "rb") as f:
+            assert f.read() == b"version 1"
+
+        # Change S3 content
+        client.put_object(Bucket=BUCKET, Key=key, Body=b"version 2")
+        result2 = get_tessellation(
+            conn, project_dir,
+            "BlueTopo/_BlueTopo_Tile_Scheme/BlueTopo_Tile_Scheme",
+            "BlueTopo", cfg,
+        )
+        with open(result2, "rb") as f:
+            assert f.read() == b"version 2"
+
+
+# ---------------------------------------------------------------------------
+# get_xml – cache check
+# ---------------------------------------------------------------------------
+
+
+class TestGetXmlCacheCheck:
+    @mock_aws
+    def test_skips_download_when_content_matches(self, tmp_path, monkeypatch):
+        """Second call with unchanged S3 content returns cached path."""
+        monkeypatch.setattr(fetch_tiles_module, "_get_s3_client", _mock_s3_client)
+        cfg = get_config("s102v21")
+        project_dir = str(tmp_path)
+        conn = connect_to_survey_registry(project_dir, cfg)
+
+        client = boto3.client("s3", region_name="us-east-1")
+        client.create_bucket(Bucket=BUCKET)
+        key = "Test-and-Evaluation/Navigation_Test_and_Evaluation/S102V21/_CATALOG/exchange_catalogue.xml"
+        content = b"<xml>same catalog</xml>"
+        client.put_object(Bucket=BUCKET, Key=key, Body=content)
+
+        result1 = get_xml(
+            conn, project_dir,
+            "Test-and-Evaluation/Navigation_Test_and_Evaluation/S102V21/_CATALOG",
+            "S102V21", cfg,
+        )
+        assert result1 is not None
+        assert os.path.isfile(result1)
+
+        # Second call: should skip download
+        result2 = get_xml(
+            conn, project_dir,
+            "Test-and-Evaluation/Navigation_Test_and_Evaluation/S102V21/_CATALOG",
+            "S102V21", cfg,
+        )
+        assert result2 == result1
+        assert os.path.isfile(result2)
+
+    @mock_aws
+    def test_downloads_when_content_differs(self, tmp_path, monkeypatch):
+        """Second call with changed S3 content re-downloads."""
+        monkeypatch.setattr(fetch_tiles_module, "_get_s3_client", _mock_s3_client)
+        cfg = get_config("s102v21")
+        project_dir = str(tmp_path)
+        conn = connect_to_survey_registry(project_dir, cfg)
+
+        client = boto3.client("s3", region_name="us-east-1")
+        client.create_bucket(Bucket=BUCKET)
+        key = "Test-and-Evaluation/Navigation_Test_and_Evaluation/S102V21/_CATALOG/exchange_catalogue.xml"
+        client.put_object(Bucket=BUCKET, Key=key, Body=b"<xml>v1</xml>")
+
+        result1 = get_xml(
+            conn, project_dir,
+            "Test-and-Evaluation/Navigation_Test_and_Evaluation/S102V21/_CATALOG",
+            "S102V21", cfg,
+        )
+        with open(result1, "rb") as f:
+            assert f.read() == b"<xml>v1</xml>"
+
+        client.put_object(Bucket=BUCKET, Key=key, Body=b"<xml>v2</xml>")
+        result2 = get_xml(
+            conn, project_dir,
+            "Test-and-Evaluation/Navigation_Test_and_Evaluation/S102V21/_CATALOG",
+            "S102V21", cfg,
+        )
+        with open(result2, "rb") as f:
+            assert f.read() == b"<xml>v2</xml>"
 
 
 # ---------------------------------------------------------------------------
