@@ -34,8 +34,15 @@ class _ColorFormatter(logging.Formatter):
                 color = self.STATUS
             else:
                 color = self.RESET
+            _FRAME = "\033[38;5;245m"  # dim grey for ═══
+            _TITLE = "\033[38;5;224m"  # Catppuccin Rosewater
+            banner = record.getMessage()
+            title = banner.strip("═ ")
+            colored_banner = banner.replace(
+                title, f"{self.RESET}{_TITLE}{title}{self.RESET}{_FRAME}"
+            ) if title else banner
             parts = msg.split("] ", 1)
-            return f"{parts[0]}] {color}{parts[1]}{self.RESET}"
+            return f"{parts[0]}] {_FRAME}{colored_banner}{self.RESET}"
         return msg
 
 _logger = logging.getLogger("noaabathymetry")
