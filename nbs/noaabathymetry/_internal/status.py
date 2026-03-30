@@ -281,12 +281,9 @@ def status_tiles(
         else:
             logger.info("Tracked tiles:    %d", result.total_tracked)
             logger.info("  Up to date:     %d", up_to_date_count)
-            if updates_count:
-                logger.info("  Updates:        %d", updates_count)
-            if missing_count:
-                logger.info("  Missing:        %d", missing_count)
-            if removed_count:
-                logger.info("  Removed:        %d", removed_count)
+            logger.info("  Updates:        %d", updates_count)
+            logger.info("  Missing:        %d", missing_count)
+            logger.info("  Removed:        %d", removed_count)
 
             if not updates_count and not missing_count and not removed_count:
                 logger.info("")

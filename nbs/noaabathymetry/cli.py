@@ -71,6 +71,10 @@ def _add_fetch_parser(subparsers):
         "--debug", action="store_true",
         help="Write a diagnostic report to the project directory.",
     )
+    parser.add_argument(
+        "--json", action="store_true", dest="json_output",
+        help="Print result as JSON to stdout.",
+    )
     parser.set_defaults(func=_run_fetch, _subparser=parser)
 
 
@@ -126,6 +130,10 @@ def _add_mosaic_parser(subparsers):
         "--debug", action="store_true",
         help="Write a diagnostic report to the project directory.",
     )
+    parser.add_argument(
+        "--json", action="store_true", dest="json_output",
+        help="Print result as JSON to stdout.",
+    )
     parser.set_defaults(func=_run_mosaic, _subparser=parser)
 
 
@@ -146,32 +154,47 @@ def _add_status_parser(subparsers):
         "--verbose", action="store_true",
         help="Show individual tiles instead of UTM/resolution counts.",
     )
+    parser.add_argument(
+        "--json", action="store_true", dest="json_output",
+        help="Print result as JSON to stdout.",
+    )
     parser.set_defaults(func=_run_status, _subparser=parser)
+
+
+def _print_json(result):
+    """Serialize a dataclass result to JSON and print to stdout."""
+    import dataclasses
+    import json
+    print(json.dumps(dataclasses.asdict(result), indent=2))
 
 
 def _run_status(args):
     """Execute the status subcommand."""
-    status_tiles(
+    result = status_tiles(
         project_dir=args.dir,
         data_source=args.source,
         verbose=args.verbose,
     )
+    if args.json_output:
+        _print_json(result)
 
 
 def _run_fetch(args):
     """Execute the fetch subcommand."""
-    fetch_tiles(
+    result = fetch_tiles(
         project_dir=args.dir,
         geometry=args.geom,
         data_source=args.source,
         debug=args.debug,
         tile_resolution_filter=args.tile_resolution_filter,
     )
+    if args.json_output:
+        _print_json(result)
 
 
 def _run_mosaic(args):
     """Execute the mosaic subcommand."""
-    mosaic_tiles(
+    result = mosaic_tiles(
         project_dir=args.dir,
         data_source=args.source,
         relative_to_vrt=args.relative_to_vrt,
@@ -183,6 +206,8 @@ def _run_mosaic(args):
         output_dir=args.output_dir,
         debug=args.debug,
     )
+    if args.json_output:
+        _print_json(result)
 
 
 def main():

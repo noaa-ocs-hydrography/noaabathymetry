@@ -288,7 +288,7 @@ The `nbs` command is installed when you `pip install noaabathymetry`.
 ### nbs fetch
 
 ```
-nbs fetch -d DIR [-g GEOMETRY] [-s SOURCE] [--tile-resolution-filter N [N ...]] [--debug]
+nbs fetch -d DIR [-g GEOMETRY] [-s SOURCE] [--tile-resolution-filter N [N ...]] [--debug] [--json]
 ```
 
 | Short form | Long form | Description |
@@ -298,6 +298,7 @@ nbs fetch -d DIR [-g GEOMETRY] [-s SOURCE] [--tile-resolution-filter N [N ...]] 
 | `-s` | `--source`, `--data-source` | Data source identifier. Default: `bluetopo`. |
 | | `--tile-resolution-filter` | Only fetch tiles at these resolutions (meters). Multiple values allowed. |
 | | `--debug` | Write a diagnostic report to the project directory. |
+| | `--json` | Print result as JSON to stdout. |
 | `-v` | `--version` | Show version and exit. |
 
 **Examples**
@@ -319,7 +320,7 @@ nbs fetch -d /home/user/bathymetry
 ### nbs mosaic
 
 ```
-nbs mosaic -d DIR [-s SOURCE] [-r BOOL] [-t RESOLUTION] [--tile-resolution-filter N [N ...]] [--hillshade] [--workers N] [--reproject] [-o OUTPUT_DIR] [--debug]
+nbs mosaic -d DIR [-s SOURCE] [-r BOOL] [-t RESOLUTION] [--tile-resolution-filter N [N ...]] [--hillshade] [--workers N] [--reproject] [-o OUTPUT_DIR] [--debug] [--json]
 ```
 
 | Short form | Long form | Description |
@@ -334,6 +335,7 @@ nbs mosaic -d DIR [-s SOURCE] [-r BOOL] [-t RESOLUTION] [--tile-resolution-filte
 | | `--reproject` | Reproject to EPSG:3857 (Web Mercator) GeoTIFFs. |
 | `-o` | `--output-dir` | Custom output directory name within the project directory. |
 | | `--debug` | Write a diagnostic report to the project directory. |
+| | `--json` | Print result as JSON to stdout. |
 | `-v` | `--version` | Show version and exit. |
 
 **Examples**
@@ -364,7 +366,7 @@ nbs mosaic -d /home/user/bathymetry -s modeling
 ### nbs status
 
 ```
-nbs status -d DIR [-s SOURCE] [--verbose]
+nbs status -d DIR [-s SOURCE] [--verbose] [--json]
 ```
 
 | Short form | Long form | Description |
@@ -372,6 +374,7 @@ nbs status -d DIR [-s SOURCE] [--verbose]
 | `-d` | `--dir`, `--directory` | **Required.** Absolute path to the project directory. |
 | `-s` | `--source`, `--data-source` | Data source identifier. Default: `bluetopo`. |
 | | `--verbose` | Show individual tiles instead of UTM/resolution counts. |
+| | `--json` | Print result as JSON to stdout. |
 
 **Examples**
 
