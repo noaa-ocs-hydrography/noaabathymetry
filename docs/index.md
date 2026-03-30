@@ -42,9 +42,9 @@ pip install noaabathymetry
 
 ## Quick start
 
-After installation, you have access to a Python API and a CLI. You may use fetch for downloading tiles and mosaic for assembling them together.
+After installation, you have access to a Python API and a CLI. You can use fetch for downloading tiles and mosaic for assembling them together.
 
-You can use the [Quickstart Helper](quickstart-helper.md) to draw your area of interest on a map and generate usage examples.
+See the Python API and CLI sections below to get started. You can also use the [Quickstart Helper](quickstart-helper.md) to draw your area of interest on a map and generate usage examples.
 
 ### Python API
 
