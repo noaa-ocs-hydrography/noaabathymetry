@@ -1,4 +1,4 @@
-"""CLI entry point: ``nbs fetch`` and ``nbs mosaic`` subcommands."""
+"""CLI entry point: ``nbs fetch``, ``nbs mosaic``, and ``nbs status`` subcommands."""
 
 import sqlite3
 from argparse import ArgumentTypeError
@@ -9,6 +9,7 @@ from nbs.noaabathymetry import __version__
 from nbs.noaabathymetry.cli_formatter import PaneledArgumentParser
 from nbs.noaabathymetry._internal.builder import mosaic_tiles
 from nbs.noaabathymetry._internal.fetcher import fetch_tiles
+from nbs.noaabathymetry._internal.status import status_tiles
 
 
 def str_to_bool(value):
@@ -128,6 +129,35 @@ def _add_mosaic_parser(subparsers):
     parser.set_defaults(func=_run_mosaic, _subparser=parser)
 
 
+def _add_status_parser(subparsers):
+    """Add the ``nbs status`` subcommand."""
+    parser = subparsers.add_parser("status", help="Check for tile updates on S3.")
+    parser.add_argument(
+        "-d", "--dir", "--directory",
+        help="Absolute path to the project directory.",
+        type=str, dest="dir", required=True,
+    )
+    parser.add_argument(
+        "-s", "--source", "--data-source",
+        help="Data source identifier. BlueTopo is the default.",
+        default="bluetopo", dest="source",
+    )
+    parser.add_argument(
+        "--verbose", action="store_true",
+        help="Show individual tiles instead of UTM/resolution counts.",
+    )
+    parser.set_defaults(func=_run_status, _subparser=parser)
+
+
+def _run_status(args):
+    """Execute the status subcommand."""
+    status_tiles(
+        project_dir=args.dir,
+        data_source=args.source,
+        verbose=args.verbose,
+    )
+
+
 def _run_fetch(args):
     """Execute the fetch subcommand."""
     fetch_tiles(
@@ -163,6 +193,7 @@ def main():
     subparsers = parser.add_subparsers(dest="command")
     _add_fetch_parser(subparsers)
     _add_mosaic_parser(subparsers)
+    _add_status_parser(subparsers)
 
     args = parser.parse_args()
     if args.command is None:

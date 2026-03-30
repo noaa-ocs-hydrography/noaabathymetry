@@ -182,6 +182,8 @@ def _run_fetch(project_dir, geometry, cfg, data_source,
 
     conn = connect(project_dir, cfg)
     check_internal_version(conn)
+    from nbs.noaabathymetry._internal.ratelimit import log_command
+    log_command(conn, "fetch")
     if report:
         report.set_conn(conn)
     try:

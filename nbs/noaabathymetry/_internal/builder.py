@@ -705,6 +705,8 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
 
     conn = connect(project_dir, cfg)
     check_internal_version(conn)
+    from nbs.noaabathymetry._internal.ratelimit import log_command
+    log_command(conn, "mosaic")
     if report:
         report.set_conn(conn)
     try:

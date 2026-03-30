@@ -58,7 +58,7 @@ pip install noaabathymetry   # installs boto3 and tqdm automatically
 
 ## Quickstart
 
-After installation, the package provides a Python API and a CLI with two subcommands: `nbs fetch` for downloading tiles and `nbs mosaic` for assembling them into mosaics.
+After installation, the package provides a Python API and a CLI with three subcommands: `nbs fetch` for downloading tiles, `nbs mosaic` for assembling them into mosaics, and `nbs status` for checking if updates are available.
 
 See the Python API and CLI sections below to get started. You can also use the [Quickstart Helper](https://noaa-ocs-hydrography.github.io/BlueTopo/quickstart-helper.html) to draw your area of interest on a map and generate usage examples.
 

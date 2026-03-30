@@ -112,6 +112,21 @@ Mosaic returns a [`MosaicResult`](api-reference.md#mosaicresult) with per-zone s
 - **tile_resolution_filter** — the resolution filter that was active, or `None` if unfiltered.
 - **mosaic_resolution_target** — Output pixel size override that was active, or `None` for native resolution.
 
+### Understanding `StatusResult`
+
+Status returns a [`StatusResult`](api-reference.md#statusresult) with per-tile freshness information.
+
+**Tile categories** (no overlap):
+
+- **up_to_date** — tiles whose delivery datetime matches the remote and whose files exist on disk.
+- **updates_available** — tiles with a newer delivery datetime on S3. Each entry includes local and remote datetimes.
+- **missing_from_disk** — tiles whose delivery datetime matches the remote but whose files are missing from disk.
+- **removed_from_scheme** — tiles tracked locally that no longer appear in the remote geopackage.
+
+**Run metadata:**
+
+- **total_tracked** — total number of tiles in the local database.
+
 ### How geometry works
 
 The `geometry` parameter controls **tile discovery**, not downloading. When you pass a geometry, fetch intersects it with the tile scheme and adds any overlapping tiles to a persistent tracking list in the project database.
@@ -134,6 +149,23 @@ Running `nbs mosaic` again:
 - UTM zones whose mosaics are already built and up to date are skipped.
 - If you delete a mosaic file, the next `nbs mosaic` run will detect it's missing and rebuild.
 - If new tiles were downloaded since the last build, only the affected UTM zones are rebuilt.
+
+## Checking for updates
+
+Use `nbs status` (or `status_tiles()` in Python) to check if your local project has updates available on S3 without downloading anything:
+
+```python
+from nbs.noaabathymetry import status_tiles
+
+result = status_tiles('/path/to/project')
+print(f"Updates available: {len(result.updates_available)}")
+```
+
+```
+nbs status -d /path/to/project
+```
+
+The status check reads the remote tile scheme and compares delivery datetimes against your local database. It reports tiles that have updates, tiles missing from disk, and tiles removed from the scheme. Use `--verbose` for per-tile detail.
 
 ## Resolution filtering
 

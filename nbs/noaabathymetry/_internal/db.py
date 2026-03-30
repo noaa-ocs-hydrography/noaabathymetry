@@ -157,6 +157,8 @@ def connect(project_dir: str, cfg: dict) -> sqlite3.Connection:
     except sqlite3.Error as e:
         logger.error("Failed to create SQLite tables.")
         raise e
+    from nbs.noaabathymetry._internal.ratelimit import ensure_usage_table
+    ensure_usage_table(conn)
     return conn
 
 

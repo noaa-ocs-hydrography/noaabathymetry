@@ -10,7 +10,7 @@ authors = [
   { name = "Glen Rice", email = "ocs.nbs@noaa.gov" },
   { name = "Tashi Geleg", email = "ocs.nbs@noaa.gov" },
 ]
-description = "NOAA National Bathymetric Source data download and mosaic builder"
+description = "NOAA National Bathymetric Source data download, mosaic, and status tools"
 readme = "README.md"
 license = { file = "LICENSE" }
 keywords = ["NOAA", "National Bathymetric Source", "Bathymetry", "noaabathymetry"]

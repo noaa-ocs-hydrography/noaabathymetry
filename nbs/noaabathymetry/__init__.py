@@ -1,4 +1,4 @@
-"""noaabathymetry — NOAA NBS bathymetric data download & mosaic builder."""
+"""noaabathymetry — NOAA NBS bathymetric data download, mosaic, and status tools."""
 
 import logging
 import sys
@@ -6,16 +6,14 @@ from importlib.metadata import version, PackageNotFoundError
 
 from ._internal.builder import mosaic_tiles, MosaicResult
 from ._internal.fetcher import fetch_tiles, FetchResult
+from ._internal.status import status_tiles, StatusResult
 
 class _ColorFormatter(logging.Formatter):
     # -- Active: muted, per-operation colors --
-    FETCH = "\033[38;5;110m"   # Kanagawa blue
-    BUILD = "\033[38;5;180m"   # Kanagawa orange
-    DONE = "\033[38;5;114m"    # Tokyo Night green
-    # -- Alt: vibrant, per-operation colors --
-    # FETCH = "\033[38;5;111m"  # Tokyo Night blue
-    # BUILD = "\033[38;5;209m"  # Catppuccin peach
-    # DONE = "\033[38;5;84m"    # Dracula green
+    FETCH = "\033[38;5;110m"    # Kanagawa blue
+    BUILD = "\033[38;5;180m"    # Kanagawa orange
+    STATUS = "\033[38;5;183m"   # Kanagawa purple
+    DONE = "\033[38;5;114m"     # Tokyo Night green
     RESET = "\033[0m"
 
     def __init__(self, fmt, datefmt, use_color):
@@ -30,6 +28,8 @@ class _ColorFormatter(logging.Formatter):
                 color = self.DONE
             elif "Fetching" in text:
                 color = self.FETCH
+            elif "Checking status" in text:
+                color = self.STATUS
             else:
                 color = self.BUILD
             return f"{color}{msg}{self.RESET}"
@@ -48,4 +48,5 @@ try:
 except PackageNotFoundError:
     __version__ = "unknown"
 
-__all__ = ["fetch_tiles", "mosaic_tiles", "FetchResult", "MosaicResult", "__version__"]
+__all__ = ["fetch_tiles", "mosaic_tiles", "status_tiles",
+           "FetchResult", "MosaicResult", "StatusResult", "__version__"]

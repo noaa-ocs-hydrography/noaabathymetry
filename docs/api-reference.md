@@ -2,10 +2,10 @@
 
 ## Python API
 
-Both public functions are importable from `nbs.noaabathymetry`:
+All public functions are importable from `nbs.noaabathymetry`:
 
 ```python
-from nbs.noaabathymetry import fetch_tiles, mosaic_tiles
+from nbs.noaabathymetry import fetch_tiles, mosaic_tiles, status_tiles
 ```
 
 ---
@@ -220,6 +220,67 @@ print(result)
 
 ---
 
+### status_tiles
+
+```python
+status_tiles(
+    project_dir: str,
+    data_source: str = None,
+    verbose: bool = False,
+) -> StatusResult
+```
+
+Check local project freshness against the remote tile scheme.
+
+**Parameters**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `project_dir` | `str` | *required* | Absolute path to the project directory. |
+| `data_source` | `str \| None` | `None` | A known source name, or `None` (defaults to `"bluetopo"`). |
+| `verbose` | `bool` | `False` | If `True`, log individual tiles instead of UTM/resolution counts. |
+
+**Returns:** [`StatusResult`](#statusresult)
+
+**Raises**
+
+| Exception | Condition |
+|---|---|
+| `ValueError` | `project_dir` is not an absolute path. |
+| `ValueError` | Project directory does not exist. |
+| `ValueError` | Registry database not found (`fetch_tiles` must run first). |
+| `ValueError` | Rate limit exceeded. |
+| `RuntimeError` | Remote tile scheme cannot be read from S3. |
+
+**Example**
+
+```python
+from nbs.noaabathymetry import status_tiles
+
+result = status_tiles('/home/user/bathymetry')
+
+print(f"Up to date: {len(result.up_to_date)}")
+print(f"Updates available: {len(result.updates_available)}")
+for entry in result.updates_available:
+    print(f"  {entry['tile']}: {entry['local_datetime']} -> {entry['remote_datetime']}")
+```
+
+---
+
+### StatusResult
+
+Dataclass returned by `status_tiles`.
+
+| Attribute | Type | Description |
+|---|---|---|
+| `up_to_date` | `list[dict]` | Tiles whose delivery datetime matches the remote and files exist on disk. Each dict has `tile`, `utm`, `resolution`, and `local_datetime` keys. |
+| `updates_available` | `list[dict]` | Tiles with a newer delivery datetime on S3. Each dict has `tile`, `utm`, `resolution`, `local_datetime`, and `remote_datetime` keys. |
+| `missing_from_disk` | `list[dict]` | Tiles whose delivery datetime matches the remote but files are missing from disk. Each dict has `tile`, `utm`, `resolution`, and `local_datetime` keys. |
+| `removed_from_scheme` | `list[dict]` | Tiles tracked locally that no longer appear in the remote geopackage. Each dict has `tile`, `utm`, `resolution`, and `local_datetime` keys. |
+| `total_tracked` | `int` | Total number of tiles in the local database. |
+
+---
+
 ## CLI Reference
 
 The `nbs` command is installed when you `pip install noaabathymetry`.
@@ -298,4 +359,29 @@ nbs mosaic -d /home/user/bathymetry -o my_custom_mosaics
 
 # Build Modeling mosaics
 nbs mosaic -d /home/user/bathymetry -s modeling
+```
+
+### nbs status
+
+```
+nbs status -d DIR [-s SOURCE] [--verbose]
+```
+
+| Short form | Long form | Description |
+|---|---|---|
+| `-d` | `--dir`, `--directory` | **Required.** Absolute path to the project directory. |
+| `-s` | `--source`, `--data-source` | Data source identifier. Default: `bluetopo`. |
+| | `--verbose` | Show individual tiles instead of UTM/resolution counts. |
+
+**Examples**
+
+```bash
+# Check for updates
+nbs status -d /home/user/bathymetry
+
+# Check with verbose tile listing
+nbs status -d /home/user/bathymetry --verbose
+
+# Check a different data source
+nbs status -d /home/user/bathymetry -s bag
 ```
