@@ -44,7 +44,7 @@ def ensure_usage_table(conn):
 
 def _utc_window_starts():
     """Return the current minute, hour, and day window start times (UTC ISO 8601)."""
-    now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+    now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     minute_start = now.replace(second=0, microsecond=0).isoformat()
     hour_start = now.replace(minute=0, second=0, microsecond=0).isoformat()
     day_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
@@ -53,7 +53,7 @@ def _utc_window_starts():
 
 def _seconds_until_next(window):
     """Return seconds until the next window boundary for *window* ('minute', 'hour', 'day')."""
-    now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+    now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     if window == "minute":
         next_boundary = (now + datetime.timedelta(minutes=1)).replace(second=0, microsecond=0)
     elif window == "hour":
