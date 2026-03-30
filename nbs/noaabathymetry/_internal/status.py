@@ -232,8 +232,7 @@ def status_tiles(
     try:
         check_rate_limit(conn, "status")
 
-        logger.info("═══ Begin %s: Checking status in %s ═══",
-                     data_source, project_dir)
+        logger.info("═══ Status ═══")
 
         gpkg_fields = cfg["gpkg_fields"]
         db_tiles = all_db_tiles(conn)
@@ -316,7 +315,7 @@ def status_tiles(
                     logger.info("Run 'nbs fetch -d %s' to download updates.",
                                 project_dir)
 
-        logger.info("═══ Complete %s: Checking status ═══", data_source)
+        logger.info("══════════════")
         return result
     finally:
         conn.close()

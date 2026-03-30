@@ -24,15 +24,18 @@ class _ColorFormatter(logging.Formatter):
         msg = super().format(record)
         if self.use_color and "═══" in record.getMessage():
             text = record.getMessage()
-            if "═══ Complete" in text:
+            if text.strip("═ ") == "":
                 color = self.DONE
-            elif "Fetching" in text:
+            elif "═══ Fetch ═══" in text:
                 color = self.FETCH
-            elif "Checking status" in text:
+            elif "═══ Mosaic ═══" in text:
+                color = self.BUILD
+            elif "═══ Status ═══" in text:
                 color = self.STATUS
             else:
-                color = self.BUILD
-            return f"{color}{msg}{self.RESET}"
+                color = self.RESET
+            parts = msg.split("] ", 1)
+            return f"{parts[0]}] {color}{parts[1]}{self.RESET}"
         return msg
 
 _logger = logging.getLogger("noaabathymetry")

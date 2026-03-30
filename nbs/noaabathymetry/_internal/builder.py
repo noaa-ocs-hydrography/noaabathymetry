@@ -701,7 +701,10 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
     GeoTIFF with overviews and RAT.
     """
     start = datetime.datetime.now()
-    logger.info("═══ Begin %s: Building Mosaics in %s ═══", data_source, project_dir)
+    logger.info("═══ Mosaic ═══")
+    logger.info("Project: %s", project_dir)
+    logger.info("Data source: %s", data_source)
+    logger.info("")
 
     conn = connect(project_dir, cfg)
     check_internal_version(conn)
@@ -980,8 +983,7 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                     len(result.skipped), skipped_reason)
         logger.info("Total:   %d UTM zones", len(all_utm_names))
 
-        logger.info("═══ Complete %s: Building Mosaics (%s) ═══",
-                    data_source, datetime.datetime.now() - start)
+        logger.info("══════════════")
     finally:
         if not report:
             conn.close()
