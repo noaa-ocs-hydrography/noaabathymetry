@@ -42,7 +42,7 @@ pip install noaabathymetry
 
 ## Quick start
 
-After installation, you have access to a Python API and a CLI with three subcommands: `nbs fetch` for downloading tiles, `nbs mosaic` for assembling them into mosaics, and `nbs status` for checking if updates are available.
+After installation, you have access to a Python API and a CLI. You may use fetch for downloading tiles and mosaic for assembling them into mosaics.
 
 You can use the [Quickstart Helper](quickstart-helper.md) to draw your area of interest on a map and generate usage examples.
 

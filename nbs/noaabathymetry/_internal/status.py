@@ -259,6 +259,10 @@ def status_tiles(
             elif not _tile_files_exist(db_tile, project_dir, cfg):
                 result.missing_from_disk.append(info)
             else:
+                # Includes tiles where local_date >= remote_date. If local
+                # is ahead of remote (e.g. NBS rolled back a tile), we treat
+                # it as up to date. The user has equal or newer data and
+                # there is nothing to download.
                 result.up_to_date.append(info)
 
         # Output
