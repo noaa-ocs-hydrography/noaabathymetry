@@ -18,8 +18,8 @@ logger = logging.getLogger("noaabathymetry")
 # Rate limits for the status command.
 _STATUS_LIMITS = {
     "minute": {"max": 50, "seconds": 60},
-    "hour": {"max": 200, "seconds": 3600},
-    "day": {"max": 1000, "seconds": 86400},
+    "hour": {"max": 250, "seconds": 3600},
+    "day": {"max": 1200, "seconds": 86400},
 }
 
 

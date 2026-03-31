@@ -42,6 +42,11 @@ def _create_local_dir(tmp_path, gpkg_names):
     return local_dir
 
 
+def _touch_db(project_dir, canonical_name):
+    """Create an empty registry DB file so fetch_tiles sees an existing project."""
+    open(os.path.join(project_dir, f"{canonical_name.lower()}_registry.db"), "w").close()
+
+
 # ---------------------------------------------------------------------------
 # fetch_tiles.main() local source resolution
 # ---------------------------------------------------------------------------
@@ -55,6 +60,7 @@ class TestFetchTilesLocalResolution:
         local_dir = _create_local_dir(tmp_path, ["HSD_Tile_Scheme.gpkg"])
         project_dir = str(tmp_path / "project")
         os.makedirs(project_dir)
+        _touch_db(project_dir, "HSD")
 
         # Mock everything after config resolution to prevent real pipeline work
         with mock.patch.object(fetch_tiles_mod, "connect") as mock_conn, \
@@ -77,6 +83,7 @@ class TestFetchTilesLocalResolution:
         local_dir = _create_local_dir(tmp_path, ["BlueTopo_Tile_Scheme.gpkg"])
         project_dir = str(tmp_path / "project")
         os.makedirs(project_dir)
+        _touch_db(project_dir, "BlueTopo")
 
         with mock.patch.object(fetch_tiles_mod, "connect") as mock_conn, \
              mock.patch.object(fetch_tiles_mod, "get_tessellation", return_value=None), \
@@ -98,6 +105,7 @@ class TestFetchTilesLocalResolution:
         local_dir = _create_local_dir(tmp_path, ["UnknownSource_Tile_Scheme.gpkg"])
         project_dir = str(tmp_path / "project")
         os.makedirs(project_dir)
+        _touch_db(project_dir, "UnknownSource")
 
         with mock.patch.object(fetch_tiles_mod, "connect") as mock_conn, \
              mock.patch.object(fetch_tiles_mod, "get_tessellation", return_value=None), \
@@ -120,6 +128,7 @@ class TestFetchTilesLocalResolution:
         local_dir = _create_local_dir(tmp_path, ["BAG_Tile_Scheme.gpkg"])
         project_dir = str(tmp_path / "project")
         os.makedirs(project_dir)
+        _touch_db(project_dir, "BAG")
 
         with mock.patch.object(fetch_tiles_mod, "connect") as mock_conn, \
              mock.patch.object(fetch_tiles_mod, "get_tessellation", return_value=None), \
@@ -179,6 +188,7 @@ class TestFetchTilesLocalResolution:
         ])
         project_dir = str(tmp_path / "project")
         os.makedirs(project_dir)
+        _touch_db(project_dir, "ZZZ")
 
         with mock.patch.object(fetch_tiles_mod, "connect") as mock_conn, \
              mock.patch.object(fetch_tiles_mod, "get_tessellation", return_value=None), \
@@ -203,6 +213,7 @@ class TestFetchTilesLocalResolution:
         ])
         project_dir = str(tmp_path / "project")
         os.makedirs(project_dir)
+        _touch_db(project_dir, "HSD")
 
         with mock.patch.object(fetch_tiles_mod, "connect") as mock_conn, \
              mock.patch.object(fetch_tiles_mod, "get_tessellation", return_value=None), \
@@ -227,6 +238,7 @@ class TestFetchTilesLocalResolution:
         ])
         project_dir = str(tmp_path / "project")
         os.makedirs(project_dir)
+        _touch_db(project_dir, "Unknown")
 
         with mock.patch.object(fetch_tiles_mod, "connect") as mock_conn, \
              mock.patch.object(fetch_tiles_mod, "get_tessellation", return_value=None), \
@@ -251,6 +263,7 @@ class TestFetchTilesLocalResolution:
         ])
         project_dir = str(tmp_path / "project")
         os.makedirs(project_dir)
+        _touch_db(project_dir, "BlueTopo")
 
         with mock.patch.object(fetch_tiles_mod, "connect") as mock_conn, \
              mock.patch.object(fetch_tiles_mod, "get_tessellation", return_value=None), \
@@ -272,6 +285,7 @@ class TestFetchTilesLocalResolution:
         local_dir = _create_local_dir(tmp_path, ["BlueTopo_Tile_Scheme.gpkg"])
         project_dir = str(tmp_path / "project")
         os.makedirs(project_dir)
+        _touch_db(project_dir, "BlueTopo")
 
         with mock.patch.object(fetch_tiles_mod, "connect") as mock_conn, \
              mock.patch.object(fetch_tiles_mod, "get_tessellation", return_value=None), \
@@ -294,6 +308,7 @@ class TestFetchTilesLocalResolution:
         local_dir = _create_local_dir(tmp_path, ["BlueTopo_Tile_Scheme.gpkg"])
         project_dir = str(tmp_path / "project")
         os.makedirs(project_dir)
+        _touch_db(project_dir, "BlueTopo")
 
         with mock.patch.object(fetch_tiles_mod, "connect") as mock_conn, \
              mock.patch.object(fetch_tiles_mod, "get_tessellation",
@@ -323,6 +338,7 @@ class TestFetchTilesLocalResolution:
         """data_source=None defaults to 'bluetopo'."""
         project_dir = str(tmp_path / "project")
         os.makedirs(project_dir)
+        _touch_db(project_dir, "BlueTopo")
 
         with mock.patch.object(fetch_tiles_mod, "connect") as mock_conn, \
              mock.patch.object(fetch_tiles_mod, "get_tessellation", return_value=None), \

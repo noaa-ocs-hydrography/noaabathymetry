@@ -825,6 +825,7 @@ def get_tiles_fields(cfg):
         fields[f"{name}_verified"] = "integer"
         fields[f"{name}_disk_file_size"] = "integer"
     fields["downloaded_timestamp"] = "text"
+    fields["geometry"] = "text"
     return fields
 
 

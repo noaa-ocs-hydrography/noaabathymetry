@@ -219,7 +219,7 @@ class TestCheckRateLimit:
         conn.execute(
             "INSERT INTO command_usage(command, minute_start, minute_count, "
             "hour_start, hour_count, day_start, day_count) "
-            "VALUES(?, ?, 1, ?, 200, ?, 200)",
+            "VALUES(?, ?, 1, ?, 250, ?, 250)",
             ("status", m, h, d))
         conn.commit()
         with pytest.raises(ValueError, match="slow down"):
@@ -231,7 +231,7 @@ class TestCheckRateLimit:
         conn.execute(
             "INSERT INTO command_usage(command, minute_start, minute_count, "
             "hour_start, hour_count, day_start, day_count) "
-            "VALUES(?, ?, 1, ?, 1, ?, 1000)",
+            "VALUES(?, ?, 1, ?, 1, ?, 1200)",
             ("status", m, h, d))
         conn.commit()
         with pytest.raises(ValueError, match="slow down"):

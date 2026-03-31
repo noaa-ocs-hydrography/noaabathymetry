@@ -11,6 +11,7 @@ is extracted from the URL and downloaded directly (no listing).
 import concurrent.futures
 import datetime
 import hashlib
+import json
 import logging
 import os
 import re
@@ -830,6 +831,9 @@ def upsert_tiles(conn, project_dir, tile_scheme, cfg):
         for field_num in range(ts_defn.GetFieldCount()):
             field_name = ts_defn.GetFieldDefn(field_num).name
             field_list[field_name] = ft.GetField(field_name)
+        geom_ref = ft.GetGeometryRef()
+        if geom_ref:
+            field_list["_geojson"] = json.dumps(json.loads(geom_ref.ExportToJson()))
         # Map to standard names
         tile_name = field_list.get(gpkg_fields["tile"])
         if tile_name is None:
@@ -889,6 +893,7 @@ def upsert_tiles(conn, project_dir, tile_scheme, cfg):
             values.append(ts_tile.get(gpkg_fields["utm"]))
             for slot in slots:
                 values.append(ts_tile.get(slot["gpkg_checksum"]))
+            values.append(ts_tile.get("_geojson"))
             insert_tiles.append(tuple(values))
 
     if insert_tiles:
@@ -899,13 +904,13 @@ def upsert_tiles(conn, project_dir, tile_scheme, cfg):
         disk_cols = [f"{s['name']}_disk" for s in slots]
         verified_cols = [f"{s['name']}_verified" for s in slots]
 
-        insert_cols = ["tilename"] + link_cols + ["delivered_date", "resolution", "utm"] + checksum_cols
+        insert_cols = ["tilename"] + link_cols + ["delivered_date", "resolution", "utm"] + checksum_cols + ["geometry"]
         placeholders = ", ".join(["?"] * len(insert_cols))
         col_names = ", ".join(insert_cols)
 
         # ON CONFLICT: update links, date, resolution, utm, checksums; clear disk + verified
         update_parts = []
-        for col in link_cols + ["delivered_date", "resolution", "utm"] + checksum_cols:
+        for col in link_cols + ["delivered_date", "resolution", "utm"] + checksum_cols + ["geometry"]:
             update_parts.append(f"{col} = EXCLUDED.{col}")
         for col in disk_cols + verified_cols:
             update_parts.append(f"{col} = NULL")

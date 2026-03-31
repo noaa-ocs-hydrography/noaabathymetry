@@ -129,11 +129,11 @@ Status returns a [`StatusResult`](api-reference.md#statusresult) with per-tile f
 
 ### How geometry works
 
-The `geometry` parameter controls **tile discovery**, not downloading. When you pass a geometry, fetch intersects it with the tile scheme and adds any overlapping tiles to a persistent tracking list in the project database.
+The `geometry` parameter controls **tile discovery**, not downloading. When you pass a geometry, fetch intersects it with the tile scheme and adds any overlapping tiles to a persistent tracking list in the project database. **A geometry is required on the first fetch** to initialize a project.
 
 This tracking is additive. Tiles are never removed from tracking. Passing a new geometry adds new tiles without affecting previously tracked ones. All tracked tiles are downloaded and kept up to date on every fetch run, regardless of whether a geometry is provided.
 
-You only need to pass a geometry when you want to expand your area of interest. Omitting it still updates all previously tracked tiles. If NBS updates a tracked tile (new delivery date, revised data), the next fetch run picks up the change automatically. However, if NBS publishes *entirely new* tiles in your area that didn't exist in the tile scheme when you first ran, they won't be discovered unless you run with the geometry again. Re-running with your geometry periodically ensures newly published tiles in your area of interest are picked up.
+On subsequent runs, passing a geometry discovers and tracks any new tiles that intersect it. This is useful both for expanding your area of interest and for picking up entirely new tiles that NBS has published since your last discovery run. Omitting the geometry still updates all previously tracked tiles, but won't discover new ones. Re-running with your geometry periodically ensures newly published tiles in your area of interest are picked up.
 
 ## Re-fetch and update behavior
 
@@ -165,7 +165,7 @@ print(f"Updates available: {len(result.updates_available)}")
 nbs status -d /path/to/project
 ```
 
-The status check reads the remote tile scheme and compares delivery datetimes against your local database. It reports tiles that have updates, tiles missing from disk, and tiles removed from the scheme. Use `--verbose` for per-tile detail.
+The status check reads the remote tile scheme and compares delivery datetimes against your local database. It reports tiles that have updates, tiles missing from disk, and tiles removed from the scheme. Use `--verbosity verbose` for per-tile detail, or `--verbosity quiet` to suppress all log output.
 
 ## Resolution filtering
 

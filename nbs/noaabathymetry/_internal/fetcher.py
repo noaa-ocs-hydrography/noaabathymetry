@@ -139,6 +139,18 @@ def fetch_tiles(
     geom_prefix = local_dir or cfg["geom_prefix"]
     bucket = cfg["bucket"]
 
+    db_path = os.path.join(project_dir, f"{data_source.lower()}_registry.db")
+    if not geometry and not os.path.isfile(db_path):
+        raise ValueError(
+            "No existing project found. A geometry defining your area of "
+            "interest is required for the first fetch to initialize a project.\n"
+            "Pass a file path (shapefile, gpkg, geojson), GeoJSON string, "
+            "bounding box (xmin,ymin,xmax,ymax), or WKT.\n\n"
+            "Examples:\n"
+            '  nbs fetch -d /path/to/project -g "-71.1,42.3,-70.9,42.4"\n'
+            '  nbs fetch -d /path/to/project -g /path/to/area.geojson'
+        )
+
     report = None
     if debug:
         from nbs.noaabathymetry._internal.diagnostics import DebugReport

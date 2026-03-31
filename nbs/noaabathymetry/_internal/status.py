@@ -39,19 +39,19 @@ class StatusResult:
     up_to_date : list[dict]
         Tiles whose local delivery datetime matches the remote and whose
         files exist on disk.  Each dict has ``tile``, ``utm``,
-        ``resolution``, and ``local_datetime`` keys.
+        ``resolution``, ``local_datetime``, and ``geometry`` keys.
     updates_available : list[dict]
         Tiles with a newer delivery datetime on S3.  Each dict has
-        ``tile``, ``utm``, ``resolution``, ``local_datetime``, and
-        ``remote_datetime`` keys.
+        ``tile``, ``utm``, ``resolution``, ``local_datetime``,
+        ``remote_datetime``, and ``geometry`` keys.
     missing_from_disk : list[dict]
         Tiles whose delivery datetime matches the remote but whose files
         are missing from disk.  Each dict has ``tile``, ``utm``,
-        ``resolution``, and ``local_datetime`` keys.
+        ``resolution``, ``local_datetime``, and ``geometry`` keys.
     removed_from_scheme : list[dict]
         Tiles tracked locally that no longer appear in the remote
         geopackage.  Each dict has ``tile``, ``utm``, ``resolution``,
-        and ``local_datetime`` keys.
+        ``local_datetime``, and ``geometry`` keys.
     total_tracked : int
         Total number of tiles in the local database.
     """
@@ -137,6 +137,7 @@ def _tile_info(tile):
         "utm": tile.get("utm") or "Unknown",
         "resolution": tile.get("resolution") or "Unknown",
         "local_datetime": tile.get("delivered_date"),
+        "geometry": tile.get("geometry"),
     }
 
 
@@ -175,7 +176,7 @@ def _log_table(label, tiles, include_remote=False):
 def status_tiles(
     project_dir: str,
     data_source: str = None,
-    verbose: bool = False,
+    verbosity: str = "normal",
 ) -> StatusResult:
     """Check local project freshness against the remote tile scheme.
 
@@ -189,9 +190,10 @@ def status_tiles(
         Absolute path to the project directory.
     data_source : str | None
         A known source name, or None (defaults to ``"bluetopo"``).
-    verbose : bool
-        If True, log individual tiles instead of UTM/resolution counts.
-
+    verbosity : str
+        Logging verbosity: ``"quiet"`` suppresses all log output,
+        ``"normal"`` (default) shows UTM/resolution counts, and
+        ``"verbose"`` shows individual tiles.
 
     Returns
     -------
@@ -229,6 +231,8 @@ def status_tiles(
             "Note: fetch must be run at least once prior to status")
 
     conn = connect(project_dir, cfg)
+    if verbosity == "quiet":
+        logger.disabled = True
     try:
         check_rate_limit(conn, "status")
 
@@ -290,7 +294,7 @@ def status_tiles(
             else:
                 if updates_count:
                     logger.info("")
-                    if verbose:
+                    if verbosity == "verbose":
                         _log_table("Updates available", result.updates_available,
                                    include_remote=True)
                     else:
@@ -298,14 +302,14 @@ def status_tiles(
 
                 if missing_count:
                     logger.info("")
-                    if verbose:
+                    if verbosity == "verbose":
                         _log_table("Missing from disk", result.missing_from_disk)
                     else:
                         _log_grouped("Missing from disk", result.missing_from_disk)
 
                 if removed_count:
                     logger.info("")
-                    if verbose:
+                    if verbosity == "verbose":
                         _log_table("Removed from scheme", result.removed_from_scheme)
                     else:
                         _log_grouped("Removed from scheme", result.removed_from_scheme)
@@ -318,4 +322,6 @@ def status_tiles(
         logger.info("══════════════")
         return result
     finally:
+        if verbosity == "quiet":
+            logger.disabled = False
         conn.close()

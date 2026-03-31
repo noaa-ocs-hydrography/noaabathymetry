@@ -29,7 +29,7 @@ Discover, download, and update NBS tiles.
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `project_dir` | `str` | *required* | Absolute path to the project directory. Created if it does not exist. |
-| `geometry` | `str \| None` | `None` | Geometry input defining the area of interest. Accepts a file path, bounding box (`xmin,ymin,xmax,ymax`), WKT, or GeoJSON string. String inputs assume EPSG:4326. Pass `None` to skip tile discovery (useful for re-downloading existing tiles). |
+| `geometry` | `str \| None` | `None` | Geometry input defining the area of interest. Accepts a file path, GeoJSON string, bounding box (`xmin,ymin,xmax,ymax`), or WKT. String inputs assume EPSG:4326. **Required on the first fetch** to initialize a project. Pass `None` on subsequent runs to skip tile discovery (useful for re-downloading existing tiles). |
 | `data_source` | `str \| None` | `None` | An S3 source name (e.g. `"bluetopo"`, `"bag"`, `"s102v30"`), or `None` (defaults to `"bluetopo"`). |
 | `tile_resolution_filter` | `list[int] \| None` | `None` | Only fetch tiles at these resolutions (meters). Example: `[4, 8]`. |
 | `debug` | `bool` | `False` | If `True`, writes a diagnostic report to the project directory. |
@@ -226,7 +226,7 @@ print(result)
 status_tiles(
     project_dir: str,
     data_source: str = None,
-    verbose: bool = False,
+    verbosity: str = "normal",
 ) -> StatusResult
 ```
 
@@ -238,7 +238,7 @@ Check local project freshness against the remote tile scheme.
 |---|---|---|---|
 | `project_dir` | `str` | *required* | Absolute path to the project directory. |
 | `data_source` | `str \| None` | `None` | A known source name, or `None` (defaults to `"bluetopo"`). |
-| `verbose` | `bool` | `False` | If `True`, log individual tiles instead of UTM/resolution counts. |
+| `verbosity` | `str` | `"normal"` | Logging verbosity: `"quiet"` suppresses all log output, `"normal"` shows UTM/resolution counts, `"verbose"` shows individual tiles. |
 
 **Returns:** [`StatusResult`](#statusresult)
 
@@ -313,7 +313,7 @@ nbs fetch -d /home/user/bathymetry -g /path/to/aoi.gpkg --tile-resolution-filter
 # Fetch BAG data
 nbs fetch -d /home/user/bathymetry -g aoi.gpkg -s bag
 
-# Re-download/update without discovering new tiles (no geometry)
+# Re-download/update without discovering new tiles (existing project, no geometry)
 nbs fetch -d /home/user/bathymetry
 ```
 
@@ -366,14 +366,14 @@ nbs mosaic -d /home/user/bathymetry -s modeling
 ### nbs status
 
 ```
-nbs status -d DIR [-s SOURCE] [--verbose] [--json]
+nbs status -d DIR [-s SOURCE] [--verbosity quiet|normal|verbose] [--json]
 ```
 
 | Short form | Long form | Description |
 |---|---|---|
 | `-d` | `--dir`, `--directory` | **Required.** Absolute path to the project directory. |
 | `-s` | `--source`, `--data-source` | Data source identifier. Default: `bluetopo`. |
-| | `--verbose` | Show individual tiles instead of UTM/resolution counts. |
+| | `--verbosity` | Logging verbosity: `quiet`, `normal` (default), or `verbose`. |
 | | `--json` | Print result as JSON to stdout. |
 
 **Examples**
@@ -383,7 +383,10 @@ nbs status -d DIR [-s SOURCE] [--verbose] [--json]
 nbs status -d /home/user/bathymetry
 
 # Check with verbose tile listing
-nbs status -d /home/user/bathymetry --verbose
+nbs status -d /home/user/bathymetry --verbosity verbose
+
+# Quiet mode (return object only, no log output)
+nbs status -d /home/user/bathymetry --verbosity quiet
 
 # Check a different data source
 nbs status -d /home/user/bathymetry -s bag

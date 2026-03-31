@@ -151,8 +151,8 @@ def _add_status_parser(subparsers):
         default="bluetopo", dest="source",
     )
     parser.add_argument(
-        "--verbose", action="store_true",
-        help="Show individual tiles instead of UTM/resolution counts.",
+        "--verbosity", choices=["quiet", "normal", "verbose"], default="normal",
+        help="Logging verbosity (default: normal).",
     )
     parser.add_argument(
         "--json", action="store_true", dest="json_output",
@@ -173,7 +173,7 @@ def _run_status(args):
     result = status_tiles(
         project_dir=args.dir,
         data_source=args.source,
-        verbose=args.verbose,
+        verbosity=args.verbosity,
     )
     if args.json_output:
         _print_json(result)
