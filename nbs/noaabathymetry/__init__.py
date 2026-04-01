@@ -51,6 +51,11 @@ _stderr = sys.stderr if sys.stderr is not None else open(os.devnull, "w")
 _handler = logging.StreamHandler(_stderr)
 _handler.setFormatter(_ColorFormatter("[%(asctime)s] %(message)s", "%H:%M:%S",
                                       use_color=hasattr(_stderr, "isatty") and _stderr.isatty()))
+if hasattr(_handler.stream, "reconfigure"):
+    try:
+        _handler.stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 _logger.addHandler(_handler)
 _logger.setLevel(logging.INFO)
 _logger.propagate = False
