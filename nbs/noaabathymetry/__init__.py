@@ -1,6 +1,7 @@
 """noaabathymetry — NOAA NBS bathymetric data download, mosaic, and status tools."""
 
 import logging
+import os
 import sys
 from importlib.metadata import version, PackageNotFoundError
 
@@ -46,9 +47,10 @@ class _ColorFormatter(logging.Formatter):
         return msg
 
 _logger = logging.getLogger("noaabathymetry")
-_handler = logging.StreamHandler(sys.stderr)
+_stderr = sys.stderr if sys.stderr is not None else open(os.devnull, "w")
+_handler = logging.StreamHandler(_stderr)
 _handler.setFormatter(_ColorFormatter("[%(asctime)s] %(message)s", "%H:%M:%S",
-                                      use_color=sys.stderr.isatty()))
+                                      use_color=hasattr(_stderr, "isatty") and _stderr.isatty()))
 _logger.addHandler(_handler)
 _logger.setLevel(logging.INFO)
 _logger.propagate = False
