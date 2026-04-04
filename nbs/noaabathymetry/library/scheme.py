@@ -142,7 +142,7 @@ def parse_tile_scheme(source, data_source=None):
             props = feat.get("properties", {})
             tile_name = props.get(tile_field)
             if tile_name is not None:
-                tile_map[tile_name] = props
+                tile_map[tile_name] = dict(props)
         return tile_map
     mem_path = f"/vsimem/_parse_{uuid.uuid4().hex}.gpkg"
     gdal.FileFromMemBuffer(mem_path, source)
