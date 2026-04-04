@@ -76,7 +76,7 @@ class FetchResult:
     tile_resolution_filter: list = None
 
 
-def fetch_tiles(
+def _fetch_impl(
     project_dir: str,
     geometry: str = None,
     data_source: str = None,
@@ -174,6 +174,21 @@ def fetch_tiles(
                 if report.conn:
                     report.conn.close()
     return result
+
+
+def fetch_tiles(
+    project_dir: str,
+    geometry: str = None,
+    data_source: str = None,
+    tile_resolution_filter: list = None,
+    debug: bool = False,
+) -> FetchResult:
+    """Discover, download, and update NBS tiles.
+
+    See :func:`_fetch_impl` for full documentation.
+    """
+    return _fetch_impl(project_dir, geometry, data_source,
+                       tile_resolution_filter, debug)
 
 
 def _run_fetch(project_dir, geometry, cfg, data_source,

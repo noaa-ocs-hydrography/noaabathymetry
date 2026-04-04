@@ -62,6 +62,47 @@ class StatusResult:
     total_tracked: int = 0
 
 
+def _parse_geopackage(path, cfg):
+    """Parse a tile-scheme geopackage at *path* into a tile-name dict.
+
+    Parameters
+    ----------
+    path : str
+        Filesystem or ``/vsimem/`` path to a geopackage.
+    cfg : dict
+        Data source configuration containing ``gpkg_fields``.
+
+    Returns
+    -------
+    dict[str, dict]
+        ``{tile_name: {field: value, ...}, ...}``
+
+    Raises
+    ------
+    RuntimeError
+        If the geopackage cannot be opened by OGR.
+    """
+    ds = ogr.Open(path)
+    if ds is None:
+        raise RuntimeError(f"Unable to read tile scheme: {path}")
+
+    gpkg_fields = cfg["gpkg_fields"]
+    lyr = ds.GetLayer()
+    defn = lyr.GetLayerDefn()
+
+    tiles_map = {}
+    for ft in lyr:
+        fields = {}
+        for i in range(defn.GetFieldCount()):
+            name = defn.GetFieldDefn(i).name
+            fields[name] = ft.GetField(name)
+        tile_name = fields.get(gpkg_fields["tile"])
+        if tile_name is not None:
+            tiles_map[tile_name] = fields
+    ds = None
+    return tiles_map
+
+
 def _read_remote_geopackage(cfg):
     """Read the remote tile scheme geopackage from S3.
 
@@ -91,29 +132,9 @@ def _read_remote_geopackage(cfg):
             f"Failed to download tile scheme for {data_source}.")
 
     try:
-        ds = ogr.Open(mem_path)
-        if ds is None:
-            raise RuntimeError(
-                f"Unable to read tile scheme for {data_source}.")
-
-        gpkg_fields = cfg["gpkg_fields"]
-        lyr = ds.GetLayer()
-        defn = lyr.GetLayerDefn()
-
-        tiles_map = {}
-        for ft in lyr:
-            fields = {}
-            for i in range(defn.GetFieldCount()):
-                name = defn.GetFieldDefn(i).name
-                fields[name] = ft.GetField(name)
-            tile_name = fields.get(gpkg_fields["tile"])
-            if tile_name is not None:
-                tiles_map[tile_name] = fields
-        ds = None
+        return _parse_geopackage(mem_path, cfg)
     finally:
         gdal.Unlink(mem_path)
-
-    return tiles_map
 
 
 def _tile_files_exist(tile, project_dir, cfg):
@@ -173,10 +194,11 @@ def _log_table(label, tiles, include_remote=False):
                          t.get("local_datetime") or "None")
 
 
-def status_tiles(
+def _status_impl(
     project_dir: str,
     data_source: str = None,
     verbosity: str = "normal",
+    remote_tiles: dict = None,
 ) -> StatusResult:
     """Check local project freshness against the remote tile scheme.
 
@@ -194,6 +216,10 @@ def status_tiles(
         Logging verbosity: ``"quiet"`` suppresses all log output,
         ``"normal"`` (default) shows UTM/resolution counts, and
         ``"verbose"`` shows individual tiles.
+    remote_tiles : dict | None
+        Pre-fetched tile map dict (same format as
+        ``_read_remote_geopackage()``).  When provided, skips the S3
+        download and uses this dict instead.
 
     Returns
     -------
@@ -240,7 +266,8 @@ def status_tiles(
 
         gpkg_fields = cfg["gpkg_fields"]
         db_tiles = all_db_tiles(conn)
-        remote_tiles = _read_remote_geopackage(cfg)
+        if remote_tiles is None:
+            remote_tiles = _read_remote_geopackage(cfg)
 
         result = StatusResult(total_tracked=len(db_tiles))
 
@@ -325,3 +352,15 @@ def status_tiles(
         if verbosity == "quiet":
             logger.disabled = False
         conn.close()
+
+
+def status_tiles(
+    project_dir: str,
+    data_source: str = None,
+    verbosity: str = "normal",
+) -> StatusResult:
+    """Check local project freshness against the remote tile scheme.
+
+    See :func:`_status_impl` for full documentation.
+    """
+    return _status_impl(project_dir, data_source, verbosity)

@@ -552,7 +552,7 @@ def _validate_output_dir(project_dir, conn, cfg, params_key, mosaic_dir_name):
         conn.commit()
 
 
-def mosaic_tiles(project_dir: str, data_source: str = None,
+def _mosaic_impl(project_dir: str, data_source: str = None,
                  relative_to_vrt: bool = True,
                  mosaic_resolution_target: float = None,
                  tile_resolution_filter: list = None,
@@ -585,6 +585,9 @@ def mosaic_tiles(project_dir: str, data_source: str = None,
         If True, reproject to EPSG:3857 (Web Mercator) GeoTIFFs.
         Uses a temporary VRT as an intermediary for correct
         multi-resolution tile behavior.
+    output_dir : str | None
+        Custom output directory name for mosaics.  Must be a single
+        directory name, not a nested path.
     debug : bool
         If True, writes a diagnostic report to the project directory.
 
@@ -683,6 +686,27 @@ def mosaic_tiles(project_dir: str, data_source: str = None,
                 if report.conn:
                     report.conn.close()
     return result
+
+
+def mosaic_tiles(
+    project_dir: str,
+    data_source: str = None,
+    relative_to_vrt: bool = True,
+    mosaic_resolution_target: float = None,
+    tile_resolution_filter: list = None,
+    hillshade: bool = False,
+    workers: int = None,
+    reproject: bool = False,
+    output_dir: str = None,
+    debug: bool = False,
+) -> MosaicResult:
+    """Build a per-UTM-zone mosaic from all source tiles.
+
+    See :func:`_mosaic_impl` for full documentation.
+    """
+    return _mosaic_impl(project_dir, data_source, relative_to_vrt,
+                        mosaic_resolution_target, tile_resolution_filter,
+                        hillshade, workers, reproject, output_dir, debug)
 
 
 def _run_build(project_dir, cfg, data_source, relative_to_vrt,
