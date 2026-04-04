@@ -1,13 +1,17 @@
 # Build / distribution
 dist
 build
+sdist
 *.egg
 *.egg-info
 *.whl
+*.tar.gz
+MANIFEST
 
 # Python
 __pycache__
 *.pyc
+*.pyo
 *.so
 
 # Testing
@@ -15,17 +19,51 @@ pytest_temporary_data
 .pytest_cache
 .coverage
 htmlcov
+
 # Virtual environments
 .venv
 venv
 env
 
-# IDE
+# Environment / secrets
+.env
+.env.*
+
+# IDE / editors
 .idea
 .vscode
+*.swp
+*.swo
+*~
+.netrwhist
+*.sublime-workspace
+*.sublime-project
+.project
+.settings
+.classpath
+
+# Linters / type checkers
+.mypy_cache
+.ruff_cache
+.ty
 
 # Docs
 book
 
 # OS
 .DS_Store
+Thumbs.db
+Desktop.ini
+._*
+
+# Data / output
+*.tif
+*.tiff
+*.gpkg
+*.bag
+*.nc
+*.sqlite
+*.db
+
+# Misc
+*.log
