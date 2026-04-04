@@ -137,13 +137,53 @@ def _read_remote_geopackage(cfg):
         gdal.Unlink(mem_path)
 
 
-def _tile_files_exist(tile, project_dir, cfg):
-    """Return True if all disk files for a tile exist on disk and are verified."""
+def _scan_existing_files(db_tiles, project_dir, cfg):
+    """Scan disk once and return a set of relative paths that exist.
+
+    Collects the unique directories referenced by tile disk paths,
+    scans each with ``os.scandir``, and returns a set of relative
+    paths (matching the format stored in the database).
+    """
+    disk_fields = get_disk_fields(cfg)
+    dirs = set()
+    for tile in db_tiles:
+        for df in disk_fields:
+            path = tile.get(df)
+            if path:
+                dirs.add(os.path.dirname(path))
+
+    existing = set()
+    for rel_dir in dirs:
+        abs_dir = os.path.join(project_dir, rel_dir)
+        try:
+            with os.scandir(abs_dir) as entries:
+                for entry in entries:
+                    existing.add(os.path.join(rel_dir, entry.name))
+        except FileNotFoundError:
+            pass
+    return existing
+
+
+def _tile_files_exist(tile, project_dir, cfg, _existing=None):
+    """Return True if all disk files for a tile exist on disk and are verified.
+
+    Parameters
+    ----------
+    _existing : set | None
+        Pre-scanned set of relative paths from :func:`_scan_existing_files`.
+        When provided, uses fast set lookup instead of per-file
+        ``os.path.isfile`` calls.
+    """
     disk_fields = get_disk_fields(cfg)
     verified_fields = get_verified_fields(cfg)
     for df in disk_fields:
         path = tile.get(df)
-        if not path or not os.path.isfile(os.path.join(project_dir, path)):
+        if not path:
+            return False
+        if _existing is not None:
+            if path not in _existing:
+                return False
+        elif not os.path.isfile(os.path.join(project_dir, path)):
             return False
     for vf in verified_fields:
         if tile.get(vf) != 1:
@@ -269,6 +309,7 @@ def _status_impl(
         if remote_tiles is None:
             remote_tiles = _read_remote_geopackage(cfg)
 
+        existing_files = _scan_existing_files(db_tiles, project_dir, cfg)
         result = StatusResult(total_tracked=len(db_tiles))
 
         for db_tile in db_tiles:
@@ -286,7 +327,8 @@ def _status_impl(
             if local_date is None or (remote_date and remote_date > local_date):
                 info["remote_datetime"] = remote_date
                 result.updates_available.append(info)
-            elif not _tile_files_exist(db_tile, project_dir, cfg):
+            elif not _tile_files_exist(db_tile, project_dir, cfg,
+                                       _existing=existing_files):
                 result.missing_from_disk.append(info)
             else:
                 # Includes tiles where local_date >= remote_date. If local
