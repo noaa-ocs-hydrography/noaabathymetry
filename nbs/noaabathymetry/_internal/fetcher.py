@@ -289,9 +289,11 @@ def _run_fetch(project_dir, geometry, cfg, data_source,
             if r["Result"] is True:
                 result.downloaded.append(r["Tile"])
                 download_dict[r["Tile"]]["downloaded_timestamp"] = r.get("downloaded_timestamp")
+            elif r["Result"] == "not_found":
+                result.not_found.append(r["Tile"])
             else:
                 result.failed.append({"tile": r["Tile"], "reason": r.get("Reason", "unknown")})
-        result.not_found = tiles_not_found
+        result.not_found.extend(tiles_not_found)
 
         if result.downloaded:
             update_records(conn, download_dict, result.downloaded, cfg)
@@ -315,8 +317,9 @@ def _run_fetch(project_dir, geometry, cfg, data_source,
         total = cursor.fetchone()[0]
         logger.info("Total:        %d tiles", total)
         if result.not_found:
-            logger.warning("The NBS may be actively updating. "
-                           "Rerun fetch later to retry.")
+            logger.warning("%d tile(s) not found on S3. The NBS may be "
+                           "actively updating. Rerun fetch later to retry.",
+                           len(result.not_found))
         if result.failed:
             logger.warning("Rerun fetch to retry failed downloads.")
             if failed_verifications:

@@ -29,6 +29,7 @@ sqlite3.register_adapter(datetime.datetime, _adapt_datetime_iso)
 import boto3
 from botocore import UNSIGNED
 from botocore.client import Config
+from botocore.exceptions import ClientError
 from osgeo import ogr
 from tqdm import tqdm
 
@@ -551,19 +552,38 @@ def pull(download):
     Returns
     -------
     dict
-        ``{"Tile": str, "Result": bool, "Reason": str}``
+        ``{"Tile": str, "Result": bool | "not_found", "Reason": str}``
+        Result is ``True`` on success, ``False`` on failure, or
+        ``"not_found"`` when the S3 object does not exist.
     """
+    downloaded_files = []
     try:
         for f in download["files"]:
             if download["transport"] == "s3":
-                download["client"].download_file(
-                    download["bucket"], f["source"], f["dest"])
+                try:
+                    download["client"].download_file(
+                        download["bucket"], f["source"], f["dest"])
+                except ClientError as e:
+                    code = e.response.get("Error", {}).get("Code", "")
+                    if code in ("404", "NoSuchKey"):
+                        # Clean up any files already downloaded for this tile
+                        for df in downloaded_files:
+                            try:
+                                os.remove(df)
+                            except OSError:
+                                pass
+                        return {"Tile": download["tile"],
+                                "Result": "not_found",
+                                "Reason": f"S3 object not found: {f['source']}"}
+                    raise
             else:
                 shutil.copy(f["source"], f["dest"])
 
             if not os.path.isfile(f["dest"]):
                 return {"Tile": download["tile"], "Result": False,
                         "Reason": f"missing download for {f['name']}"}
+
+            downloaded_files.append(f["dest"])
 
             if f["checksum"]:
                 actual_hash = _stream_hash(f["dest"])
@@ -872,6 +892,21 @@ def upsert_tiles(conn, project_dir, tile_scheme, cfg):
         # Tiles with no stored date are always updated; tiles with a newer
         # geopackage date trigger re-download (old files removed, record upserted).
         if (db_tile["delivered_date"] is None) or (delivered_date > db_tile["delivered_date"]):
+            # Skip tiles with missing or invalid links — NBS may be
+            # mid-delivery.  Preserves the current DB record (with valid
+            # links and files) until the delivery is complete.
+            has_all_links = True
+            for slot in slots:
+                link = ts_tile.get(slot["gpkg_link"])
+                if not link or str(link).lower() == "none":
+                    has_all_links = False
+                    break
+            if not has_all_links:
+                logger.info("Skipping upsert for %s: missing link(s) in "
+                            "tilescheme (NBS may be mid-delivery)",
+                            db_tile["tilename"])
+                continue
+
             # Remove old files
             try:
                 for df in disk_fields:
