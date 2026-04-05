@@ -8,6 +8,10 @@ Also exposes building-block functions for working with remote
 tile-scheme geopackages independently.
 """
 
+import os
+import sqlite3
+
+from nbs.noaabathymetry._internal.config import resolve_data_source
 from nbs.noaabathymetry._internal.status import _status_impl
 from nbs.noaabathymetry._internal.fetcher import _fetch_impl
 from nbs.noaabathymetry._internal.builder import _mosaic_impl
@@ -16,6 +20,42 @@ from nbs.noaabathymetry.library.scheme import (
     list_tile_scheme,
     parse_tile_scheme,
 )
+from nbs.noaabathymetry.library.cleanup import clean_removed_from_scheme, CleanupResult
+
+
+def get_readonly_db_conn(project_dir, data_source=None):
+    """Open a read-only connection to the project's registry database.
+
+    Rows are returned as ``sqlite3.Row`` objects, which support
+    both index and key-based access (e.g. ``row["tilename"]``).
+
+    Parameters
+    ----------
+    project_dir : str
+        Absolute path to the project directory.
+    data_source : str | None
+        Data source name.  Defaults to ``"bluetopo"``.
+
+    Returns
+    -------
+    sqlite3.Connection
+        A read-only database connection.
+
+    Raises
+    ------
+    ValueError
+        If the registry database does not exist.
+    """
+    cfg, _ = resolve_data_source(data_source)
+    db_name = f"{cfg['canonical_name'].lower()}_registry.db"
+    db_path = os.path.join(project_dir, db_name)
+    if not os.path.isfile(db_path):
+        raise ValueError(
+            f"Registry database not found ({db_name}). "
+            "Note: fetch must be run at least once.")
+    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 
 def extended_status_tiles(project_dir, data_source=None, verbosity="normal",
@@ -55,11 +95,21 @@ def extended_mosaic_tiles(project_dir, data_source=None, relative_to_vrt=True,
                           mosaic_resolution_target=None,
                           tile_resolution_filter=None,
                           hillshade=False, workers=None, reproject=False,
-                          output_dir=None, debug=False):
+                          output_dir=None, debug=False,
+                          hillshade_dir=None):
     """Build a per-UTM-zone mosaic from all source tiles.
 
-    Extended version of :func:`nbs.noaabathymetry.mosaic_tiles`.
+    Extended version of :func:`nbs.noaabathymetry.mosaic_tiles` with
+    support for a custom hillshade output directory.
+
+    Parameters
+    ----------
+    hillshade_dir : str | None
+        Single directory name (relative to *project_dir*) for hillshade
+        output.  Requires ``hillshade=True``.  When ``None`` (default),
+        hillshades are written next to the mosaic files.
     """
     return _mosaic_impl(project_dir, data_source, relative_to_vrt,
                         mosaic_resolution_target, tile_resolution_filter,
-                        hillshade, workers, reproject, output_dir, debug)
+                        hillshade, workers, reproject, output_dir, debug,
+                        hillshade_dir=hillshade_dir)

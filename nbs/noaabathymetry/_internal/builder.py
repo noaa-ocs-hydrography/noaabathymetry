@@ -50,10 +50,28 @@ from nbs.noaabathymetry._internal.mosaic import (
 logger = logging.getLogger("noaabathymetry")
 
 
+def _hillshade_path(mosaic_abs_path, project_dir, hillshade_dir):
+    """Compute the absolute hillshade path for a mosaic file.
+
+    When *hillshade_dir* is provided, the hillshade is placed in that
+    directory (relative to *project_dir*) instead of next to the mosaic.
+    Does not create the directory — callers that write files are
+    responsible for ensuring it exists.
+    """
+    basename = os.path.basename(mosaic_abs_path)
+    if basename.endswith(".vrt"):
+        hs_name = basename.replace(".vrt", "_hillshade.tif")
+    else:
+        hs_name = basename.replace(".tif", "_hillshade.tif")
+    if hillshade_dir is not None:
+        return os.path.join(project_dir, hillshade_dir, hs_name)
+    return os.path.join(os.path.dirname(mosaic_abs_path), hs_name)
+
+
 def _build_utm_zone(project_dir, cfg, data_source, utm, mosaic_dir,
                      mosaic_dir_name, params_key, relative_to_vrt,
                      mosaic_resolution_target, tile_resolution_filter,
-                     hillshade, total_workers=1):
+                     hillshade, total_workers=1, hillshade_dir=None):
     """Build one UTM zone mosaic.  Designed to run in a worker process.
 
     Opens a read-only DB connection for tile selection and RAT
@@ -154,7 +172,8 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, mosaic_dir,
 
             if hillshade:
                 logger.info("[UTM%s] Generating hillshade...", utm)
-                hs_path = utm_combined_vrt.replace(".vrt", "_hillshade.tif")
+                hs_path = _hillshade_path(utm_combined_vrt, project_dir, hillshade_dir)
+                os.makedirs(os.path.dirname(hs_path), exist_ok=True)
                 generate_hillshade(utm_combined_vrt, hs_path)
                 hs_rel = os.path.relpath(hs_path, project_dir)
                 fields["hillshade"] = hs_rel
@@ -224,7 +243,8 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, mosaic_dir,
 
             if hillshade:
                 logger.info("[UTM%s] Generating hillshade...", utm)
-                hs_path = utm_vrt.replace(".vrt", "_hillshade.tif")
+                hs_path = _hillshade_path(utm_vrt, project_dir, hillshade_dir)
+                os.makedirs(os.path.dirname(hs_path), exist_ok=True)
                 generate_hillshade(utm_vrt, hs_path)
                 hs_rel = os.path.relpath(hs_path, project_dir)
                 fields["hillshade"] = hs_rel
@@ -241,7 +261,7 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, mosaic_dir,
 def _reproject_utm_zone(project_dir, cfg, data_source, utm, mosaic_dir,
                          mosaic_dir_name, params_key, relative_to_vrt,
                          mosaic_resolution_target, tile_resolution_filter,
-                         hillshade, total_workers=1):
+                         hillshade, total_workers=1, hillshade_dir=None):
     """Reproject one UTM zone to EPSG:3857.  Designed to run in a worker process.
 
     Builds per-resolution VRTs (instant — each has a perfectly aligned
@@ -390,7 +410,8 @@ def _reproject_utm_zone(project_dir, cfg, data_source, utm, mosaic_dir,
 
             if hillshade:
                 logger.info("[UTM%s] Generating hillshade...", utm)
-                hs_path = output_3857.replace(".tif", "_hillshade.tif")
+                hs_path = _hillshade_path(output_3857, project_dir, hillshade_dir)
+                os.makedirs(os.path.dirname(hs_path), exist_ok=True)
                 generate_hillshade(output_3857, hs_path)
                 hs_rel = os.path.relpath(hs_path, project_dir)
                 fields["hillshade"] = hs_rel
@@ -560,7 +581,8 @@ def _mosaic_impl(project_dir: str, data_source: str = None,
                  workers: int = None,
                  reproject: bool = False,
                  output_dir: str = None,
-                 debug: bool = False) -> MosaicResult:
+                 debug: bool = False,
+                 hillshade_dir: str = None) -> MosaicResult:
     """Build a per-UTM-zone mosaic from all source tiles.
 
     Parameters
@@ -660,6 +682,16 @@ def _mosaic_impl(project_dir: str, data_source: str = None,
             f"Got: '{output_dir}'"
         )
 
+    if hillshade_dir is not None:
+        if not hillshade:
+            raise ValueError(
+                "hillshade_dir requires hillshade=True.")
+        if "/" in hillshade_dir or "\\" in hillshade_dir:
+            raise ValueError(
+                "hillshade_dir must be a single directory name, not a nested path. "
+                f"Got: '{hillshade_dir}'"
+            )
+
     report = None
     if debug:
         from nbs.noaabathymetry._internal.diagnostics import DebugReport
@@ -672,7 +704,8 @@ def _mosaic_impl(project_dir: str, data_source: str = None,
                             mosaic_resolution_target, result, report,
                             tile_resolution_filter=tile_resolution_filter,
                             hillshade=hillshade, workers=workers,
-                            reproject=reproject, output_dir=output_dir)
+                            reproject=reproject, output_dir=output_dir,
+                            hillshade_dir=hillshade_dir)
     except Exception:
         if report:
             report.capture_exception()
@@ -712,7 +745,8 @@ def mosaic_tiles(
 def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                mosaic_resolution_target, result, report=None,
                tile_resolution_filter=None, hillshade=False,
-               workers=None, reproject=False, output_dir=None):
+               workers=None, reproject=False, output_dir=None,
+               hillshade_dir=None):
     """Core build pipeline, separated so the debug wrapper in mosaic_tiles()
     can handle report lifecycle without re-indenting the main logic.
 
@@ -803,7 +837,7 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                     project_dir, cfg, data_source, utm, mosaic_dir,
                     mosaic_dir_name, params_key, relative_to_vrt,
                     mosaic_resolution_target, tile_resolution_filter,
-                    hillshade, actual_workers)
+                    hillshade, actual_workers, hillshade_dir)
             else:
                 worker_fn = _build_utm_zone
                 label = "Building"
@@ -811,7 +845,7 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                     project_dir, cfg, data_source, utm, mosaic_dir,
                     mosaic_dir_name, params_key, relative_to_vrt,
                     mosaic_resolution_target, tile_resolution_filter,
-                    hillshade, actual_workers)
+                    hillshade, actual_workers, hillshade_dir)
 
             num_zones = len(utms_to_build)
             use_parallel = workers is not None and workers > 1 and num_zones > 1
@@ -918,19 +952,28 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
             # Count hillshades from full builds
             hillshade_count = sum(1 for e in result.built if e.get("hillshade"))
 
-            # Detect missing hillshade files and reset their flags
+            # Detect missing hillshade files and reset their flags.
+            # Path is constructed from the mosaic path + hillshade_dir,
+            # not from the DB hillshade column, so changing hillshade_dir
+            # correctly treats files in the old directory as missing.
             mosaic_built_flags = get_mosaic_built_flags(cfg)
             mosaic_built_clause = " AND ".join(f"{f} = 1" for f in mosaic_built_flags)
+            mosaic_col = "utm_combined_mosaic" if cfg["subdatasets"] else "utm_mosaic"
             hs_cursor = conn.cursor()
             hs_cursor.execute(
-                f"SELECT utm, hillshade FROM mosaic_utm WHERE params_key = ? "
+                f"SELECT utm, {mosaic_col} FROM mosaic_utm WHERE params_key = ? "
                 f"AND ({mosaic_built_clause}) AND built_hillshade = 1",
                 (params_key,),
             )
             missing_hs = []
             for row in hs_cursor.fetchall():
-                hs_path = row["hillshade"]
-                if not hs_path or not os.path.isfile(os.path.join(project_dir, hs_path)):
+                mosaic_rel = row[mosaic_col]
+                if not mosaic_rel:
+                    missing_hs.append(row["utm"])
+                    continue
+                abs_mosaic = os.path.join(project_dir, mosaic_rel)
+                hs_path = _hillshade_path(abs_mosaic, project_dir, hillshade_dir)
+                if not os.path.isfile(hs_path):
                     missing_hs.append(row["utm"])
             if missing_hs:
                 logger.info("%d hillshade(s) missing on disk. Added to build list.",
@@ -956,18 +999,14 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                             len(hs_zones))
                 for hz in hs_zones:
                     utm = hz["utm"]
-                    # Determine mosaic/GeoTIFF path
-                    mosaic_col = "utm_combined_mosaic" if cfg["subdatasets"] else "utm_mosaic"
                     mosaic_rel = hz[mosaic_col]
                     if not mosaic_rel:
                         continue
                     abs_mosaic = os.path.join(project_dir, mosaic_rel)
-                    if mosaic_rel.endswith(".tif"):
-                        hs_path = abs_mosaic.replace(".tif", "_hillshade.tif")
-                    else:
-                        hs_path = abs_mosaic.replace(".vrt", "_hillshade.tif")
+                    hs_path = _hillshade_path(abs_mosaic, project_dir, hillshade_dir)
                     try:
                         logger.info("[UTM%s] Generating hillshade...", utm)
+                        os.makedirs(os.path.dirname(hs_path), exist_ok=True)
                         generate_hillshade(abs_mosaic, hs_path)
                         hs_rel = os.path.relpath(hs_path, project_dir)
                         hs_cursor.execute(
