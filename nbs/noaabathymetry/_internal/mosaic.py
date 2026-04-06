@@ -117,10 +117,9 @@ def create_vrt(files, vrt_path, levels, relative_to_vrt,
         opts_str += f' -resolution {resolution}'
     opts_str += ' -r near'
     vrt_options = gdal.BuildVRTOptions(options=opts_str)
-    # BuildVRT resolves relative paths from cwd, so we chdir to the VRT's
-    # directory to ensure the stored references are correct.
-    # NOTE: os.chdir() is process-global. Safe with ProcessPoolExecutor
-    # (each worker is a separate process) but not thread-safe.
+    # chdir so GDAL resolves relative source paths correctly.
+    # BuildOverviews runs inside too to avoid case-insensitive filesystem
+    # issues where os.getcwd() returns different case than the input path.
     cwd = os.getcwd()
     try:
         os.chdir(os.path.dirname(vrt_path))
@@ -129,22 +128,21 @@ def create_vrt(files, vrt_path, levels, relative_to_vrt,
                 if 'S102:' in files[idx]:
                     continue  # S102 URIs have their own path format
                 files[idx] = os.path.relpath(files[idx], os.path.dirname(vrt_path))
-        relative_vrt_path = os.path.relpath(vrt_path, os.getcwd())
-        vrt = gdal.BuildVRT(relative_vrt_path, files, options=vrt_options)
+        vrt = gdal.BuildVRT(os.path.basename(vrt_path), files, options=vrt_options)
         if band_descriptions:
             for i, desc in enumerate(band_descriptions):
                 band = vrt.GetRasterBand(i + 1)
                 band.SetDescription(desc)
         vrt = None
+        if levels:
+            vrt = gdal.Open(vrt_path, 0)
+            vrt.BuildOverviews("NEAREST", levels)
+            vrt = None
+            _compute_approximate_stats(vrt_path)
     except Exception as e:
         raise RuntimeError(f"VRT failed to build for {vrt_path}") from e
     finally:
         os.chdir(cwd)
-    if levels:
-        vrt = gdal.Open(vrt_path, 0)
-        vrt.BuildOverviews("NEAREST", levels)
-        vrt = None
-        _compute_approximate_stats(vrt_path)
 
 
 def _compute_approximate_stats(path):
