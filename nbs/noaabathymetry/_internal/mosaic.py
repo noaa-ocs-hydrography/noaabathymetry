@@ -747,7 +747,7 @@ def missing_utms(project_dir, conn, cfg, params_key=""):
     for utm in utms:
         missing = False
         for col in utm_cols:
-            if "ovr" in col:
+            if "ovr" in col or "aux_xml" in col:
                 if utm[col] is not None and not os.path.isfile(os.path.join(project_dir, utm[col])):
                     missing = True
                     break

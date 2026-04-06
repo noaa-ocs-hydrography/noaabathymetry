@@ -848,7 +848,6 @@ def get_utm_file_columns(cfg):
     fields = get_mosaic_fields(cfg)
     exclude = {
         "utm", "params_key", "output_dir",
-        "utm_aux_xml", "utm_aux_xml_disk_file_size",
         "hillshade", "hillshade_disk_file_size",
         "tile_count", "tile_count_plus_overviews",
         "mosaic_resolution", "overview_count", "overview_resolutions",
