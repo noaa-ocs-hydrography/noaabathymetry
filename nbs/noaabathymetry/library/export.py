@@ -173,16 +173,20 @@ def export_project(project_dir, output_path, data_source=None,
     manifest = generate_manifest(
         project_dir, data_source, include_mosaics=include_mosaics)
 
-    # Pre-flight: check all manifest files exist
-    missing_manifest_files = []
-    for entry in manifest["files"]:
-        abs_path = os.path.join(project_dir, entry["path"])
-        if not os.path.isfile(abs_path):
-            missing_manifest_files.append(entry["path"])
+    # Pre-flight: check all manifest files exist.
+    # generate_manifest uses scandir internally — files without a "size"
+    # key were not found on disk.
+    missing_manifest_files = [
+        entry["path"] for entry in manifest["files"]
+        if "size" not in entry
+    ]
     if missing_manifest_files:
         raise ValueError(
             f"{len(missing_manifest_files)} file(s) in manifest missing "
             f"from disk: {missing_manifest_files[:5]}")
+
+    # Sort files by directory for sequential disk/network access
+    manifest["files"].sort(key=lambda e: e["path"])
 
     logger.info("Manifest ready: %d files", len(manifest["files"]))
     logger.info("")

@@ -93,6 +93,25 @@ def verify_tiles(project_dir, data_source=None):
     finally:
         conn.close()
 
+    # Scan directories once for file existence checks
+    dirs_to_scan = set()
+    for tile in tiles:
+        for df in disk_fields:
+            path = tile.get(df)
+            if path:
+                dirs_to_scan.add(os.path.dirname(path))
+    existing_files = set()
+    for rel_dir in dirs_to_scan:
+        abs_dir = os.path.join(project_dir, rel_dir) if rel_dir else project_dir
+        try:
+            with os.scandir(abs_dir) as entries:
+                for e in entries:
+                    if e.is_file(follow_symlinks=False):
+                        existing_files.add(
+                            os.path.join(rel_dir, e.name) if rel_dir else e.name)
+        except FileNotFoundError:
+            pass
+
     result = VerifyResult()
     total = len(tiles)
 
@@ -114,8 +133,7 @@ def verify_tiles(project_dir, data_source=None):
         missing = []
         for df in disk_fields:
             path = tile.get(df)
-            if not path or not os.path.isfile(
-                    os.path.join(project_dir, path)):
+            if not path or path not in existing_files:
                 missing.append(df)
         if missing:
             result.missing_files.append({
@@ -205,28 +223,66 @@ def generate_manifest(project_dir, data_source=None, include_mosaics=True):
     conn = connect(project_dir, cfg)
     try:
         tiles = all_db_tiles(conn)
-        files = []
 
-        # Registry DB
-        files.append({
-            "path": db_name,
-            "size": os.path.getsize(db_path),
-        })
+        # Collect all relative paths we need to check
+        all_paths = set()
+        all_paths.add(db_name)
 
-        # Catalog files (tessellation geopackage, XML catalogs)
         catalog_table = cfg["catalog_table"]
         cursor = conn.cursor()
         cursor.execute(f"SELECT * FROM {catalog_table}")
-        for row in cursor.fetchall():
-            row = dict(row)
+        catalog_rows = [dict(row) for row in cursor.fetchall()]
+        for row in catalog_rows:
+            if row.get("location"):
+                all_paths.add(row["location"])
+
+        for tile in tiles:
+            for slot in slots:
+                disk_path = tile.get(f"{slot['name']}_disk")
+                if disk_path:
+                    all_paths.add(disk_path)
+
+        if include_mosaics:
+            utm_cols = get_utm_file_columns(cfg)
+            cursor.execute("SELECT * FROM mosaic_utm")
+            mosaic_rows = [dict(row) for row in cursor.fetchall()]
+            for utm_row in mosaic_rows:
+                for col in utm_cols:
+                    if utm_row.get(col):
+                        all_paths.add(utm_row[col])
+                if utm_row.get("hillshade"):
+                    all_paths.add(utm_row["hillshade"])
+        else:
+            mosaic_rows = []
+
+        # Scan directories once with scandir — builds {rel_path: size}
+        dirs_to_scan = set()
+        for p in all_paths:
+            dirs_to_scan.add(os.path.dirname(p))
+        file_sizes = {}
+        for rel_dir in dirs_to_scan:
+            abs_dir = os.path.join(project_dir, rel_dir) if rel_dir else project_dir
+            try:
+                with os.scandir(abs_dir) as entries:
+                    for e in entries:
+                        if e.is_file(follow_symlinks=False):
+                            rel = os.path.join(rel_dir, e.name) if rel_dir else e.name
+                            file_sizes[rel] = e.stat().st_size
+            except FileNotFoundError:
+                pass
+
+        # Build manifest file list using cached sizes
+        files = []
+
+        # Registry DB
+        if db_name in file_sizes:
+            files.append({"path": db_name, "size": file_sizes[db_name]})
+
+        # Catalog files
+        for row in catalog_rows:
             location = row.get("location")
-            if location:
-                abs_loc = os.path.join(project_dir, location)
-                if os.path.isfile(abs_loc):
-                    files.append({
-                        "path": location,
-                        "size": os.path.getsize(abs_loc),
-                    })
+            if location and location in file_sizes:
+                files.append({"path": location, "size": file_sizes[location]})
 
         # Tile files
         for tile in tiles:
@@ -235,38 +291,23 @@ def generate_manifest(project_dir, data_source=None, include_mosaics=True):
                 disk_path = tile.get(f"{name}_disk")
                 checksum = tile.get(f"{name}_sha256_checksum")
                 if disk_path:
-                    abs_path = os.path.join(project_dir, disk_path)
                     entry = {"path": disk_path}
-                    if os.path.isfile(abs_path):
-                        entry["size"] = os.path.getsize(abs_path)
+                    if disk_path in file_sizes:
+                        entry["size"] = file_sizes[disk_path]
                     if checksum:
                         entry["sha256"] = checksum
                     files.append(entry)
 
         # Mosaic files
         if include_mosaics:
-            utm_cols = get_utm_file_columns(cfg)
-            cursor.execute("SELECT * FROM mosaic_utm")
-            for utm_row in cursor.fetchall():
-                utm_row = dict(utm_row)
+            for utm_row in mosaic_rows:
                 for col in utm_cols:
                     path = utm_row.get(col)
-                    if path:
-                        abs_path = os.path.join(project_dir, path)
-                        if os.path.isfile(abs_path):
-                            files.append({
-                                "path": path,
-                                "size": os.path.getsize(abs_path),
-                            })
-                # Hillshade
+                    if path and path in file_sizes:
+                        files.append({"path": path, "size": file_sizes[path]})
                 hs_path = utm_row.get("hillshade")
-                if hs_path:
-                    abs_hs = os.path.join(project_dir, hs_path)
-                    if os.path.isfile(abs_hs):
-                        files.append({
-                            "path": hs_path,
-                            "size": os.path.getsize(abs_hs),
-                        })
+                if hs_path and hs_path in file_sizes:
+                    files.append({"path": hs_path, "size": file_sizes[hs_path]})
 
     finally:
         conn.close()
