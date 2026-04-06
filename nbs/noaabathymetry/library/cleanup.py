@@ -165,6 +165,13 @@ def clean_removed_from_nbs(project_dir, data_source=None, remote_tiles=None,
             msg += "\nTypically for non windows systems this means starting with '/'"
         raise ValueError(msg)
 
+    if remote_tiles is not None and not isinstance(remote_tiles, dict):
+        raise TypeError(
+            f"remote_tiles must be a dict, got {type(remote_tiles).__name__}")
+    if local_tiles is not None and not isinstance(local_tiles, list):
+        raise TypeError(
+            f"local_tiles must be a list, got {type(local_tiles).__name__}")
+
     cfg, _ = resolve_data_source(data_source)
     data_source = cfg["canonical_name"]
     disk_fields = get_disk_fields(cfg)

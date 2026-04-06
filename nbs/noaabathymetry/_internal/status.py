@@ -277,6 +277,10 @@ def _status_impl(
     RuntimeError
         If the remote tile scheme cannot be read from S3.
     """
+    if remote_tiles is not None and not isinstance(remote_tiles, dict):
+        raise TypeError(
+            f"remote_tiles must be a dict, got {type(remote_tiles).__name__}")
+
     project_dir = os.path.expanduser(project_dir)
     if not os.path.isabs(project_dir):
         msg = "Please use an absolute path for your project folder."
