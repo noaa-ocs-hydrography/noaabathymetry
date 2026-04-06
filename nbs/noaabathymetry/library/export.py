@@ -8,10 +8,12 @@ import zipfile
 from dataclasses import dataclass
 
 from nbs.noaabathymetry._internal.config import (
+    get_utm_file_columns,
     get_verified_fields,
     resolve_data_source,
 )
 from nbs.noaabathymetry._internal.db import connect
+from nbs.noaabathymetry._internal.download import all_db_tiles
 from nbs.noaabathymetry.library.verify import generate_manifest, verify_tiles
 
 logger = logging.getLogger("noaabathymetry")
@@ -93,7 +95,8 @@ def export_project(project_dir, output_path, data_source=None,
     cfg, _ = resolve_data_source(data_source)
     data_source = cfg["canonical_name"]
 
-    # Pre-flight: check project exists
+    # --- Instant checks (no I/O or minimal I/O) ---
+
     if not os.path.isdir(project_dir):
         raise ValueError(f"Project directory not found: {project_dir}")
 
@@ -103,7 +106,8 @@ def export_project(project_dir, output_path, data_source=None,
             f"Registry database not found ({db_name}). "
             "Note: fetch must be run at least once.")
 
-    # Pre-flight: S102V22/V30 mosaic portability check
+    tmp_path = output_path + ".tmp"
+
     if include_mosaics and cfg.get("subdatasets"):
         for sd in cfg["subdatasets"]:
             if sd.get("s102_protocol"):
@@ -114,13 +118,95 @@ def export_project(project_dir, output_path, data_source=None,
                     "mosaics (include_mosaics=False) and rebuild on the "
                     "destination machine.")
 
-    # Pre-flight: verify all tiles
     export_start = datetime.datetime.now()
     logger.info("═══ Export ═══")
     logger.info("Project: %s", project_dir)
     logger.info("Data source: %s", data_source)
     logger.info("")
-    logger.info("Step 1/3: Verifying tile integrity...")
+
+    # --- Step 1: Check file existence (scandir-based, fast) ---
+    logger.info("Step 1/4: Checking project files...")
+
+    # Scan all relevant directories once
+    conn = connect(project_dir, cfg)
+    try:
+        tiles = all_db_tiles(conn)
+        disk_fields = list({f"{s['name']}_disk" for s in cfg["file_slots"]})
+
+        # Collect directories to scan
+        dirs_to_scan = set()
+        for tile in tiles:
+            for df in disk_fields:
+                path = tile.get(df)
+                if path:
+                    dirs_to_scan.add(os.path.dirname(path))
+
+        if include_mosaics:
+            utm_cols = get_utm_file_columns(cfg)
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM mosaic_utm")
+            mosaic_rows = [dict(row) for row in cursor.fetchall()]
+            for utm_row in mosaic_rows:
+                for col in utm_cols:
+                    if utm_row.get(col):
+                        dirs_to_scan.add(os.path.dirname(utm_row[col]))
+                if utm_row.get("hillshade"):
+                    dirs_to_scan.add(os.path.dirname(utm_row["hillshade"]))
+    finally:
+        conn.close()
+
+    # Scan directories
+    existing_files = set()
+    for rel_dir in dirs_to_scan:
+        abs_dir = os.path.join(project_dir, rel_dir) if rel_dir else project_dir
+        try:
+            with os.scandir(abs_dir) as entries:
+                for e in entries:
+                    if e.is_file(follow_symlinks=False):
+                        existing_files.add(
+                            os.path.join(rel_dir, e.name) if rel_dir else e.name)
+        except FileNotFoundError:
+            pass
+
+    # Check tile files
+    missing_tiles = []
+    for tile in tiles:
+        for df in disk_fields:
+            path = tile.get(df)
+            if path and path not in existing_files:
+                missing_tiles.append(path)
+
+    # Check mosaic files
+    missing_mosaics = []
+    if include_mosaics:
+        for utm_row in mosaic_rows:
+            for col in utm_cols:
+                path = utm_row.get(col)
+                if path and path not in existing_files:
+                    missing_mosaics.append(path)
+            hs_path = utm_row.get("hillshade")
+            if hs_path and hs_path not in existing_files:
+                missing_mosaics.append(hs_path)
+
+    errors = []
+    if missing_tiles:
+        errors.append(
+            f"{len(missing_tiles)} tile file(s) missing from disk: "
+            f"{missing_tiles[:5]}")
+    if missing_mosaics:
+        errors.append(
+            f"{len(missing_mosaics)} mosaic file(s) missing from disk: "
+            f"{missing_mosaics[:5]}")
+    if errors:
+        raise ValueError(
+            "Pre-flight check failed:\n" +
+            "\n".join(f"  - {e}" for e in errors))
+
+    logger.info("All files present.")
+    logger.info("")
+
+    # --- Step 2: Verify tile checksums (expensive — re-hashes all files) ---
+    logger.info("Step 2/4: Verifying tile checksums...")
     verify_result = verify_tiles(project_dir, data_source)
 
     errors = []
@@ -141,7 +227,6 @@ def export_project(project_dir, output_path, data_source=None,
 
     if errors:
         if flag_for_repair and verify_result.checksum_mismatch:
-            # Reset verified flags so next fetch re-downloads
             conn = connect(project_dir, cfg)
             try:
                 cursor = conn.cursor()
@@ -169,40 +254,24 @@ def export_project(project_dir, output_path, data_source=None,
     logger.info("Verification passed. %d tiles verified.",
                 len(verify_result.verified))
     logger.info("")
-    logger.info("Step 2/3: Generating manifest...")
+
+    # --- Step 3: Generate manifest ---
+    logger.info("Step 3/4: Generating manifest...")
     manifest = generate_manifest(
         project_dir, data_source, include_mosaics=include_mosaics)
-
-    # Pre-flight: check all manifest files exist.
-    # generate_manifest uses scandir internally — files without a "size"
-    # key were not found on disk.
-    missing_manifest_files = [
-        entry["path"] for entry in manifest["files"]
-        if "size" not in entry
-    ]
-    if missing_manifest_files:
-        raise ValueError(
-            f"{len(missing_manifest_files)} file(s) in manifest missing "
-            f"from disk: {missing_manifest_files[:5]}")
-
-    # Sort files by directory for sequential disk/network access
     manifest["files"].sort(key=lambda e: e["path"])
-
     logger.info("Manifest ready: %d files", len(manifest["files"]))
     logger.info("")
 
-    # Write zip to temp file
-    tmp_path = output_path + ".tmp"
+    # --- Step 4: Create zip ---
+    logger.info("Step 4/4: Creating zip (%d files)...", len(manifest["files"]))
+    file_count = 0
     try:
-        logger.info("Step 3/3: Creating zip (%d files)...", len(manifest["files"]))
-        file_count = 0
         with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            # Add manifest
             zf.writestr("manifest.json",
                         json.dumps(manifest, indent=2, ensure_ascii=False))
             file_count += 1
 
-            # Add all files
             total = len(manifest["files"])
             interval = max(1, min(100, total // 10))
             for i, entry in enumerate(manifest["files"]):
@@ -213,13 +282,11 @@ def export_project(project_dir, output_path, data_source=None,
                 if (i + 1) % interval == 0 or i + 1 == total:
                     logger.info("Added %d/%d files to zip", i + 1, total)
 
-        # Rename on success
         if os.path.isfile(output_path):
             os.remove(output_path)
         os.rename(tmp_path, output_path)
 
     except Exception:
-        # Clean up temp file on failure
         if os.path.isfile(tmp_path):
             try:
                 os.remove(tmp_path)
@@ -230,7 +297,8 @@ def export_project(project_dir, output_path, data_source=None,
     zip_size = os.path.getsize(output_path)
     elapsed = datetime.datetime.now() - export_start
     logger.info("")
-    logger.info("Export complete: %s", output_path)
+    logger.info("Export complete")
+    logger.info("  Output:   %s", output_path)
     logger.info("  Size:     %.1f MB", zip_size / 1_000_000)
     logger.info("  Files:    %d", file_count)
     logger.info("  Tiles:    %d", manifest["tile_count"])

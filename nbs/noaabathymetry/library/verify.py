@@ -305,7 +305,6 @@ def generate_manifest(project_dir, data_source=None, include_mosaics=True):
                     path = utm_row.get(col)
                     if path and path in file_sizes:
                         files.append({"path": path, "size": file_sizes[path]})
-                # Auxiliary files excluded from get_utm_file_columns
                 hs_path = utm_row.get("hillshade")
                 if hs_path and hs_path in file_sizes:
                     files.append({"path": hs_path, "size": file_sizes[hs_path]})

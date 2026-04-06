@@ -129,7 +129,7 @@ class TestExportProject:
         conn.close()
 
         output = os.path.join(str(tmp_path), "export.zip")
-        with pytest.raises(ValueError, match="missing files"):
+        with pytest.raises(ValueError, match="missing from disk"):
             export_project(project_dir, output, "bluetopo",
                            include_mosaics=False)
 
