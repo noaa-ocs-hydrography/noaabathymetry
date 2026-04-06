@@ -18,7 +18,7 @@ logger = logging.getLogger("noaabathymetry")
 
 
 @dataclass
-class CleanupResult:
+class CleanResult:
     """Result of a clean_removed_from_nbs operation.
 
     Each list contains dicts with ``tilename`` and ``files`` keys,
@@ -153,7 +153,7 @@ def clean_removed_from_nbs(project_dir, data_source=None, remote_tiles=None,
 
     Returns
     -------
-    CleanupResult
+    CleanResult
         Summary of what was deleted, marked, or retried.
     """
     import platform
@@ -183,7 +183,7 @@ def clean_removed_from_nbs(project_dir, data_source=None, remote_tiles=None,
             "Note: fetch must be run at least once.")
 
     conn = connect(project_dir, cfg)
-    result = CleanupResult()
+    result = CleanResult()
     affected_utms = set()
 
     try:

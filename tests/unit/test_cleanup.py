@@ -10,7 +10,7 @@ import pytest
 from nbs.noaabathymetry._internal.config import get_config
 from nbs.noaabathymetry._internal.download import all_db_tiles
 from nbs.noaabathymetry.library.cleanup import (
-    CleanupResult,
+    CleanResult,
     clean_removed_from_nbs,
     _try_delete_garbage_files,
     _is_file_referenced,
@@ -300,7 +300,7 @@ class TestCleanRemovedFromScheme:
             project_dir, data_source="bluetopo",
             remote_tiles={"T1": {"tile": "T1"}})
 
-        assert result == CleanupResult()
+        assert result == CleanResult()
 
     def test_accepts_local_tiles(self, tmp_path, registry_db):
         cfg = get_config("bluetopo")
@@ -527,7 +527,7 @@ class TestGarbageCollection:
 # ---------------------------------------------------------------------------
 
 
-class TestCleanupEdgeCases:
+class TestCleanEdgeCases:
     def test_no_registry_db_raises(self, tmp_path):
         with pytest.raises(ValueError, match="Registry database not found"):
             clean_removed_from_nbs(str(tmp_path), data_source="bluetopo",
@@ -541,7 +541,7 @@ class TestCleanupEdgeCases:
         result = clean_removed_from_nbs(
             project_dir, data_source="bluetopo", remote_tiles={})
 
-        assert result == CleanupResult()
+        assert result == CleanResult()
 
     def test_bag_source(self, tmp_path, registry_db):
         """Works with single-file-slot sources (BAG)."""

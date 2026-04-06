@@ -20,7 +20,7 @@ from nbs.noaabathymetry.library.scheme import (
     list_tile_scheme,
     parse_tile_scheme,
 )
-from nbs.noaabathymetry.library.cleanup import clean_removed_from_nbs, CleanupResult
+from nbs.noaabathymetry.library.cleanup import clean_removed_from_nbs, CleanResult
 from nbs.noaabathymetry.library.verify import verify_tiles, VerifyResult, generate_manifest
 from nbs.noaabathymetry.library.export import export_project, ExportResult
 
