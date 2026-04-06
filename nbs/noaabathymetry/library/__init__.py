@@ -20,7 +20,7 @@ from nbs.noaabathymetry.library.scheme import (
     list_tile_scheme,
     parse_tile_scheme,
 )
-from nbs.noaabathymetry.library.cleanup import clean_removed_from_scheme, CleanupResult
+from nbs.noaabathymetry.library.cleanup import clean_removed_from_nbs, CleanupResult
 from nbs.noaabathymetry.library.verify import verify_tiles, VerifyResult, generate_manifest
 from nbs.noaabathymetry.library.export import export_project, ExportResult
 
@@ -48,6 +48,15 @@ def get_readonly_db_conn(project_dir, data_source=None):
     ValueError
         If the registry database does not exist.
     """
+    import platform
+
+    project_dir = os.path.expanduser(project_dir)
+    if not os.path.isabs(project_dir):
+        msg = "Please use an absolute path for your project folder."
+        if "windows" not in platform.system().lower():
+            msg += "\nTypically for non windows systems this means starting with '/'"
+        raise ValueError(msg)
+
     cfg, _ = resolve_data_source(data_source)
     db_name = f"{cfg['canonical_name'].lower()}_registry.db"
     db_path = os.path.join(project_dir, db_name)

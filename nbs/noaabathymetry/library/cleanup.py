@@ -1,4 +1,4 @@
-"""Tile cleanup for tiles removed from the remote tile scheme."""
+"""Tile cleanup for tiles removed from NBS."""
 
 import json
 import logging
@@ -19,18 +19,18 @@ logger = logging.getLogger("noaabathymetry")
 
 @dataclass
 class CleanupResult:
-    """Result of a clean_removed_from_scheme operation.
+    """Result of a clean_removed_from_nbs operation.
 
     Each list contains dicts with ``tilename`` and ``files`` keys,
     e.g. ``{"tilename": "T1", "files": ["BlueTopo/UTM18/T1.tiff"]}``.
 
     Attributes
     ----------
-    removed_from_scheme : list[dict]
-        Tiles removed from the scheme whose files were successfully
+    removed_from_nbs : list[dict]
+        Tiles removed from NBS whose files were successfully
         deleted and rows removed from the database.
     marked_for_deletion : list[dict]
-        Tiles removed from the scheme whose files could not be deleted.
+        Tiles removed from NBS whose files could not be deleted.
         These are stored in the garbage table and will be retried on
         the next cleanup run.
     garbage_collected : list[dict]
@@ -38,7 +38,7 @@ class CleanupResult:
     garbage_remaining : list[dict]
         Entries from prior runs that still could not be deleted.
     """
-    removed_from_scheme: list = field(default_factory=list)
+    removed_from_nbs: list = field(default_factory=list)
     marked_for_deletion: list = field(default_factory=list)
     garbage_collected: list = field(default_factory=list)
     garbage_remaining: list = field(default_factory=list)
@@ -116,9 +116,9 @@ def _reset_utms(conn, utms, cfg):
     )
 
 
-def clean_removed_from_scheme(project_dir, data_source=None, remote_tiles=None,
+def clean_removed_from_nbs(project_dir, data_source=None, remote_tiles=None,
                               local_tiles=None):
-    """Remove tiles that no longer appear in the remote tile scheme.
+    """Remove tiles that no longer appear in the NBS remote tile scheme.
 
     Performs two phases:
 
@@ -156,6 +156,15 @@ def clean_removed_from_scheme(project_dir, data_source=None, remote_tiles=None,
     CleanupResult
         Summary of what was deleted, marked, or retried.
     """
+    import platform
+
+    project_dir = os.path.expanduser(project_dir)
+    if not os.path.isabs(project_dir):
+        msg = "Please use an absolute path for your project folder."
+        if "windows" not in platform.system().lower():
+            msg += "\nTypically for non windows systems this means starting with '/'"
+        raise ValueError(msg)
+
     cfg, _ = resolve_data_source(data_source)
     data_source = cfg["canonical_name"]
     disk_fields = get_disk_fields(cfg)
@@ -254,20 +263,20 @@ def clean_removed_from_scheme(project_dir, data_source=None, remote_tiles=None,
                     "DELETE FROM garbage_tiles "
                     "WHERE tilename = ? AND files = ?",
                     (tilename, files_json))
-                result.removed_from_scheme.append(entry)
+                result.removed_from_nbs.append(entry)
             else:
                 result.marked_for_deletion.append(entry)
                 logger.warning("Cannot delete files for %s, stored for "
                                "future cleanup", tilename)
 
-        if result.removed_from_scheme:
+        if result.removed_from_nbs:
             conn.commit()
 
-        total = len(result.removed_from_scheme) + len(result.marked_for_deletion)
+        total = len(result.removed_from_nbs) + len(result.marked_for_deletion)
         if total:
-            logger.info("Removed from scheme: %d tile(s) — %d deleted, "
+            logger.info("Removed from NBS: %d tile(s) — %d deleted, "
                         "%d stored for cleanup",
-                        total, len(result.removed_from_scheme),
+                        total, len(result.removed_from_nbs),
                         len(result.marked_for_deletion))
         if affected_utms:
             logger.info("Reset mosaic built flags for UTM zone(s): %s",

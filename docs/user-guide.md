@@ -121,7 +121,7 @@ Status returns a [`StatusResult`](api-reference.md#statusresult) with per-tile f
 - **up_to_date** — tiles whose delivery datetime matches the remote and whose files exist on disk.
 - **updates_available** — tiles with a newer delivery datetime on S3. Each entry includes local and remote datetimes.
 - **missing_from_disk** — tiles whose delivery datetime matches the remote but whose files are missing from disk.
-- **removed_from_scheme** — tiles tracked locally that no longer appear in the remote geopackage.
+- **removed_from_nbs** — tiles tracked locally that no longer appear in the remote geopackage.
 
 **Run metadata:**
 

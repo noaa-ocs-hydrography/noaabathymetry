@@ -11,7 +11,7 @@ from nbs.noaabathymetry._internal.config import get_config
 from nbs.noaabathymetry._internal.download import all_db_tiles
 from nbs.noaabathymetry.library.cleanup import (
     CleanupResult,
-    clean_removed_from_scheme,
+    clean_removed_from_nbs,
     _try_delete_garbage_files,
     _is_file_referenced,
     _reset_utms,
@@ -183,7 +183,7 @@ class TestResetUtms:
 
 
 # ---------------------------------------------------------------------------
-# clean_removed_from_scheme — Phase 2
+# clean_removed_from_nbs — Phase 2
 # ---------------------------------------------------------------------------
 
 
@@ -195,11 +195,11 @@ class TestCleanRemovedFromScheme:
         conn.close()
         _make_tile_files(tmp_path, tile)
 
-        result = clean_removed_from_scheme(
+        result = clean_removed_from_nbs(
             project_dir, data_source="bluetopo", remote_tiles={})
 
-        assert _tilenames(result.removed_from_scheme) == ["T1"]
-        assert result.removed_from_scheme[0]["files"] == [
+        assert _tilenames(result.removed_from_nbs) == ["T1"]
+        assert result.removed_from_nbs[0]["files"] == [
             tile["geotiff_disk"], tile["rat_disk"]]
         assert result.marked_for_deletion == []
         assert not os.path.isfile(os.path.join(project_dir, tile["geotiff_disk"]))
@@ -217,11 +217,11 @@ class TestCleanRemovedFromScheme:
         conn.close()
         _make_tile_files(tmp_path, tile)
 
-        result = clean_removed_from_scheme(
+        result = clean_removed_from_nbs(
             project_dir, data_source="bluetopo",
             remote_tiles={"T1": {"tile": "T1"}})
 
-        assert result.removed_from_scheme == []
+        assert result.removed_from_nbs == []
         assert os.path.isfile(os.path.join(project_dir, tile["geotiff_disk"]))
 
     def test_marks_when_file_locked(self, tmp_path, registry_db):
@@ -239,7 +239,7 @@ class TestCleanRemovedFromScheme:
             return original_open(path, mode, *a, **kw)
 
         with mock.patch("builtins.open", side_effect=mock_open_fn):
-            result = clean_removed_from_scheme(
+            result = clean_removed_from_nbs(
                 project_dir, data_source="bluetopo", remote_tiles={})
 
         assert _tilenames(result.marked_for_deletion) == ["T1"]
@@ -259,7 +259,7 @@ class TestCleanRemovedFromScheme:
         conn.close()
         _make_tile_files(tmp_path, tile)
 
-        clean_removed_from_scheme(
+        clean_removed_from_nbs(
             project_dir, data_source="bluetopo", remote_tiles={})
 
         conn = _open_db(project_dir)
@@ -280,11 +280,11 @@ class TestCleanRemovedFromScheme:
         for t in (t1, t2, t3):
             _make_tile_files(tmp_path, t)
 
-        result = clean_removed_from_scheme(
+        result = clean_removed_from_nbs(
             project_dir, data_source="bluetopo",
             remote_tiles={"T1": {"tile": "T1"}})
 
-        assert sorted(_tilenames(result.removed_from_scheme)) == ["T2", "T3"]
+        assert sorted(_tilenames(result.removed_from_nbs)) == ["T2", "T3"]
 
         conn = _open_db(project_dir)
         assert conn.execute("SELECT COUNT(*) FROM tiles").fetchone()[0] == 1
@@ -296,7 +296,7 @@ class TestCleanRemovedFromScheme:
         conn, project_dir = registry_db(cfg, tiles=[tile])
         conn.close()
 
-        result = clean_removed_from_scheme(
+        result = clean_removed_from_nbs(
             project_dir, data_source="bluetopo",
             remote_tiles={"T1": {"tile": "T1"}})
 
@@ -310,11 +310,11 @@ class TestCleanRemovedFromScheme:
         conn.close()
         _make_tile_files(tmp_path, tile)
 
-        result = clean_removed_from_scheme(
+        result = clean_removed_from_nbs(
             project_dir, data_source="bluetopo",
             remote_tiles={}, local_tiles=local_tiles)
 
-        assert _tilenames(result.removed_from_scheme) == ["T1"]
+        assert _tilenames(result.removed_from_nbs) == ["T1"]
 
     def test_tile_with_no_files(self, tmp_path, registry_db):
         """Tile that was never downloaded (null disk paths)."""
@@ -323,11 +323,11 @@ class TestCleanRemovedFromScheme:
         conn, project_dir = registry_db(cfg, tiles=[tile])
         conn.close()
 
-        result = clean_removed_from_scheme(
+        result = clean_removed_from_nbs(
             project_dir, data_source="bluetopo", remote_tiles={})
 
-        assert _tilenames(result.removed_from_scheme) == ["T1"]
-        assert result.removed_from_scheme[0]["files"] == []
+        assert _tilenames(result.removed_from_nbs) == ["T1"]
+        assert result.removed_from_nbs[0]["files"] == []
 
         conn = _open_db(project_dir)
         assert conn.execute("SELECT COUNT(*) FROM tiles").fetchone()[0] == 0
@@ -336,7 +336,7 @@ class TestCleanRemovedFromScheme:
 
 
 # ---------------------------------------------------------------------------
-# clean_removed_from_scheme — Phase 1: garbage collection
+# clean_removed_from_nbs — Phase 1: garbage collection
 # ---------------------------------------------------------------------------
 
 
@@ -357,7 +357,7 @@ class TestGarbageCollection:
         conn.commit()
         conn.close()
 
-        result = clean_removed_from_scheme(
+        result = clean_removed_from_nbs(
             project_dir, data_source="bluetopo", remote_tiles={})
 
         assert _tilenames(result.garbage_collected) == ["OLD"]
@@ -391,7 +391,7 @@ class TestGarbageCollection:
             return original_open(path, mode, *a, **kw)
 
         with mock.patch("builtins.open", side_effect=mock_open_fn):
-            result = clean_removed_from_scheme(
+            result = clean_removed_from_nbs(
                 project_dir, data_source="bluetopo", remote_tiles={})
 
         assert _tilenames(result.garbage_remaining) == ["LOCKED"]
@@ -412,7 +412,7 @@ class TestGarbageCollection:
         conn.commit()
         conn.close()
 
-        result = clean_removed_from_scheme(
+        result = clean_removed_from_nbs(
             project_dir, data_source="bluetopo", remote_tiles={})
 
         assert _tilenames(result.garbage_collected) == ["GONE"]
@@ -432,7 +432,7 @@ class TestGarbageCollection:
         conn.commit()
         conn.close()
 
-        result = clean_removed_from_scheme(
+        result = clean_removed_from_nbs(
             project_dir, data_source="bluetopo",
             remote_tiles={"T1": {"tile": "T1"}})
 
@@ -459,7 +459,7 @@ class TestGarbageCollection:
         conn.commit()
         conn.close()
 
-        result = clean_removed_from_scheme(
+        result = clean_removed_from_nbs(
             project_dir, data_source="bluetopo",
             remote_tiles={"T1": {"tile": "T1"}})
 
@@ -485,11 +485,11 @@ class TestGarbageCollection:
         conn.commit()
         conn.close()
 
-        result = clean_removed_from_scheme(
+        result = clean_removed_from_nbs(
             project_dir, data_source="bluetopo", remote_tiles={})
 
         assert _tilenames(result.garbage_collected) == ["OLD"]
-        assert _tilenames(result.removed_from_scheme) == ["NEW"]
+        assert _tilenames(result.removed_from_nbs) == ["NEW"]
 
     def test_double_removal(self, tmp_path, registry_db):
         """Same tile removed twice creates two garbage rows."""
@@ -514,7 +514,7 @@ class TestGarbageCollection:
         conn.commit()
         conn.close()
 
-        result = clean_removed_from_scheme(
+        result = clean_removed_from_nbs(
             project_dir, data_source="bluetopo", remote_tiles={})
 
         assert _tilenames(result.garbage_collected) == ["T1", "T1"]
@@ -530,7 +530,7 @@ class TestGarbageCollection:
 class TestCleanupEdgeCases:
     def test_no_registry_db_raises(self, tmp_path):
         with pytest.raises(ValueError, match="Registry database not found"):
-            clean_removed_from_scheme(str(tmp_path), data_source="bluetopo",
+            clean_removed_from_nbs(str(tmp_path), data_source="bluetopo",
                                      remote_tiles={})
 
     def test_empty_project(self, tmp_path, registry_db):
@@ -538,7 +538,7 @@ class TestCleanupEdgeCases:
         conn, project_dir = registry_db(cfg)
         conn.close()
 
-        result = clean_removed_from_scheme(
+        result = clean_removed_from_nbs(
             project_dir, data_source="bluetopo", remote_tiles={})
 
         assert result == CleanupResult()
@@ -561,11 +561,11 @@ class TestCleanupEdgeCases:
         os.makedirs(os.path.dirname(abs_path), exist_ok=True)
         open(abs_path, "w").close()
 
-        result = clean_removed_from_scheme(
+        result = clean_removed_from_nbs(
             project_dir, data_source="bag", remote_tiles={})
 
-        assert _tilenames(result.removed_from_scheme) == ["N1"]
-        assert result.removed_from_scheme[0]["files"] == [tile["file_disk"]]
+        assert _tilenames(result.removed_from_nbs) == ["N1"]
+        assert result.removed_from_nbs[0]["files"] == [tile["file_disk"]]
         assert not os.path.isfile(abs_path)
 
     def test_partial_reference_in_garbage(self, tmp_path, registry_db):
@@ -591,7 +591,7 @@ class TestCleanupEdgeCases:
         conn.commit()
         conn.close()
 
-        result = clean_removed_from_scheme(
+        result = clean_removed_from_nbs(
             project_dir, data_source="bluetopo",
             remote_tiles={"T1": {"tile": "T1"}})
 
@@ -618,11 +618,11 @@ class TestCleanupEdgeCases:
             _make_tile_files(tmp_path, t)
 
         # Remove T1 (utm17) and T3 (utm19), keep T2 (utm18)
-        result = clean_removed_from_scheme(
+        result = clean_removed_from_nbs(
             project_dir, data_source="bluetopo",
             remote_tiles={"T2": {"tile": "T2"}})
 
-        assert sorted(_tilenames(result.removed_from_scheme)) == ["T1", "T3"]
+        assert sorted(_tilenames(result.removed_from_nbs)) == ["T1", "T3"]
 
         conn = _open_db(project_dir)
         cursor = conn.cursor()
@@ -648,10 +648,10 @@ class TestCleanupEdgeCases:
         _make_tile_files(tmp_path, t1)
         _make_tile_files(tmp_path, t2)
 
-        result = clean_removed_from_scheme(
+        result = clean_removed_from_nbs(
             project_dir, data_source="bluetopo", remote_tiles={})
 
-        assert sorted(_tilenames(result.removed_from_scheme)) == ["T1", "T2"]
+        assert sorted(_tilenames(result.removed_from_nbs)) == ["T1", "T2"]
 
         conn = _open_db(project_dir)
         cursor = conn.cursor()
@@ -673,7 +673,7 @@ class TestCleanupEdgeCases:
         conn.commit()
         conn.close()
 
-        result = clean_removed_from_scheme(
+        result = clean_removed_from_nbs(
             project_dir, data_source="bluetopo", remote_tiles={})
 
         assert _tilenames(result.garbage_collected) == ["EMPTY"]
@@ -712,13 +712,13 @@ class TestCleanupEdgeCases:
             return original_open(path, mode, *a, **kw)
 
         with mock.patch("builtins.open", side_effect=mock_open_fn):
-            result = clean_removed_from_scheme(
+            result = clean_removed_from_nbs(
                 project_dir, data_source="bluetopo", remote_tiles={})
 
         # Phase 1: old entry still locked
         assert _tilenames(result.garbage_remaining) == ["T1"]
-        # Phase 2: new T1 removed from scheme, files deleted
-        assert _tilenames(result.removed_from_scheme) == ["T1"]
+        # Phase 2: new T1 removed from NBS, files deleted
+        assert _tilenames(result.removed_from_nbs) == ["T1"]
         # Old locked file stays, new files deleted
         assert os.path.isfile(abs_old)
         assert not os.path.isfile(os.path.join(project_dir, tile["geotiff_disk"]))
@@ -736,11 +736,11 @@ class TestCleanupEdgeCases:
             "nbs.noaabathymetry.library.cleanup._read_remote_geopackage",
             return_value={},
         ) as mock_remote:
-            result = clean_removed_from_scheme(
+            result = clean_removed_from_nbs(
                 project_dir, data_source="bluetopo")
             mock_remote.assert_called_once()
 
-        assert _tilenames(result.removed_from_scheme) == ["T1"]
+        assert _tilenames(result.removed_from_nbs) == ["T1"]
 
     def test_result_dict_structure(self, tmp_path, registry_db):
         """Verify each result entry has tilename and files keys."""
@@ -750,11 +750,11 @@ class TestCleanupEdgeCases:
         conn.close()
         _make_tile_files(tmp_path, tile)
 
-        result = clean_removed_from_scheme(
+        result = clean_removed_from_nbs(
             project_dir, data_source="bluetopo", remote_tiles={})
 
-        assert len(result.removed_from_scheme) == 1
-        entry = result.removed_from_scheme[0]
+        assert len(result.removed_from_nbs) == 1
+        entry = result.removed_from_nbs[0]
         assert "tilename" in entry
         assert "files" in entry
         assert entry["tilename"] == "T1"
@@ -774,10 +774,10 @@ class TestCleanupEdgeCases:
         for t in tiles:
             _make_tile_files(tmp_path, t)
 
-        result = clean_removed_from_scheme(
+        result = clean_removed_from_nbs(
             project_dir, data_source="bluetopo", remote_tiles={})
 
-        assert len(result.removed_from_scheme) == 50
+        assert len(result.removed_from_nbs) == 50
         assert result.marked_for_deletion == []
 
         conn = _open_db(project_dir)

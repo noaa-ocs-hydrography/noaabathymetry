@@ -27,7 +27,7 @@ class TestStatusResult:
         assert r.up_to_date == []
         assert r.updates_available == []
         assert r.missing_from_disk == []
-        assert r.removed_from_scheme == []
+        assert r.removed_from_nbs == []
         assert r.total_tracked == 0
 
     def test_fields(self):
@@ -35,13 +35,13 @@ class TestStatusResult:
             up_to_date=[{"tile": "T1"}],
             updates_available=[{"tile": "T2"}],
             missing_from_disk=[{"tile": "T3"}],
-            removed_from_scheme=[{"tile": "T4"}],
+            removed_from_nbs=[{"tile": "T4"}],
             total_tracked=4,
         )
         assert len(r.up_to_date) == 1
         assert len(r.updates_available) == 1
         assert len(r.missing_from_disk) == 1
-        assert len(r.removed_from_scheme) == 1
+        assert len(r.removed_from_nbs) == 1
         assert r.total_tracked == 4
 
 

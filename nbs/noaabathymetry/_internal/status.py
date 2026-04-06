@@ -48,7 +48,7 @@ class StatusResult:
         Tiles whose delivery datetime matches the remote but whose files
         are missing from disk.  Each dict has ``tile``, ``utm``,
         ``resolution``, ``local_datetime``, and ``geometry`` keys.
-    removed_from_scheme : list[dict]
+    removed_from_nbs : list[dict]
         Tiles tracked locally that no longer appear in the remote
         geopackage.  Each dict has ``tile``, ``utm``, ``resolution``,
         ``local_datetime``, and ``geometry`` keys.
@@ -58,7 +58,7 @@ class StatusResult:
     up_to_date: list = field(default_factory=list)
     updates_available: list = field(default_factory=list)
     missing_from_disk: list = field(default_factory=list)
-    removed_from_scheme: list = field(default_factory=list)
+    removed_from_nbs: list = field(default_factory=list)
     total_tracked: int = 0
 
 
@@ -265,7 +265,7 @@ def _status_impl(
     -------
     StatusResult
         Structured result with up_to_date, updates_available,
-        missing_from_disk, and removed_from_scheme tiles.
+        missing_from_disk, and removed_from_nbs tiles.
 
     Raises
     ------
@@ -318,7 +318,7 @@ def _status_impl(
             remote = remote_tiles.get(tile_name)
 
             if remote is None:
-                result.removed_from_scheme.append(info)
+                result.removed_from_nbs.append(info)
                 continue
 
             remote_date = remote.get(gpkg_fields["delivered_date"])
@@ -341,7 +341,7 @@ def _status_impl(
         up_to_date_count = len(result.up_to_date)
         updates_count = len(result.updates_available)
         missing_count = len(result.missing_from_disk)
-        removed_count = len(result.removed_from_scheme)
+        removed_count = len(result.removed_from_nbs)
 
         logger.info("Project: %s", project_dir)
         logger.info("Data source: %s", data_source)
@@ -379,9 +379,9 @@ def _status_impl(
                 if removed_count:
                     logger.info("")
                     if verbosity == "verbose":
-                        _log_table("Removed from scheme", result.removed_from_scheme)
+                        _log_table("Removed from NBS", result.removed_from_nbs)
                     else:
-                        _log_grouped("Removed from scheme", result.removed_from_scheme)
+                        _log_grouped("Removed from NBS", result.removed_from_nbs)
 
                 if updates_count or missing_count:
                     logger.info("")
