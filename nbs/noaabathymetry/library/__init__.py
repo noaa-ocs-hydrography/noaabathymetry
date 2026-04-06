@@ -21,6 +21,8 @@ from nbs.noaabathymetry.library.scheme import (
     parse_tile_scheme,
 )
 from nbs.noaabathymetry.library.cleanup import clean_removed_from_scheme, CleanupResult
+from nbs.noaabathymetry.library.verify import verify_tiles, VerifyResult, generate_manifest
+from nbs.noaabathymetry.library.export import export_project, ExportResult
 
 
 def get_readonly_db_conn(project_dir, data_source=None):
