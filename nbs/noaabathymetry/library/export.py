@@ -196,7 +196,9 @@ def export_project(project_dir, output_path, data_source=None,
     if missing_mosaics:
         errors.append(
             f"{len(missing_mosaics)} mosaic file(s) missing from disk: "
-            f"{missing_mosaics[:5]}")
+            f"{missing_mosaics[:5]}. "
+            "Run mosaic to rebuild, or export without mosaics "
+            "(include_mosaics=False)")
     if errors:
         raise ValueError(
             "Pre-flight check failed:\n" +
