@@ -66,6 +66,15 @@ def verify_tiles(project_dir, data_source=None):
     ValueError
         If the registry database does not exist.
     """
+    import platform
+
+    project_dir = os.path.expanduser(project_dir)
+    if not os.path.isabs(project_dir):
+        msg = "Please use an absolute path for your project folder."
+        if "windows" not in platform.system().lower():
+            msg += "\nTypically for non windows systems this means starting with '/'"
+        raise ValueError(msg)
+
     cfg, _ = resolve_data_source(data_source)
     data_source = cfg["canonical_name"]
     disk_fields = get_disk_fields(cfg)
@@ -135,7 +144,9 @@ def verify_tiles(project_dir, data_source=None):
         if checksum_ok:
             result.verified.append(tilename)
 
-        if (i + 1) % 100 == 0 or i + 1 == total:
+        # Log progress at an interval scaled to project size
+        interval = max(1, min(100, total // 10))
+        if (i + 1) % interval == 0 or i + 1 == total:
             logger.info("Verified %d/%d tiles", i + 1, total)
 
     return result
@@ -165,11 +176,19 @@ def generate_manifest(project_dir, data_source=None, include_mosaics=True):
     ValueError
         If the registry database does not exist.
     """
+    import platform
     from importlib.metadata import version, PackageNotFoundError
     try:
         pkg_version = version("noaabathymetry")
     except PackageNotFoundError:
         pkg_version = "unknown"
+
+    project_dir = os.path.expanduser(project_dir)
+    if not os.path.isabs(project_dir):
+        msg = "Please use an absolute path for your project folder."
+        if "windows" not in platform.system().lower():
+            msg += "\nTypically for non windows systems this means starting with '/'"
+        raise ValueError(msg)
 
     cfg, _ = resolve_data_source(data_source)
     data_source = cfg["canonical_name"]

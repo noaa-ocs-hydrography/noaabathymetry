@@ -75,7 +75,7 @@ class TestGetTessellation:
         assert os.path.isfile(result)
 
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM tileset WHERE tilescheme = 'Tessellation'")
+        cursor.execute("SELECT * FROM catalog WHERE name = 'Tessellation'")
         row = cursor.fetchone()
         assert row is not None
 

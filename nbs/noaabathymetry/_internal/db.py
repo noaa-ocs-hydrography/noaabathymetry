@@ -30,7 +30,7 @@ def connect(project_dir: str, cfg: dict) -> sqlite3.Connection:
 
     The registry contains four tables whose schemas are driven by *cfg*:
 
-    - **catalog** (or **tileset**) -- tracks downloaded tessellation and XML files.
+    - **catalog** -- tracks downloaded tessellation and XML files.
     - **tiles** -- one row per tile with links, disk paths, checksums, and verified flags.
     - **mosaic_utm** -- mosaic/OVR paths and built flags per UTM zone.
     - **metadata** -- key-value pairs (e.g. internal version tracking).

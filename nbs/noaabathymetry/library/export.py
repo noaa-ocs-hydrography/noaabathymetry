@@ -1,12 +1,17 @@
 """Project export (zip) with integrity verification."""
 
+import datetime
 import json
 import logging
 import os
 import zipfile
 from dataclasses import dataclass
 
-from nbs.noaabathymetry._internal.config import resolve_data_source
+from nbs.noaabathymetry._internal.config import (
+    get_verified_fields,
+    resolve_data_source,
+)
+from nbs.noaabathymetry._internal.db import connect
 from nbs.noaabathymetry.library.verify import generate_manifest, verify_tiles
 
 logger = logging.getLogger("noaabathymetry")
@@ -40,7 +45,7 @@ class ExportResult:
 
 
 def export_project(project_dir, output_path, data_source=None,
-                   include_mosaics=True):
+                   include_mosaics=True, flag_for_repair=False):
     """Export a project as a portable zip file.
 
     Verifies tile integrity (checksums), generates a manifest, and
@@ -59,6 +64,11 @@ def export_project(project_dir, output_path, data_source=None,
     include_mosaics : bool
         Include mosaic VRTs, OVRs, and hillshades.  Errors if the
         data source is S102V22 or S102V30 (non-portable VRTs).
+    flag_for_repair : bool
+        When True and verification finds checksum mismatches, reset
+        their verified flags so the next ``fetch_tiles`` re-downloads
+        them.  The export still does not proceed (files are corrupted),
+        but the tiles are flagged for repair.
 
     Returns
     -------
@@ -71,6 +81,15 @@ def export_project(project_dir, output_path, data_source=None,
         If pre-flight checks fail (missing DB, unverified tiles,
         missing files, checksum mismatches, non-portable mosaics).
     """
+    import platform
+
+    project_dir = os.path.expanduser(project_dir)
+    if not os.path.isabs(project_dir):
+        msg = "Please use an absolute path for your project folder."
+        if "windows" not in platform.system().lower():
+            msg += "\nTypically for non windows systems this means starting with '/'"
+        raise ValueError(msg)
+
     cfg, _ = resolve_data_source(data_source)
     data_source = cfg["canonical_name"]
 
@@ -96,7 +115,12 @@ def export_project(project_dir, output_path, data_source=None,
                     "destination machine.")
 
     # Pre-flight: verify all tiles
-    logger.info("Verifying tile integrity...")
+    export_start = datetime.datetime.now()
+    logger.info("═══ Export ═══")
+    logger.info("Project: %s", project_dir)
+    logger.info("Data source: %s", data_source)
+    logger.info("")
+    logger.info("Step 1/3: Verifying tile integrity...")
     verify_result = verify_tiles(project_dir, data_source)
 
     errors = []
@@ -116,15 +140,36 @@ def export_project(project_dir, output_path, data_source=None,
             f"checksum mismatch: {names[:5]}")
 
     if errors:
+        if flag_for_repair and verify_result.checksum_mismatch:
+            # Reset verified flags so next fetch re-downloads
+            conn = connect(project_dir, cfg)
+            try:
+                cursor = conn.cursor()
+                verified_fields = get_verified_fields(cfg)
+                set_clause = ", ".join(f"{vf} = 0" for vf in verified_fields)
+                tilenames = [e["tilename"]
+                             for e in verify_result.checksum_mismatch]
+                ph = ", ".join(["?"] * len(tilenames))
+                cursor.execute(
+                    f"UPDATE tiles SET {set_clause} "
+                    f"WHERE tilename IN ({ph})",
+                    tilenames)
+                conn.commit()
+                logger.warning(
+                    "%d tile(s) flagged for repair. Run fetch to "
+                    "re-download them, then retry export.",
+                    len(tilenames))
+            finally:
+                conn.close()
+
         raise ValueError(
             "Pre-flight verification failed:\n" +
             "\n".join(f"  - {e}" for e in errors))
 
     logger.info("Verification passed. %d tiles verified.",
                 len(verify_result.verified))
-
-    # Generate manifest
-    logger.info("Generating manifest...")
+    logger.info("")
+    logger.info("Step 2/3: Generating manifest...")
     manifest = generate_manifest(
         project_dir, data_source, include_mosaics=include_mosaics)
 
@@ -139,10 +184,13 @@ def export_project(project_dir, output_path, data_source=None,
             f"{len(missing_manifest_files)} file(s) in manifest missing "
             f"from disk: {missing_manifest_files[:5]}")
 
+    logger.info("Manifest ready: %d files", len(manifest["files"]))
+    logger.info("")
+
     # Write zip to temp file
     tmp_path = output_path + ".tmp"
     try:
-        logger.info("Creating zip: %s", output_path)
+        logger.info("Step 3/3: Creating zip (%d files)...", len(manifest["files"]))
         file_count = 0
         with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
             # Add manifest
@@ -152,12 +200,13 @@ def export_project(project_dir, output_path, data_source=None,
 
             # Add all files
             total = len(manifest["files"])
+            interval = max(1, min(100, total // 10))
             for i, entry in enumerate(manifest["files"]):
                 abs_path = os.path.join(project_dir, entry["path"])
                 zf.write(abs_path, entry["path"])
                 file_count += 1
 
-                if (i + 1) % 100 == 0 or i + 1 == total:
+                if (i + 1) % interval == 0 or i + 1 == total:
                     logger.info("Added %d/%d files to zip", i + 1, total)
 
         # Rename on success
@@ -175,8 +224,15 @@ def export_project(project_dir, output_path, data_source=None,
         raise
 
     zip_size = os.path.getsize(output_path)
-    logger.info("Export complete: %s (%.1f MB, %d files)",
-                output_path, zip_size / 1024 / 1024, file_count)
+    elapsed = datetime.datetime.now() - export_start
+    logger.info("")
+    logger.info("Export complete: %s", output_path)
+    logger.info("  Size:     %.1f MB", zip_size / 1_000_000)
+    logger.info("  Files:    %d", file_count)
+    logger.info("  Tiles:    %d", manifest["tile_count"])
+    logger.info("  Mosaics:  %s", "included" if include_mosaics else "excluded")
+    logger.info("  Duration: %s", elapsed)
+    logger.info("══════════════")
 
     return ExportResult(
         output_path=output_path,

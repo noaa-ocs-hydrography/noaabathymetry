@@ -860,7 +860,7 @@ def upsert_tiles(conn, project_dir, tile_scheme, cfg):
             continue
         if tile_name in ts_tiles_map:
             raise ValueError(f"More than one tilename {tile_name} "
-                             f"found in tileset.\nPlease alert NBS.\n{debug_info}")
+                             f"found in tile scheme.\nPlease alert NBS.\n{debug_info}")
         ts_tiles_map[tile_name] = field_list
     ts_ds = None
 

@@ -84,19 +84,15 @@ class TestTimestamp:
 
 
 class TestGetCatalogFields:
-    def test_tileset_pk(self):
-        cfg = get_config("bluetopo")
-        fields = get_catalog_fields(cfg)
-        assert "tilescheme" in fields
-        assert fields["tilescheme"] == "text"
-        assert "file" not in fields
-
-    def test_catalog_pk(self):
-        cfg = get_config("bag")
-        fields = get_catalog_fields(cfg)
-        assert "file" in fields
-        assert fields["file"] == "text"
-        assert "tilescheme" not in fields
+    def test_unified_pk(self):
+        """All sources use the same catalog table with 'name' as PK."""
+        for source in ["bluetopo", "bag", "s102v21", "s102v30", "modeling", "hsd"]:
+            cfg = get_config(source)
+            fields = get_catalog_fields(cfg)
+            assert "name" in fields
+            assert fields["name"] == "text"
+            assert "location" in fields
+            assert "downloaded" in fields
 
     def test_common_fields(self):
         for src in ["bluetopo", "bag"]:
@@ -582,17 +578,12 @@ class TestRatFieldTypes:
 
 
 class TestCatalogTableConsistency:
-    @pytest.mark.parametrize("source", ["bluetopo", "modeling", "hsd"])
-    def test_dual_slot_uses_tileset_table(self, source):
-        cfg = get_config(source)
-        assert cfg["catalog_table"] == "tileset"
-        assert cfg["catalog_pk"] == "tilescheme"
-
-    @pytest.mark.parametrize("source", ["bag", "s102v21", "s102v22", "s102v30"])
-    def test_single_slot_uses_catalog_table(self, source):
+    @pytest.mark.parametrize("source", [
+        "bluetopo", "modeling", "hsd", "bag", "s102v21", "s102v22", "s102v30"])
+    def test_all_sources_use_unified_catalog(self, source):
         cfg = get_config(source)
         assert cfg["catalog_table"] == "catalog"
-        assert cfg["catalog_pk"] == "file"
+        assert cfg["catalog_pk"] == "name"
 
 
 # ---------------------------------------------------------------------------

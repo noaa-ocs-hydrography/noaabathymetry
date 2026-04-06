@@ -47,9 +47,9 @@ xml_prefix : str | None
 bucket : str
     S3 bucket name.
 catalog_table : str
-    Name of the catalog table in the SQLite registry.
+    Name of the catalog table in the SQLite registry (always ``"catalog"``).
 catalog_pk : str
-    Primary key column of the catalog table.
+    Primary key column of the catalog table (always ``"name"``).
 gpkg_fields : dict
     Maps standard metadata names (``tile``, ``delivered_date``, ``utm``,
     ``resolution``) to geopackage column names.
@@ -116,8 +116,8 @@ DATA_SOURCES = {
         "xml_prefix": None,
         "bucket": "noaa-ocs-nationalbathymetry-pds",
         # DB schema
-        "catalog_table": "tileset",
-        "catalog_pk": "tilescheme",
+        "catalog_table": "catalog",
+        "catalog_pk": "name",
         # Geopackage field mapping
         "gpkg_fields": _BLUETOPO_GPKG_FIELDS,
         # File slots
@@ -171,8 +171,8 @@ DATA_SOURCES = {
         "xml_prefix": None,
         "bucket": "noaa-ocs-nationalbathymetry-pds",
         # DB schema
-        "catalog_table": "tileset",
-        "catalog_pk": "tilescheme",
+        "catalog_table": "catalog",
+        "catalog_pk": "name",
         # Geopackage field mapping
         "gpkg_fields": _BLUETOPO_GPKG_FIELDS,
         # File slots
@@ -227,7 +227,7 @@ DATA_SOURCES = {
         "bucket": "noaa-ocs-nationalbathymetry-pds",
         # DB schema
         "catalog_table": "catalog",
-        "catalog_pk": "file",
+        "catalog_pk": "name",
         # Geopackage field mapping
         "gpkg_fields": _NAVIGATION_GPKG_FIELDS,
         # File slots
@@ -260,7 +260,7 @@ DATA_SOURCES = {
         "bucket": "noaa-ocs-nationalbathymetry-pds",
         # DB schema
         "catalog_table": "catalog",
-        "catalog_pk": "file",
+        "catalog_pk": "name",
         # Geopackage field mapping
         "gpkg_fields": _NAVIGATION_GPKG_FIELDS,
         # File slots
@@ -293,7 +293,7 @@ DATA_SOURCES = {
         "bucket": "noaa-ocs-nationalbathymetry-pds",
         # DB schema
         "catalog_table": "catalog",
-        "catalog_pk": "file",
+        "catalog_pk": "name",
         # Geopackage field mapping
         "gpkg_fields": _NAVIGATION_GPKG_FIELDS,
         # File slots
@@ -356,7 +356,7 @@ DATA_SOURCES = {
         "bucket": "noaa-ocs-nationalbathymetry-pds",
         # DB schema
         "catalog_table": "catalog",
-        "catalog_pk": "file",
+        "catalog_pk": "name",
         # Geopackage field mapping
         "gpkg_fields": _NAVIGATION_GPKG_FIELDS,
         # File slots
@@ -416,8 +416,8 @@ DATA_SOURCES = {
         "xml_prefix": None,
         "bucket": "noaa-ocs-nationalbathymetry-pds",
         # DB schema
-        "catalog_table": "tileset",
-        "catalog_pk": "tilescheme",
+        "catalog_table": "catalog",
+        "catalog_pk": "name",
         # Geopackage field mapping
         "gpkg_fields": _BLUETOPO_GPKG_FIELDS,
         # File slots
