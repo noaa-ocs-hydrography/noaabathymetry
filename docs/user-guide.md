@@ -6,15 +6,11 @@ After running fetch and mosaic, your project directory will contain:
 
 ```
 /path/to/project/
-├── BlueTopo/                      # Downloaded tile files
-│   ├── Tessellation/              # Tile scheme geopackage
-│   │   └── BlueTopo_Tile_Scheme_*.gpkg
-│   ├── UTM18/                     # Tiles grouped by UTM zone
-│   │   ├── tile_name.tiff
-│   │   └── tile_name.tiff.aux.xml
-│   ├── UTM19/
-│   │   └── ...
-│   └── ...
+├── BlueTopo_Tessellation/            # Tile scheme geopackage
+│   └── BlueTopo_Tile_Scheme_*.gpkg
+├── BlueTopo_Data/                    # Downloaded tile files
+│   ├── tile_name.tiff
+│   └── tile_name.tiff.aux.xml
 ├── BlueTopo_Mosaic/                  # Built mosaic files
 │   ├── BlueTopo_Fetched_UTM18.vrt
 │   ├── BlueTopo_Fetched_UTM18.vrt.ovr
@@ -24,33 +20,31 @@ After running fetch and mosaic, your project directory will contain:
 ├── BlueTopo_Mosaic_3857/             # Optional (--reproject)
 │   ├── BlueTopo_Fetched_UTM18.tif
 │   └── ...
-└── bluetopo_registry.db           # SQLite tracking database
+└── bluetopo_registry.db              # SQLite tracking database
 ```
 
 The folder and file names change based on the data source. For example, with `data_source='bag'`:
 
 ```
 /path/to/project/
-├── BAG/
-│   ├── Tessellation/
-│   ├── UTM18/
-│   │   └── tile_name.bag
-│   └── ...
+├── BAG_Tessellation/
+│   └── Navigation_Tile_Scheme_*.gpkg
+├── BAG_Data/
+│   └── tile_name.bag
 ├── BAG_Mosaic/
 │   └── BAG_Fetched_UTM18.vrt
 └── bag_registry.db
 ```
 
-S-102 sources also create a `Data/` subdirectory for the CATALOG.XML file and produce subdataset VRTs:
+S-102 sources also include a CATALOG.XML file alongside tiles and produce subdataset VRTs:
 
 ```
 /path/to/project/
-├── S102V22/
-│   ├── Tessellation/
-│   ├── Data/
-│   │   └── CATALOG.XML
-│   └── UTM18/
-│       └── tile_name.h5
+├── S102V22_Tessellation/
+│   └── Navigation_Tile_Scheme_*.gpkg
+├── S102V22_Data/
+│   ├── CATALOG.XML
+│   └── tile_name.h5
 ├── S102V22_Mosaic/
 │   ├── S102V22_Fetched_UTM18_BathymetryCoverage.vrt
 │   ├── S102V22_Fetched_UTM18_QualityOfSurvey.vrt
@@ -165,7 +159,7 @@ print(f"Updates available: {len(result.updates_available)}")
 nbs status -d /path/to/project
 ```
 
-The status check reads the remote tile scheme and compares delivery datetimes against your local database. It reports tiles that have updates, tiles missing from disk, and tiles removed from the scheme. Use `--verbosity verbose` for per-tile detail, or `--verbosity quiet` to suppress all log output.
+The status check reads the remote tile scheme and compares delivery datetimes against your local database. It reports tiles that have updates, tiles missing from disk, and tiles removed from NBS. Use `--verbosity verbose` for per-tile detail, or `--verbosity quiet` to suppress all log output.
 
 ## Resolution filtering
 

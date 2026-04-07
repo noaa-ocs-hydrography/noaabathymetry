@@ -189,9 +189,9 @@ def get_tessellation(conn, project_dir, prefix, data_source, cfg,
                     return cached_path
 
     cursor.execute(f"SELECT * FROM {catalog_table} WHERE {catalog_pk} = 'Tessellation'")
-    for tilescheme in [dict(row) for row in cursor.fetchall()]:
+    for catalog_entry in [dict(row) for row in cursor.fetchall()]:
         try:
-            os.remove(os.path.join(project_dir, tilescheme["location"]))
+            os.remove(os.path.join(project_dir, catalog_entry["location"]))
         except (OSError, PermissionError):
             continue
 
@@ -206,8 +206,8 @@ def get_tessellation(conn, project_dir, prefix, data_source, cfg,
         if len(gpkg_files) > 1:
             logger.info("%s: More than one geometry found in %s, using %s",
                         data_source, prefix, filename)
-        destination_name = os.path.join(project_dir, data_source, "Tessellation", filename)
-        relative = os.path.join(data_source, "Tessellation", filename)
+        destination_name = os.path.join(project_dir, f"{data_source}_Tessellation", filename)
+        relative = os.path.join(f"{data_source}_Tessellation", filename)
         os.makedirs(os.path.dirname(destination_name), exist_ok=True)
         try:
             shutil.copy(os.path.join(prefix, filename), destination_name)
@@ -225,7 +225,7 @@ def get_tessellation(conn, project_dir, prefix, data_source, cfg,
                 f"[{_timestamp()}] {data_source}: No tile scheme geopackage found in "
                 f"{prefix} after retry. The NBS may be updating. Please try again later.")
         filename = os.path.basename(source_key)
-        relative = os.path.join(data_source, "Tessellation", filename)
+        relative = os.path.join(f"{data_source}_Tessellation", filename)
         if len(all_objects) > 1:
             logger.info("%s: More than one geometry found in %s, using %s",
                         data_source, prefix, filename)
@@ -308,13 +308,13 @@ def get_xml(conn, project_dir, prefix, data_source, cfg,
             source_key = timestamped[0]["Key"]
 
     filename = os.path.basename(source_key)
-    relative = os.path.join(data_source, "Data", filename)
+    relative = os.path.join(f"{data_source}_Data", filename)
     if len(all_objects) > 1:
         logger.info("%s: More than one XML found in %s, using %s",
                     data_source, prefix, filename)
     destination_name = os.path.join(project_dir, relative)
     filename_renamed = "CATALOG.XML"
-    relative_renamed = os.path.join(data_source, "Data", filename_renamed)
+    relative_renamed = os.path.join(f"{data_source}_Data", filename_renamed)
     destination_name_renamed = os.path.join(project_dir, relative_renamed)
     os.makedirs(os.path.dirname(destination_name), exist_ok=True)
     try:
@@ -437,7 +437,7 @@ def _build_tile_download(tile, cfg, data_source, client, bucket, local_dir):
         if local_dir is not None:
             # Local source: link is a file path
             basename = os.path.basename(link)
-            rel_disk = os.path.join(data_source, f"UTM{tile['utm']}", basename)
+            rel_disk = os.path.join(f"{data_source}_Data", basename)
         else:
             # S3 source: extract key from URL, use basename for local path
             try:
@@ -445,7 +445,7 @@ def _build_tile_download(tile, cfg, data_source, client, bucket, local_dir):
             except ValueError:
                 return None
             basename = os.path.basename(link)
-            rel_disk = os.path.join(data_source, f"UTM{tile['utm']}", basename)
+            rel_disk = os.path.join(f"{data_source}_Data", basename)
 
         file_entry = {
             "name": name,
@@ -806,10 +806,10 @@ def insert_new(conn, tiles, cfg):
 
 
 def upsert_tiles(conn, project_dir, tile_scheme, cfg):
-    """Synchronize tile records with the latest tilescheme deliveries.
+    """Synchronize tile records with the latest tile scheme deliveries.
 
     For every tile already in the DB, compares ``delivered_date`` against
-    the tilescheme geopackage.  If the geopackage has a newer date, old
+    the tile scheme geopackage.  If the geopackage has a newer date, old
     files are removed from disk and the record is upserted with updated
     links, checksums, and delivery date (disk/verified fields are cleared
     so the tile will be re-downloaded).
@@ -844,7 +844,7 @@ def upsert_tiles(conn, project_dir, tile_scheme, cfg):
     ts_lyr = ts_ds.GetLayer()
     ts_defn = ts_lyr.GetLayerDefn()
 
-    # Read all tilescheme features
+    # Read all tile scheme features
     ts_tiles_map = {}
     for ft in ts_lyr:
         field_list = {}
@@ -869,7 +869,7 @@ def upsert_tiles(conn, project_dir, tile_scheme, cfg):
         ts_tile = ts_tiles_map.get(db_tile["tilename"])
         if ts_tile is None:
             logger.warning("%s in database appears to have "
-                          "been removed from latest tilescheme",
+                          "been removed from latest tile scheme",
                           db_tile["tilename"])
             continue
 
@@ -884,7 +884,7 @@ def upsert_tiles(conn, project_dir, tile_scheme, cfg):
                 raise ValueError(
                     f"Unexpected date format '{delivered_date}' for tile "
                     f"{db_tile['tilename']}. Expected 'YYYY-MM-DD HH:MM:SS'. "
-                    f"The tilescheme format may have changed. "
+                    f"The tile scheme format may have changed. "
                     f"Please contact NBS or update noaabathymetry.\n{debug_info}")
             _date_validated = True
 
@@ -903,7 +903,7 @@ def upsert_tiles(conn, project_dir, tile_scheme, cfg):
                     break
             if not has_all_links:
                 logger.info("Skipping upsert for %s: missing link(s) in "
-                            "tilescheme (NBS may be mid-delivery)",
+                            "tile scheme (NBS may be mid-delivery)",
                             db_tile["tilename"])
                 continue
 

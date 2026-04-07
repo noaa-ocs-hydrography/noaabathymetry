@@ -5,7 +5,7 @@ Thin orchestrator that coordinates:
 1. Data source resolution
 2. Tessellation and XML catalog download
 3. Geometry intersection for tile discovery
-4. Tile synchronization with latest tilescheme
+4. Tile synchronization with latest tile scheme
 5. Parallel tile download with checksum verification
 """
 
@@ -90,7 +90,7 @@ def _fetch_impl(
     1. Resolve data source config (named source or local directory).
     2. Download tessellation geopackage and optional XML catalog.
     3. If a geometry is provided, intersect with tile scheme to discover tiles.
-    4. Synchronize tile records with the latest tilescheme deliveries.
+    4. Synchronize tile records with the latest tile scheme deliveries.
     5. Download all pending tiles with checksum verification.
 
     Parameters
@@ -251,7 +251,7 @@ def _run_fetch(project_dir, geometry, cfg, data_source,
                 logger.info("  (%d tile(s) excluded by resolution filter)",
                             total_intersected - len(tile_list))
 
-        # Synchronize with latest tilescheme
+        # Synchronize with latest tile scheme
         upsert_tiles(conn, project_dir, geom_file, cfg)
 
         # Download tiles

@@ -143,9 +143,9 @@ class TestUpdateRecords:
                 "tile": "T1",
                 "utm": "19",
                 "files": [
-                    {"name": "geotiff", "disk": "BlueTopo/UTM19/T1.tif",
+                    {"name": "geotiff", "disk": "BlueTopo_Data/T1.tif",
                      "source": "s3://bucket/T1.tif", "dest": "T1.tif", "checksum": "abc"},
-                    {"name": "rat", "disk": "BlueTopo/UTM19/T1.tif.aux.xml",
+                    {"name": "rat", "disk": "BlueTopo_Data/T1.tif.aux.xml",
                      "source": "s3://bucket/T1.aux", "dest": "T1.aux", "checksum": "def"},
                 ],
             },
@@ -153,7 +153,7 @@ class TestUpdateRecords:
         update_records(conn, download_dict, ["T1"], cfg)
 
         tiles = all_db_tiles(conn)
-        assert tiles[0]["geotiff_disk"] == "BlueTopo/UTM19/T1.tif"
+        assert tiles[0]["geotiff_disk"] == "BlueTopo_Data/T1.tif"
         assert tiles[0]["geotiff_verified"] == 1
 
     def test_single_file_updates(self, registry_db):

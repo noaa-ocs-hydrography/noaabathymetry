@@ -41,9 +41,9 @@ def _bt_tile(name, utm="18", res="4m"):
         "delivered_date": "2024-06-01",
         "resolution": res,
         "utm": utm,
-        "geotiff_disk": f"BlueTopo/UTM{utm}/{name}.tiff",
+        "geotiff_disk": f"BlueTopo_Data/{name}.tiff",
         "geotiff_verified": 1,
-        "rat_disk": f"BlueTopo/UTM{utm}/{name}.tiff.aux.xml",
+        "rat_disk": f"BlueTopo_Data/{name}.tiff.aux.xml",
         "rat_verified": 1,
     }
 
@@ -94,7 +94,7 @@ class TestTryDeleteGarbageFiles:
         conn, project_dir = registry_db(cfg)
         disk_fields = ["geotiff_disk", "rat_disk"]
 
-        files = ["BlueTopo/UTM18/T1.tiff", "BlueTopo/UTM18/T1.tiff.aux.xml"]
+        files = ["BlueTopo_Data/T1.tiff", "BlueTopo_Data/T1.tiff.aux.xml"]
         for f in files:
             abs_path = os.path.join(project_dir, f)
             os.makedirs(os.path.dirname(abs_path), exist_ok=True)
@@ -121,7 +121,7 @@ class TestTryDeleteGarbageFiles:
         cfg = get_config("bluetopo")
         conn, project_dir = registry_db(cfg)
         disk_fields = ["geotiff_disk", "rat_disk"]
-        files = ["BlueTopo/UTM18/gone.tiff"]
+        files = ["BlueTopo_Data/gone.tiff"]
         assert _try_delete_garbage_files(files, project_dir, conn, disk_fields) is True
         conn.close()
 
@@ -130,7 +130,7 @@ class TestTryDeleteGarbageFiles:
         conn, project_dir = registry_db(cfg)
         disk_fields = ["geotiff_disk", "rat_disk"]
 
-        files = ["BlueTopo/UTM18/locked.tiff"]
+        files = ["BlueTopo_Data/locked.tiff"]
         abs_path = os.path.join(project_dir, files[0])
         os.makedirs(os.path.dirname(abs_path), exist_ok=True)
         open(abs_path, "w").close()
@@ -346,7 +346,7 @@ class TestGarbageCollection:
         conn, project_dir = registry_db(cfg)
         _ensure_garbage_table(conn)
 
-        files = ["BlueTopo/UTM18/OLD.tiff", "BlueTopo/UTM18/OLD.tiff.aux.xml"]
+        files = ["BlueTopo_Data/OLD.tiff", "BlueTopo_Data/OLD.tiff.aux.xml"]
         for f in files:
             abs_path = os.path.join(project_dir, f)
             os.makedirs(os.path.dirname(abs_path), exist_ok=True)
@@ -374,7 +374,7 @@ class TestGarbageCollection:
         conn, project_dir = registry_db(cfg)
         _ensure_garbage_table(conn)
 
-        files = ["BlueTopo/UTM18/LOCKED.tiff"]
+        files = ["BlueTopo_Data/LOCKED.tiff"]
         abs_path = os.path.join(project_dir, files[0])
         os.makedirs(os.path.dirname(abs_path), exist_ok=True)
         open(abs_path, "w").close()
@@ -408,7 +408,7 @@ class TestGarbageCollection:
 
         conn.execute(
             "INSERT INTO garbage_tiles(tilename, files) VALUES(?, ?)",
-            ("GONE", json.dumps(["BlueTopo/UTM18/gone.tiff"])))
+            ("GONE", json.dumps(["BlueTopo_Data/gone.tiff"])))
         conn.commit()
         conn.close()
 
@@ -443,12 +443,12 @@ class TestGarbageCollection:
         """NBS re-added tile with new version — old files are stale."""
         cfg = get_config("bluetopo")
         new_tile = _bt_tile("T1", utm="18")
-        new_tile["geotiff_disk"] = "BlueTopo/UTM18/T1_NEW.tiff"
-        new_tile["rat_disk"] = "BlueTopo/UTM18/T1_NEW.tiff.aux.xml"
+        new_tile["geotiff_disk"] = "BlueTopo_Data/T1_NEW.tiff"
+        new_tile["rat_disk"] = "BlueTopo_Data/T1_NEW.tiff.aux.xml"
         conn, project_dir = registry_db(cfg, tiles=[new_tile])
         _ensure_garbage_table(conn)
 
-        old_files = ["BlueTopo/UTM18/T1_OLD.tiff", "BlueTopo/UTM18/T1_OLD.tiff.aux.xml"]
+        old_files = ["BlueTopo_Data/T1_OLD.tiff", "BlueTopo_Data/T1_OLD.tiff.aux.xml"]
         for f in old_files:
             abs_path = os.path.join(project_dir, f)
             os.makedirs(os.path.dirname(abs_path), exist_ok=True)
@@ -475,7 +475,7 @@ class TestGarbageCollection:
         _ensure_garbage_table(conn)
         _make_tile_files(tmp_path, new_tile)
 
-        old_files = ["BlueTopo/UTM18/OLD.tiff"]
+        old_files = ["BlueTopo_Data/OLD.tiff"]
         abs_path = os.path.join(project_dir, old_files[0])
         os.makedirs(os.path.dirname(abs_path), exist_ok=True)
         open(abs_path, "w").close()
@@ -497,7 +497,7 @@ class TestGarbageCollection:
         conn, project_dir = registry_db(cfg)
         _ensure_garbage_table(conn)
 
-        old_files = ["BlueTopo/UTM18/T1_V1.tiff"]
+        old_files = ["BlueTopo_Data/T1_V1.tiff"]
         abs_old = os.path.join(project_dir, old_files[0])
         os.makedirs(os.path.dirname(abs_old), exist_ok=True)
         open(abs_old, "w").close()
@@ -505,7 +505,7 @@ class TestGarbageCollection:
             "INSERT INTO garbage_tiles(tilename, files) VALUES(?, ?)",
             ("T1", json.dumps(old_files)))
 
-        new_files = ["BlueTopo/UTM18/T1_V2.tiff"]
+        new_files = ["BlueTopo_Data/T1_V2.tiff"]
         abs_new = os.path.join(project_dir, new_files[0])
         open(abs_new, "w").close()
         conn.execute(
@@ -551,7 +551,7 @@ class TestCleanEdgeCases:
             "delivered_date": "2024-01-01",
             "resolution": "4m",
             "utm": "18",
-            "file_disk": "BAG/UTM18/N1.bag",
+            "file_disk": "BAG_Data/N1.bag",
             "file_verified": 1,
         }
         conn, project_dir = registry_db(cfg, tiles=[tile])
@@ -573,13 +573,13 @@ class TestCleanEdgeCases:
         cfg = get_config("bluetopo")
         # Active tile references only the tiff path (same path as garbage)
         active = _bt_tile("T1", utm="18")
-        active["rat_disk"] = "BlueTopo/UTM18/T1_NEW.tiff.aux.xml"  # different aux
+        active["rat_disk"] = "BlueTopo_Data/T1_NEW.tiff.aux.xml"  # different aux
         conn, project_dir = registry_db(cfg, tiles=[active])
         _ensure_garbage_table(conn)
         _make_tile_files(tmp_path, active)
 
         # Garbage has old aux (unreferenced) + same tiff (referenced)
-        old_aux = "BlueTopo/UTM18/T1_OLD.tiff.aux.xml"
+        old_aux = "BlueTopo_Data/T1_OLD.tiff.aux.xml"
         abs_old_aux = os.path.join(project_dir, old_aux)
         os.makedirs(os.path.dirname(abs_old_aux), exist_ok=True)
         open(abs_old_aux, "w").close()
@@ -694,7 +694,7 @@ class TestCleanEdgeCases:
         _make_tile_files(tmp_path, tile)
 
         # Old garbage entry for T1 with locked files
-        old_files = ["BlueTopo/UTM18/T1_OLD.tiff"]
+        old_files = ["BlueTopo_Data/T1_OLD.tiff"]
         abs_old = os.path.join(project_dir, old_files[0])
         os.makedirs(os.path.dirname(abs_old), exist_ok=True)
         open(abs_old, "w").close()

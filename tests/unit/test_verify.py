@@ -29,8 +29,8 @@ def _sha256(path):
 
 def _bt_tile(name, tmp_path, utm="18", content=b"tile data"):
     """Create a BlueTopo tile with files on disk and matching checksums."""
-    tiff_rel = f"BlueTopo/UTM{utm}/{name}.tiff"
-    rat_rel = f"BlueTopo/UTM{utm}/{name}.tiff.aux.xml"
+    tiff_rel = f"BlueTopo_Data/{name}.tiff"
+    rat_rel = f"BlueTopo_Data/{name}.tiff.aux.xml"
     tiff_abs = os.path.join(str(tmp_path), tiff_rel)
     rat_abs = os.path.join(str(tmp_path), rat_rel)
     os.makedirs(os.path.dirname(tiff_abs), exist_ok=True)

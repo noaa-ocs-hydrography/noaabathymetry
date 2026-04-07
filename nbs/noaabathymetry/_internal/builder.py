@@ -668,7 +668,7 @@ def _mosaic_impl(project_dir: str, data_source: str = None,
         raise ValueError("SQLite database not found. Confirm correct folder. "
                          "Note: fetch must be run at least once prior to mosaic")
 
-    if not os.path.isdir(os.path.join(project_dir, data_source)):
+    if not os.path.isdir(os.path.join(project_dir, f"{data_source}_Data")):
         raise ValueError(f"Tile downloads folder not found for {data_source}. "
                          "Confirm correct folder. "
                          "Note: fetch must be run at least once prior to mosaic")
