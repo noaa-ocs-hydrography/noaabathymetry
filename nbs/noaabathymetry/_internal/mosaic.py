@@ -476,6 +476,7 @@ def _discover_and_read_rat_data_direct(tiles, project_dir, cfg, expected_fields)
     exp_fields = list(expected_fields.keys())
     rat_zero_fields = cfg.get("rat_zero_fields", [])
     zero_indices = {i for i, name in enumerate(exp_fields) if name in rat_zero_fields}
+    count_idx = exp_fields.index("count") if "count" in exp_fields else None
 
     surveys = []
     survey_index = {}  # value column -> index into surveys list
@@ -486,10 +487,11 @@ def _discover_and_read_rat_data_direct(tiles, project_dir, cfg, expected_fields)
         for row in rows:
             key = row[col_map[0]]
             if key in survey_index:
-                idx = survey_index[key]
-                surveys[idx][1] = int(surveys[idx][1]) + int(row[col_map[1]])
-                if surveys[idx][1] > 2147483647:
-                    surveys[idx][1] = 2147483647
+                if count_idx is not None:
+                    idx = survey_index[key]
+                    surveys[idx][count_idx] = int(surveys[idx][count_idx]) + int(row[col_map[count_idx]])
+                    if surveys[idx][count_idx] > 2147483647:
+                        surveys[idx][count_idx] = 2147483647
                 continue
             curr = []
             for out_idx, mapped_col in enumerate(col_map):
@@ -503,11 +505,65 @@ def _discover_and_read_rat_data_direct(tiles, project_dir, cfg, expected_fields)
     return expected_fields, dropped, surveys
 
 
-def _read_rat_data_s102(tiles, project_dir, cfg, exp_fields, expected_fields):
-    """Read RAT data from S102 tiles using positional column mapping.
+def _build_s102_col_map(rat, cfg, exp_fields):
+    """Build a name-based column mapping for an S102 featureAttributeTable.
 
-    Deduplicates surveys by the ``value`` column (first field).
-    Duplicate rows are skipped (no count summing — S102 has no count column).
+    Uses ``cfg["rat_hdf5_to_field"]`` to map each HDF5 column name to
+    its output field name, then resolves the GDAL column index for each
+    output field in *exp_fields* order.  This means the output order is
+    always determined by ``rat_fields``, regardless of the HDF5 column
+    order.
+
+    Parameters
+    ----------
+    rat : gdal.RasterAttributeTable
+        GDAL RAT exposing the S102 featureAttributeTable.
+    cfg : dict
+        Data source configuration (must contain ``rat_hdf5_to_field``).
+    exp_fields : list[str]
+        Output field names in order (keys of ``rat_fields``).
+
+    Returns
+    -------
+    list[int]
+        GDAL column indices, one per entry in *exp_fields*.
+    """
+    hdf5_to_field = cfg.get("rat_hdf5_to_field", {})
+    # Invert: output field name -> expected HDF5 name
+    field_to_hdf5 = {v: k for k, v in hdf5_to_field.items()}
+
+    actual_names = [
+        rat.GetNameOfCol(c).lower()
+        for c in range(rat.GetColumnCount())
+    ]
+
+    col_map = []
+    for out_field in exp_fields:
+        hdf5_name = field_to_hdf5.get(out_field)
+        if hdf5_name is None:
+            raise ValueError(
+                f"No HDF5 field mapping for output field '{out_field}'. "
+                f"Add it to rat_hdf5_to_field in the data source config.")
+        if hdf5_name not in actual_names:
+            raise ValueError(
+                f"S102 featureAttributeTable missing expected field "
+                f"'{hdf5_name}' (mapped to '{out_field}'). "
+                f"Actual fields: {actual_names}. "
+                f"The HDF5 field layout may have changed. "
+                f"Please update noaabathymetry.")
+        col_map.append(actual_names.index(hdf5_name))
+    return col_map
+
+
+def _read_rat_data_s102(tiles, project_dir, cfg, exp_fields, expected_fields):
+    """Read featureAttributeTable data from S102 tiles using name-based
+    column mapping.
+
+    Builds a column mapping on the first tile by matching HDF5 field
+    names from ``cfg["rat_hdf5_to_field"]`` against the actual GDAL
+    column names.  Deduplicates surveys by the ``value``
+    column (first field).  Duplicate rows are skipped (no count
+    summing — S102 has no count column).
 
     Parameters
     ----------
@@ -534,6 +590,8 @@ def _read_rat_data_s102(tiles, project_dir, cfg, exp_fields, expected_fields):
     quality_sd = next(sd for sd in cfg["subdatasets"] if sd.get("s102_protocol"))
     quality_name = quality_sd["name"]
 
+    col_map = None
+
     surveys = []
     survey_index = {}  # value column -> index into surveys list
     for tile in tiles:
@@ -552,9 +610,9 @@ def _read_rat_data_s102(tiles, project_dir, cfg, exp_fields, expected_fields):
         if rat_n is None:
             ds = None
             continue
-        actual_count = rat_n.GetColumnCount()
-        usable = min(actual_count, len(exp_fields))
-        col_map = list(range(usable))
+
+        if col_map is None:
+            col_map = _build_s102_col_map(rat_n, cfg, exp_fields)
 
         for row in range(rat_n.GetRowCount()):
             key = rat_n.GetValueAsString(row, col_map[0])
@@ -651,18 +709,12 @@ def add_mosaic_rat(tiles, project_dir, mosaic_path, cfg, utm=None):
             _discover_and_read_rat_data_direct(
                 tiles, project_dir, cfg, expected_fields)
     else:
-        # s102_quality: single pass, no field discovery needed
+        # s102_quality: name-based mapping, no field discovery needed.
+        # _build_s102_col_map raises if any expected field is missing.
         dropped_fields = set()
         exp_fields = list(expected_fields.keys())
         surveys = _read_rat_data_s102(
             tiles, project_dir, cfg, exp_fields, expected_fields)
-
-        # Trim expected_fields if surveys are narrower (s102_quality safety)
-        if surveys:
-            survey_width = len(surveys[0])
-            if survey_width < len(expected_fields):
-                expected_fields = dict(
-                    list(expected_fields.items())[:survey_width])
 
     if dropped_fields:
         if utm:
