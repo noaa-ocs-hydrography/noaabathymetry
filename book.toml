@@ -1,0 +1,14 @@
+[book]
+title = "NOAA Bathymetry"
+authors = ["Glen Rice (NOAA)", "Tashi Geleg (Lynker/NOAA)"]
+src = "docs"
+
+[build]
+build-dir = "book"
+
+[output.html]
+git-repository-url = "https://github.com/noaa-ocs-hydrography/noaabathymetry"
+default-theme = "ayu"
+preferred-dark-theme = "ayu"
+additional-css = ["docs/theme/sidebar-logo.css"]
+additional-js = ["docs/theme/sidebar-logo.js"]

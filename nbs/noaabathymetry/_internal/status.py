@@ -1,0 +1,412 @@
+"""
+status.py - Check local project freshness against the remote tile scheme.
+
+Reads the remote geopackage from S3 via GDAL's virtual filesystem
+and compares delivery datetimes against the local registry database.  No
+files are downloaded and the local DB is not modified (except the
+command_usage counter for rate limiting).
+"""
+
+import logging
+import os
+import platform
+from dataclasses import dataclass, field
+
+from osgeo import gdal, ogr
+
+from nbs.noaabathymetry._internal.config import (
+    get_disk_fields,
+    get_verified_fields,
+    resolve_data_source,
+)
+from nbs.noaabathymetry._internal.db import connect
+from nbs.noaabathymetry._internal.download import (
+    _get_s3_client,
+    _list_s3_latest,
+    all_db_tiles,
+)
+from nbs.noaabathymetry._internal.ratelimit import check_rate_limit, log_command
+
+logger = logging.getLogger("noaabathymetry")
+
+
+@dataclass
+class StatusResult:
+    """Result of a status_tiles operation.
+
+    Attributes
+    ----------
+    up_to_date : list[dict]
+        Tiles whose local delivery datetime matches the remote and whose
+        files exist on disk.  Each dict has ``tile``, ``utm``,
+        ``resolution``, ``local_datetime``, and ``geometry`` keys.
+    updates_available : list[dict]
+        Tiles with a newer delivery datetime on S3.  Each dict has
+        ``tile``, ``utm``, ``resolution``, ``local_datetime``,
+        ``remote_datetime``, and ``geometry`` keys.
+    missing_from_disk : list[dict]
+        Tiles whose delivery datetime matches the remote but whose files
+        are missing from disk.  Each dict has ``tile``, ``utm``,
+        ``resolution``, ``local_datetime``, and ``geometry`` keys.
+    removed_from_nbs : list[dict]
+        Tiles tracked locally that no longer appear in the remote
+        geopackage.  Each dict has ``tile``, ``utm``, ``resolution``,
+        ``local_datetime``, and ``geometry`` keys.
+    total_tracked : int
+        Total number of tiles in the local database.
+    """
+    up_to_date: list = field(default_factory=list)
+    updates_available: list = field(default_factory=list)
+    missing_from_disk: list = field(default_factory=list)
+    removed_from_nbs: list = field(default_factory=list)
+    total_tracked: int = 0
+
+
+def _parse_geopackage(path, cfg):
+    """Parse a tile-scheme geopackage at *path* into a tile-name dict.
+
+    Parameters
+    ----------
+    path : str
+        Filesystem or ``/vsimem/`` path to a geopackage.
+    cfg : dict
+        Data source configuration containing ``gpkg_fields``.
+
+    Returns
+    -------
+    dict[str, dict]
+        ``{tile_name: {field: value, ...}, ...}``
+
+    Raises
+    ------
+    RuntimeError
+        If the geopackage cannot be opened by OGR.
+    """
+    ds = ogr.Open(path)
+    if ds is None:
+        raise RuntimeError(f"Unable to read tile scheme: {path}")
+
+    gpkg_fields = cfg["gpkg_fields"]
+    lyr = ds.GetLayer()
+    defn = lyr.GetLayerDefn()
+
+    tiles_map = {}
+    for ft in lyr:
+        fields = {}
+        for i in range(defn.GetFieldCount()):
+            name = defn.GetFieldDefn(i).name
+            fields[name] = ft.GetField(name)
+        tile_name = fields.get(gpkg_fields["tile"])
+        if tile_name is not None:
+            tiles_map[tile_name] = fields
+    ds = None
+    return tiles_map
+
+
+def _read_remote_geopackage(cfg):
+    """Read the remote tile scheme geopackage from S3.
+
+    Returns a dict mapping tile names to their geopackage field dicts,
+    or raises RuntimeError if the geopackage cannot be read.
+    """
+    gdal.SetConfigOption("AWS_NO_SIGN_REQUEST", "YES")
+
+    bucket = cfg["bucket"]
+    prefix = cfg["geom_prefix"]
+    data_source = cfg["canonical_name"]
+
+    client = _get_s3_client()
+    source_key, _ = _list_s3_latest(
+        client, bucket, prefix, "geometry", data_source, retry=True)
+    if source_key is None:
+        raise RuntimeError(
+            f"No tile scheme found on S3 for {data_source}. "
+            "Check your internet connection.")
+
+    # Download entire geopackage to RAM via GDAL (single HTTP GET).
+    remote_url = f"/vsicurl/https://{bucket}.s3.amazonaws.com/{source_key}"
+    mem_path = "/vsimem/_status_tilescheme.gpkg"
+    ret = gdal.CopyFile(remote_url, mem_path)
+    if ret != 0:
+        raise RuntimeError(
+            f"Failed to download tile scheme for {data_source}.")
+
+    try:
+        return _parse_geopackage(mem_path, cfg)
+    finally:
+        gdal.Unlink(mem_path)
+
+
+def _scan_existing_files(db_tiles, project_dir, cfg):
+    """Scan disk once and return a set of relative paths that exist.
+
+    Collects the unique directories referenced by tile disk paths,
+    scans each with ``os.scandir``, and returns a set of relative
+    paths (matching the format stored in the database).
+    """
+    disk_fields = get_disk_fields(cfg)
+    dirs = set()
+    for tile in db_tiles:
+        for df in disk_fields:
+            path = tile.get(df)
+            if path:
+                dirs.add(os.path.dirname(path))
+
+    existing = set()
+    for rel_dir in dirs:
+        abs_dir = os.path.join(project_dir, rel_dir)
+        try:
+            with os.scandir(abs_dir) as entries:
+                for entry in entries:
+                    existing.add(os.path.join(rel_dir, entry.name))
+        except FileNotFoundError:
+            pass
+    return existing
+
+
+def _tile_files_exist(tile, project_dir, cfg, _existing=None):
+    """Return True if all disk files for a tile exist on disk and are verified.
+
+    Parameters
+    ----------
+    _existing : set | None
+        Pre-scanned set of relative paths from :func:`_scan_existing_files`.
+        When provided, uses fast set lookup instead of per-file
+        ``os.path.isfile`` calls.
+    """
+    disk_fields = get_disk_fields(cfg)
+    verified_fields = get_verified_fields(cfg)
+    for df in disk_fields:
+        path = tile.get(df)
+        if not path:
+            return False
+        if _existing is not None:
+            if path not in _existing:
+                return False
+        elif not os.path.isfile(os.path.join(project_dir, path)):
+            return False
+    for vf in verified_fields:
+        if tile.get(vf) != 1:
+            return False
+    return True
+
+
+def _tile_info(tile):
+    """Extract standard tile info dict from a DB tile row."""
+    return {
+        "tile": tile["tilename"],
+        "utm": tile.get("utm") or "Unknown",
+        "resolution": tile.get("resolution") or "Unknown",
+        "local_datetime": tile.get("delivered_date"),
+        "geometry": tile.get("geometry"),
+    }
+
+
+def _log_grouped(label, tiles):
+    """Log tiles grouped by UTM zone and resolution."""
+    logger.info("%s:", label)
+    groups = {}
+    for t in tiles:
+        groups.setdefault(t["utm"], {}).setdefault(t["resolution"], []).append(t)
+    for utm in sorted(groups):
+        logger.info("  %s:", utm)
+        for res in sorted(groups[utm]):
+            n = len(groups[utm][res])
+            logger.info("    %s:  %d tile%s", res, n, "s" if n != 1 else "")
+
+
+def _log_table(label, tiles, include_remote=False):
+    """Log tiles as a verbose table."""
+    logger.info("%s:", label)
+    if include_remote:
+        logger.info("  %-24s %-6s%-6s%-20s%s", "Tile", "UTM", "Res",
+                     "Local datetime", "Remote datetime")
+        for t in sorted(tiles, key=lambda x: (x["utm"], x["resolution"], x["tile"])):
+            logger.info("  %-24s %-6s%-6s%-20s%s",
+                         t["tile"], t["utm"], t["resolution"],
+                         t.get("local_datetime") or "None",
+                         t.get("remote_datetime") or "None")
+    else:
+        logger.info("  %-24s %-6s%-6s%s", "Tile", "UTM", "Res", "Local datetime")
+        for t in sorted(tiles, key=lambda x: (x["utm"], x["resolution"], x["tile"])):
+            logger.info("  %-24s %-6s%-6s%s",
+                         t["tile"], t["utm"], t["resolution"],
+                         t.get("local_datetime") or "None")
+
+
+def _status_impl(
+    project_dir: str,
+    data_source: str = None,
+    verbosity: str = "normal",
+    remote_tiles: dict = None,
+) -> StatusResult:
+    """Check local project freshness against the remote tile scheme.
+
+    Reads the remote geopackage from S3 and compares
+    delivery datetimes against the local registry database.  Does not
+    download tile data or modify the local database.
+
+    Parameters
+    ----------
+    project_dir : str
+        Absolute path to the project directory.
+    data_source : str | None
+        A known source name, or None (defaults to ``"bluetopo"``).
+    verbosity : str
+        Logging verbosity: ``"quiet"`` suppresses all log output,
+        ``"normal"`` (default) shows UTM/resolution counts, and
+        ``"verbose"`` shows individual tiles.
+    remote_tiles : dict | None
+        Pre-fetched tile map dict (same format as
+        ``_read_remote_geopackage()``).  When provided, skips the S3
+        download and uses this dict instead.
+
+    Returns
+    -------
+    StatusResult
+        Structured result with up_to_date, updates_available,
+        missing_from_disk, and removed_from_nbs tiles.
+
+    Raises
+    ------
+    ValueError
+        If ``project_dir`` is not an absolute path, the project
+        directory does not exist, or the registry database is not found.
+    ValueError
+        If the rate limit is exceeded.
+    RuntimeError
+        If the remote tile scheme cannot be read from S3.
+    """
+    if remote_tiles is not None and not isinstance(remote_tiles, dict):
+        raise TypeError(
+            f"remote_tiles must be a dict, got {type(remote_tiles).__name__}")
+
+    project_dir = os.path.expanduser(project_dir)
+    if not os.path.isabs(project_dir):
+        msg = "Please use an absolute path for your project folder."
+        if "windows" not in platform.system().lower():
+            msg += "\nTypically for non windows systems this means starting with '/'"
+        raise ValueError(msg)
+
+    cfg, _ = resolve_data_source(data_source)
+    data_source = cfg["canonical_name"]
+
+    if not os.path.isdir(project_dir):
+        raise ValueError(f"Folder path not found: {project_dir}")
+
+    db_name = f"{data_source.lower()}_registry.db"
+    if not os.path.isfile(os.path.join(project_dir, db_name)):
+        raise ValueError(
+            f"Registry database not found ({db_name}). "
+            "Note: fetch must be run at least once prior to status")
+
+    conn = connect(project_dir, cfg)
+    if verbosity == "quiet":
+        logger.disabled = True
+    try:
+        check_rate_limit(conn, "status")
+
+        logger.info("═══ Status ═══")
+
+        gpkg_fields = cfg["gpkg_fields"]
+        db_tiles = all_db_tiles(conn)
+        if remote_tiles is None:
+            remote_tiles = _read_remote_geopackage(cfg)
+
+        existing_files = _scan_existing_files(db_tiles, project_dir, cfg)
+        result = StatusResult(total_tracked=len(db_tiles))
+
+        for db_tile in db_tiles:
+            tile_name = db_tile["tilename"]
+            info = _tile_info(db_tile)
+            remote = remote_tiles.get(tile_name)
+
+            if remote is None:
+                result.removed_from_nbs.append(info)
+                continue
+
+            remote_date = remote.get(gpkg_fields["delivered_date"])
+            local_date = db_tile.get("delivered_date")
+
+            if local_date is None or (remote_date and remote_date > local_date):
+                info["remote_datetime"] = remote_date
+                result.updates_available.append(info)
+            elif not _tile_files_exist(db_tile, project_dir, cfg,
+                                       _existing=existing_files):
+                result.missing_from_disk.append(info)
+            else:
+                # Includes tiles where local_date >= remote_date. If local
+                # is ahead of remote (e.g. NBS rolled back a tile), we treat
+                # it as up to date. The user has equal or newer data and
+                # there is nothing to download.
+                result.up_to_date.append(info)
+
+        # Output
+        up_to_date_count = len(result.up_to_date)
+        updates_count = len(result.updates_available)
+        missing_count = len(result.missing_from_disk)
+        removed_count = len(result.removed_from_nbs)
+
+        logger.info("Project: %s", project_dir)
+        logger.info("Data source: %s", data_source)
+        logger.info("")
+
+        if result.total_tracked == 0:
+            logger.info("No tiles tracked. Run 'nbs fetch -d %s -g <geometry>' "
+                         "to discover tiles.", project_dir)
+        else:
+            logger.info("Tracked tiles:    %d", result.total_tracked)
+            logger.info("  Up to date:     %d", up_to_date_count)
+            logger.info("  Updates:        %d", updates_count)
+            logger.info("  Missing:        %d", missing_count)
+            logger.info("  Removed:        %d", removed_count)
+
+            if not updates_count and not missing_count and not removed_count:
+                logger.info("")
+                logger.info("All tiles are up to date.")
+            else:
+                if updates_count:
+                    logger.info("")
+                    if verbosity == "verbose":
+                        _log_table("Updates available", result.updates_available,
+                                   include_remote=True)
+                    else:
+                        _log_grouped("Updates available", result.updates_available)
+
+                if missing_count:
+                    logger.info("")
+                    if verbosity == "verbose":
+                        _log_table("Missing from disk", result.missing_from_disk)
+                    else:
+                        _log_grouped("Missing from disk", result.missing_from_disk)
+
+                if removed_count:
+                    logger.info("")
+                    if verbosity == "verbose":
+                        _log_table("Removed from NBS", result.removed_from_nbs)
+                    else:
+                        _log_grouped("Removed from NBS", result.removed_from_nbs)
+
+                if updates_count or missing_count:
+                    logger.info("")
+                    logger.info("Run 'nbs fetch -d %s' to download updates.",
+                                project_dir)
+
+        logger.info("══════════════")
+        return result
+    finally:
+        if verbosity == "quiet":
+            logger.disabled = False
+        conn.close()
+
+
+def status_tiles(
+    project_dir: str,
+    data_source: str = None,
+    verbosity: str = "normal",
+) -> StatusResult:
+    """Check local project freshness against the remote tile scheme.
+
+    See :func:`_status_impl` for full documentation.
+    """
+    return _status_impl(project_dir, data_source, verbosity)
