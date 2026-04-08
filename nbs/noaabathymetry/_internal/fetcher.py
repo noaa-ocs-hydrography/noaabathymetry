@@ -217,14 +217,14 @@ def _run_fetch(project_dir, geometry, cfg, data_source,
     if report:
         report.set_conn(conn)
     try:
+        # Download tessellation geopackage (before XML — less critical if stale)
+        geom_file = get_tessellation(conn, project_dir, geom_prefix, data_source, cfg,
+                                     local_dir=local_dir, bucket=bucket)
+
         # Download XML catalog if needed (S102 sources)
         xml_prefix = cfg.get("xml_prefix")
         if xml_prefix:
             get_xml(conn, project_dir, xml_prefix, data_source, cfg, bucket=bucket)
-
-        # Download tessellation geopackage
-        geom_file = get_tessellation(conn, project_dir, geom_prefix, data_source, cfg,
-                                     local_dir=local_dir, bucket=bucket)
 
         # Discover new tiles via geometry intersection
         if geometry:

@@ -185,7 +185,7 @@ class TestGetXml:
         assert os.path.isfile(result)
 
     @mock_aws
-    def test_not_found_returns_none(self, tmp_path, monkeypatch):
+    def test_not_found_raises(self, tmp_path, monkeypatch):
         monkeypatch.setattr(fetch_tiles_module, "_get_s3_client", _mock_s3_client)
         cfg = get_config("s102v21")
         project_dir = str(tmp_path)
@@ -194,12 +194,12 @@ class TestGetXml:
         client = boto3.client("s3", region_name="us-east-1")
         client.create_bucket(Bucket=BUCKET)
 
-        result = get_xml(
-            conn, project_dir,
-            "NonExistent/Prefix",
-            "S102V21", cfg,
-        )
-        assert result is None
+        with pytest.raises(RuntimeError, match="No XML catalog found"):
+            get_xml(
+                conn, project_dir,
+                "NonExistent/Prefix",
+                "S102V21", cfg,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -570,11 +570,12 @@ class TestLocalMatchesS3:
         client.put_object(Bucket=BUCKET, Key="file.bin", Body=b"content")
         assert _local_matches_s3(str(tmp_path / "nope"), client, BUCKET, "file.bin") is False
 
-    def test_etag_with_hyphen(self, tmp_path):
+    def test_multipart_etag_returns_false(self, tmp_path):
+        """Multipart ETags can't be verified — always re-download."""
         path = str(tmp_path / "file.bin")
         with open(path, "wb") as f:
             f.write(b"content")
-        with mock.patch.object(fetch_tiles_module, "_get_s3_etag", return_value="abc-3"):
+        with mock.patch.object(fetch_tiles_module, "_get_s3_etag", return_value="abc123-3"):
             assert _local_matches_s3(path, None, BUCKET, "key") is False
 
     def test_returns_false_on_error(self):

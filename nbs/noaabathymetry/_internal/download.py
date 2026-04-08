@@ -89,6 +89,11 @@ def _get_s3_etag(client, bucket, key):
 def _local_matches_s3(local_path, client, bucket, key):
     """Return True if the local file's MD5 matches the S3 object's ETag.
 
+    Only works for single-part uploads where the ETag is a plain MD5.
+    For multipart uploads (ETag contains ``-``) there is no way to
+    verify content identity, so this returns False and the caller
+    falls through to a fresh download.
+
     Returns False (and logs at DEBUG) on any error so the caller
     falls through to a normal download.
     """
@@ -159,16 +164,37 @@ def _list_s3_latest(client, bucket, prefix, label, data_source, retry=True):
     return objects[0]["Key"], objects
 
 
+def _verify_s3_download(data, response, label):
+    """Verify integrity of bytes downloaded from S3.
+
+    For single-part uploads, compares MD5 of data against the S3 ETag.
+    For multipart uploads (ETag contains ``-``), compares byte count
+    against ContentLength.  Raises RuntimeError on mismatch.
+    """
+    etag = response.get("ETag", "").strip('"')
+    if "-" in etag:
+        expected_size = response["ContentLength"]
+        if len(data) != expected_size:
+            raise RuntimeError(
+                f"{label} download size mismatch: "
+                f"expected {expected_size} bytes, got {len(data)}")
+    else:
+        actual_md5 = hashlib.md5(data).hexdigest()
+        if actual_md5 != etag:
+            raise RuntimeError(
+                f"{label} download integrity check failed: "
+                f"expected MD5 {etag}, got {actual_md5}")
+
+
 def get_tessellation(conn, project_dir, prefix, data_source, cfg,
                      local_dir=None, bucket="noaa-ocs-nationalbathymetry-pds"):
     """Download the tile-scheme geopackage from S3 (or copy from local).
 
-    Removes any previously downloaded tessellation first.  Picks the latest
-    file by LastModified (S3) or filename sort (local).  Retries once after
-    5 seconds if no objects found on S3.
+    Downloads to memory and verifies integrity before writing to disk.
+    Picks the latest file by LastModified (S3) or filename sort (local).
 
     Returns the absolute path to the downloaded geopackage, or raises
-    RuntimeError if none found after retry.
+    RuntimeError if none found or verification fails.
     """
     catalog_table = cfg["catalog_table"]
     catalog_pk = cfg["catalog_pk"]
@@ -188,13 +214,6 @@ def get_tessellation(conn, project_dir, prefix, data_source, cfg,
                     logger.info("%s: Tessellation up to date", data_source)
                     return cached_path
 
-    cursor.execute(f"SELECT * FROM {catalog_table} WHERE {catalog_pk} = 'Tessellation'")
-    for catalog_entry in [dict(row) for row in cursor.fetchall()]:
-        try:
-            os.remove(os.path.join(project_dir, catalog_entry["location"]))
-        except (OSError, PermissionError):
-            continue
-
     if local_dir is not None:
         gpkg_files = os.listdir(prefix)
         gpkg_files = [f for f in gpkg_files if f.endswith(".gpkg") and "Tile_Scheme" in f]
@@ -206,14 +225,14 @@ def get_tessellation(conn, project_dir, prefix, data_source, cfg,
         if len(gpkg_files) > 1:
             logger.info("%s: More than one geometry found in %s, using %s",
                         data_source, prefix, filename)
-        destination_name = os.path.join(project_dir, f"{data_source}_Tessellation", filename)
         relative = os.path.join(f"{data_source}_Tessellation", filename)
+        destination_name = os.path.join(project_dir, relative)
         os.makedirs(os.path.dirname(destination_name), exist_ok=True)
         try:
             shutil.copy(os.path.join(prefix, filename), destination_name)
         except Exception as e:
             raise OSError(
-                f"[{_timestamp()}] {data_source}: Failed to download tile scheme. "
+                f"[{_timestamp()}] {data_source}: Failed to copy tile scheme. "
                 "Possibly due to conflict with an open existing file. "
                 "Please close all files and attempt again") from e
     else:
@@ -229,15 +248,31 @@ def get_tessellation(conn, project_dir, prefix, data_source, cfg,
         if len(all_objects) > 1:
             logger.info("%s: More than one geometry found in %s, using %s",
                         data_source, prefix, filename)
+
+        # Download to memory and verify
+        response = client.get_object(Bucket=bucket, Key=source_key)
+        data = response["Body"].read()
+        _verify_s3_download(data, response, f"{data_source} tile scheme")
+
+        # Delete old file if it exists
         destination_name = os.path.join(project_dir, relative)
+        cursor.execute(f"SELECT location FROM {catalog_table} WHERE {catalog_pk} = 'Tessellation'")
+        old_row = cursor.fetchone()
+        if old_row and old_row["location"]:
+            old_path = os.path.join(project_dir, old_row["location"])
+            if os.path.isfile(old_path):
+                try:
+                    os.remove(old_path)
+                except (OSError, PermissionError) as e:
+                    raise OSError(
+                        f"[{_timestamp()}] {data_source}: Cannot replace tile scheme. "
+                        "The existing file may be open. "
+                        "Please close all files and attempt again") from e
+
+        # Write verified bytes to disk
         os.makedirs(os.path.dirname(destination_name), exist_ok=True)
-        try:
-            client.download_file(bucket, source_key, destination_name)
-        except (OSError, PermissionError) as e:
-            raise OSError(
-                f"[{_timestamp()}] {data_source}: Failed to download tile scheme. "
-                "Possibly due to conflict with an open existing file. "
-                "Please close all files and attempt again") from e
+        with open(destination_name, "wb") as f:
+            f.write(data)
 
     logger.info("%s: Downloaded %s", data_source, filename)
     cursor.execute(
@@ -253,92 +288,66 @@ def get_xml(conn, project_dir, prefix, data_source, cfg,
             bucket="noaa-ocs-nationalbathymetry-pds"):
     """Download the S102 CATALOG.XML from S3.
 
-    Prefers timestamped files (e.g. CATALOG_20260316_132904.XML) over
-    plain CATALOG.XML for download-then-rename safety.  Downloads to the
-    original filename, then renames to CATALOG.XML.  If rename fails
-    (busy file handle on Windows), the timestamped file persists on disk
-    as a signal to the user.
-
-    Retries once after 5 seconds if no objects found.
+    Downloads to memory, verifies integrity, then writes directly to
+    CATALOG.XML.  Raises RuntimeError if download fails or verification
+    fails.
     """
     catalog_table = cfg["catalog_table"]
     catalog_pk = cfg["catalog_pk"]
     cursor = conn.cursor()
 
-    # Cache check: skip download if local file matches S3 (MD5 vs ETag)
-    cursor.execute(f"SELECT location FROM {catalog_table} WHERE {catalog_pk} = 'XML'")
-    row = cursor.fetchone()
-    if row and row["location"]:
-        cached_path = os.path.join(project_dir, row["location"])
-        if os.path.isfile(cached_path):
-            client = _get_s3_client()
-            source_key, all_objects = _list_s3_latest(
-                client, bucket, prefix, "XML", data_source, retry=False)
-            if source_key and all_objects:
-                # Apply same timestamped-preference logic as the download path
-                if len(all_objects) > 1:
-                    timestamped = [o for o in all_objects
-                                   if os.path.basename(o["Key"]).upper() != "CATALOG.XML"]
-                    if timestamped:
-                        source_key = timestamped[0]["Key"]
-                if _local_matches_s3(cached_path, client, bucket, source_key):
-                    logger.info("%s: XML up to date", data_source)
-                    return cached_path
+    relative = os.path.join(f"{data_source}_Data", "CATALOG.XML")
+    destination_name = os.path.join(project_dir, relative)
 
-    cursor.execute(f"SELECT * FROM {catalog_table} WHERE {catalog_pk} = 'XML'")
-    for record in [dict(row) for row in cursor.fetchall()]:
-        try:
-            if os.path.isfile(os.path.join(project_dir, record["location"])):
-                os.remove(os.path.join(project_dir, record["location"]))
-        except (OSError, PermissionError):
-            continue
+    # Cache check: skip download if local file matches S3 (MD5 vs ETag)
+    if os.path.isfile(destination_name):
+        client = _get_s3_client()
+        source_key, _ = _list_s3_latest(
+            client, bucket, prefix, "XML", data_source, retry=False)
+        if source_key and _local_matches_s3(destination_name, client, bucket, source_key):
+            logger.info("%s: XML up to date", data_source)
+            return destination_name
 
     client = _get_s3_client()
     source_key, all_objects = _list_s3_latest(
         client, bucket, prefix, "XML", data_source, retry=True)
     if source_key is None:
-        logger.warning("%s: No XML found in %s after retry", data_source, prefix)
-        return None
+        raise RuntimeError(
+            f"[{_timestamp()}] {data_source}: No XML catalog found in "
+            f"{prefix} after retry. The NBS may be updating. Please try again later.")
 
-    # Prefer timestamped version over plain CATALOG.XML for rename safety
-    if len(all_objects) > 1:
-        timestamped = [o for o in all_objects
-                       if os.path.basename(o["Key"]).upper() != "CATALOG.XML"]
-        if timestamped:
-            source_key = timestamped[0]["Key"]
-
-    filename = os.path.basename(source_key)
-    relative = os.path.join(f"{data_source}_Data", filename)
     if len(all_objects) > 1:
         logger.info("%s: More than one XML found in %s, using %s",
-                    data_source, prefix, filename)
-    destination_name = os.path.join(project_dir, relative)
-    filename_renamed = "CATALOG.XML"
-    relative_renamed = os.path.join(f"{data_source}_Data", filename_renamed)
-    destination_name_renamed = os.path.join(project_dir, relative_renamed)
+                    data_source, prefix, os.path.basename(source_key))
+
+    # Download to memory and verify
+    response = client.get_object(Bucket=bucket, Key=source_key)
+    data = response["Body"].read()
+    _verify_s3_download(data, response, f"{data_source} XML catalog")
+
+    # Delete old file if it exists
+    if os.path.isfile(destination_name):
+        try:
+            os.remove(destination_name)
+        except (OSError, PermissionError) as e:
+            raise OSError(
+                f"[{_timestamp()}] {data_source}: Cannot replace CATALOG.XML. "
+                "The existing file may be open. "
+                "Please close all files and attempt again") from e
+
+    # Write verified bytes to disk
     os.makedirs(os.path.dirname(destination_name), exist_ok=True)
-    try:
-        client.download_file(bucket, source_key, destination_name)
-    except (OSError, PermissionError) as e:
-        raise OSError(
-            f"[{_timestamp()}] {data_source}: Failed to download XML. "
-            "Possibly due to conflict with an open existing file. "
-            "Please close all files and attempt again") from e
-    try:
-        os.replace(destination_name, destination_name_renamed)
-    except (OSError, PermissionError) as e:
-        raise OSError(
-            f"[{_timestamp()}] {data_source}: Failed to rename XML to CATALOG.XML. "
-            "Possibly due to conflict with an open existing file named CATALOG.XML. "
-            "Please close all files and attempt again") from e
-    logger.info("%s: Downloaded %s", data_source, filename_renamed)
+    with open(destination_name, "wb") as f:
+        f.write(data)
+
+    logger.info("%s: Downloaded CATALOG.XML", data_source)
     cursor.execute(
         f"""REPLACE INTO {catalog_table}({catalog_pk}, location, downloaded)
                       VALUES(?, ?, ?)""",
-        ("XML", relative_renamed, datetime.datetime.now()),
+        ("XML", relative, datetime.datetime.now()),
     )
     conn.commit()
-    return destination_name_renamed
+    return destination_name
 
 
 # ---------------------------------------------------------------------------
