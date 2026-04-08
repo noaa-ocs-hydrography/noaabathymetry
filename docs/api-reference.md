@@ -273,10 +273,10 @@ Dataclass returned by `status_tiles`.
 
 | Attribute | Type | Description |
 |---|---|---|
-| `up_to_date` | `list[dict]` | Tiles whose delivery datetime matches the remote and files exist on disk. Each dict has `tile`, `utm`, `resolution`, and `local_datetime` keys. |
-| `updates_available` | `list[dict]` | Tiles with a newer delivery datetime on S3. Each dict has `tile`, `utm`, `resolution`, `local_datetime`, and `remote_datetime` keys. |
-| `missing_from_disk` | `list[dict]` | Tiles whose delivery datetime matches the remote but files are missing from disk. Each dict has `tile`, `utm`, `resolution`, and `local_datetime` keys. |
-| `removed_from_nbs` | `list[dict]` | Tiles tracked locally that no longer appear in the remote geopackage. Each dict has `tile`, `utm`, `resolution`, and `local_datetime` keys. |
+| `up_to_date` | `list[dict]` | Tiles whose delivery datetime matches the remote and files exist on disk. Each dict has `tile`, `utm`, `resolution`, `local_datetime`, and `geometry` keys. |
+| `updates_available` | `list[dict]` | Tiles with a newer delivery datetime on S3. Each dict has `tile`, `utm`, `resolution`, `local_datetime`, `remote_datetime`, and `geometry` keys. |
+| `missing_from_disk` | `list[dict]` | Tiles whose delivery datetime matches the remote but files are missing from disk. Each dict has `tile`, `utm`, `resolution`, `local_datetime`, and `geometry` keys. |
+| `removed_from_nbs` | `list[dict]` | Tiles tracked locally that no longer appear in the remote geopackage. Each dict has `tile`, `utm`, `resolution`, `local_datetime`, and `geometry` keys. |
 | `total_tracked` | `int` | Total number of tiles in the local database. |
 
 ---

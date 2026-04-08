@@ -69,7 +69,7 @@ The package operates in two distinct steps.
 1. **Checks prerequisites** — verifies the project directory, registry database, and tile folder all exist. Checks GDAL version and driver availability.
 2. **Detects missing mosaics** — scans the tracking database for UTM zones that need building (newly downloaded tiles, or mosaic files deleted from disk).
 3. **Builds per-UTM mosaics** — creates a GDAL Virtual Raster for each UTM zone, referencing the downloaded tile files. Adds overview files (`.ovr`) for efficient display at multiple zoom levels.
-4. **Aggregates RATs** — for sources with Raster Attribute Tables (BlueTopo, Modeling, HSD, S102V22, S102V30), combines per-tile RAT data into the UTM mosaic.
+4. **Aggregates RATs** — for sources with Raster Attribute Tables (BlueTopo, Modeling, S102V22, S102V30), combines per-tile RAT data into the UTM mosaic.
 
 ### Understanding `FetchResult`
 
@@ -84,6 +84,7 @@ Fetch returns a [`FetchResult`](api-reference.md#fetchresult) with per-tile stat
 
 **Run metadata:**
 
+- **filtered_out** — tiles excluded by the resolution filter. Empty when no filter is active.
 - **missing_reset** — tiles previously downloaded but missing from disk.
 - **available_tiles_intersecting_aoi** — number of tiles with valid metadata intersecting the area of interest geometry (includes tiles already tracked).
 - **new_tiles_tracked** — number of tiles actually newly added to tracking in this run (tiles already in the database are not counted).

@@ -45,7 +45,7 @@ Install conda (If you have not already): [conda installation](https://docs.conda
 In the command line, create an environment with the required packages:
 
 ```
-conda create -n noaabathymetry_env -c conda-forge 'gdal>=3.9'
+conda create -n noaabathymetry_env -c conda-forge 'gdal>=3.9'  # add libgdal-hdf5 for BAG/S-102 support
 ```
 
 ```

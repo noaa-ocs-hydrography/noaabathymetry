@@ -56,7 +56,7 @@ mosaic_tiles('/path/to/project', data_source='bag')
 > Please update GDAL to >=3.9 to run mosaic.
 > Some users have encountered issues with conda's installation of GDAL 3.4. Try more recent versions of GDAL if you also encounter issues in your conda environment.
 
-**Cause:** The installed GDAL version is older than what the data source requires. S-102 sources (s102v21, s102v22, s102v30) need GDAL 3.9+. BlueTopo, Modeling, BAG, and HSD need GDAL 3.4+.
+**Cause:** The installed GDAL version is older than what the data source requires. S-102 sources (s102v21, s102v22, s102v30) need GDAL 3.9+. BlueTopo, Modeling, and BAG need GDAL 3.4+.
 
 **Fix:** Update GDAL in your conda environment:
 

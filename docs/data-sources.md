@@ -155,7 +155,7 @@ A combined VRT is also created with all three bands (Elevation, Uncertainty, Qua
 | `feature_least_depth` | float | Least depth of feature |
 | `significant_features` | float | Significant feature indicator |
 | `feature_size` | str | Feature size |
-| `feature_size_var` | int | Feature size variance |
+| `feature_size_var` | int | Feature size variance (set to 0 in mosaic) |
 | `coverage` | int | Coverage flag |
 | `bathy_coverage` | int | Bathymetric coverage flag |
 | `horizontal_uncert_fixed` | float | Fixed horizontal uncertainty |
@@ -164,7 +164,9 @@ A combined VRT is also created with all three bands (Elevation, Uncertainty, Qua
 | `survey_date_end` | str | Survey end date |
 | `source_survey_id` | str | Source survey identifier |
 | `source_institution` | str | Source institution name |
-| `bathymetric_uncertainty_type` | int | Uncertainty type classification |
+| `bathymetric_uncertainty_type` | int | Uncertainty type classification (set to 0 in mosaic) |
+
+> **Note:** `feature_size_var` and `bathymetric_uncertainty_type` are unsupported fields and are set to 0 in mosaics.
 
 ---
 
@@ -202,7 +204,7 @@ A combined VRT is also created with all three bands.
 | `feature_least_depth` | float | Least depth of feature |
 | `significant_features` | float | Significant feature indicator |
 | `feature_size` | str | Feature size |
-| `feature_size_var` | int | Feature size variance |
+| `feature_size_var` | int | Feature size variance (set to 0 in mosaic) |
 | `coverage` | int | Coverage flag |
 | `bathy_coverage` | int | Bathymetric coverage flag |
 | `horizontal_uncert_fixed` | float | Fixed horizontal uncertainty |
@@ -211,5 +213,7 @@ A combined VRT is also created with all three bands.
 | `survey_date_end` | str | Survey end date |
 | `source_survey_id` | str | Source survey identifier |
 | `source_institution` | str | Source institution name |
-| `type_of_bathymetric_estimation_uncertainty` | int | Uncertainty type classification |
+| `type_of_bathymetric_estimation_uncertainty` | int | Uncertainty type classification (set to 0 in mosaic) |
+
+> **Note:** `feature_size_var` and `type_of_bathymetric_estimation_uncertainty` are unsupported fields and are set to 0 in mosaics.
 
