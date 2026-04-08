@@ -80,9 +80,9 @@ def _setup_project(make_geotiff, tmp_path, source="bluetopo",
     os.makedirs(project_dir)
     data_source = cfg["canonical_name"]
     if sub_dir is None:
-        sub_dir = data_source
-    tile_dir = os.path.join(project_dir, sub_dir, f"UTM{utm}")
-    os.makedirs(tile_dir)
+        sub_dir = f"{data_source}_Data"
+    tile_dir = os.path.join(project_dir, sub_dir)
+    os.makedirs(tile_dir, exist_ok=True)
 
     if resolutions is None:
         resolutions = [("2m", 2), ("4m", 4)]
@@ -579,7 +579,7 @@ class TestBuildPopulatesMultiSubdataset:
         project_dir = str(tmp_path / "project")
         os.makedirs(project_dir)
         data_source = cfg["canonical_name"]
-        tile_dir = os.path.join(project_dir, data_source, "UTM19")
+        tile_dir = os.path.join(project_dir, f"{data_source}_Data")
         os.makedirs(tile_dir)
 
         conn = connect_to_survey_registry(project_dir, cfg)
@@ -666,7 +666,7 @@ class TestBuildPopulatesBag:
 
         project_dir = str(tmp_path / "project")
         os.makedirs(project_dir)
-        tile_dir = os.path.join(project_dir, cfg["canonical_name"], "UTM19")
+        tile_dir = os.path.join(project_dir, f"{cfg['canonical_name']}_Data")
         os.makedirs(tile_dir)
 
         conn = connect_to_survey_registry(project_dir, cfg)
@@ -753,7 +753,7 @@ class TestEdgeCases:
         cfg = get_config("bluetopo")
         project_dir = str(tmp_path / "project")
         os.makedirs(project_dir)
-        os.makedirs(os.path.join(project_dir, "BlueTopo"))
+        os.makedirs(os.path.join(project_dir, "BlueTopo_Data"))
         conn = connect_to_survey_registry(project_dir, cfg)
         check_internal_version(conn)
         conn.cursor().execute(

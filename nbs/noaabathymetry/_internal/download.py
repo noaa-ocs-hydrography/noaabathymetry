@@ -164,6 +164,26 @@ def _list_s3_latest(client, bucket, prefix, label, data_source, retry=True):
     return objects[0]["Key"], objects
 
 
+def _download_to_memory(client, bucket, key, label):
+    """Download an S3 object to memory with one retry on streaming errors.
+
+    Returns ``(data, response)`` where *data* is the full byte content
+    and *response* is the GetObject response dict (for ETag/ContentLength).
+    """
+    last_err = None
+    for attempt in range(2):
+        try:
+            response = client.get_object(Bucket=bucket, Key=key)
+            data = response["Body"].read()
+            return data, response
+        except Exception as e:
+            last_err = e
+            if attempt == 0:
+                logger.warning("%s: Download stream error, retrying once...", label)
+    raise RuntimeError(
+        f"{label}: download failed after retry: {last_err}") from last_err
+
+
 def _verify_s3_download(data, response, label):
     """Verify integrity of bytes downloaded from S3.
 
@@ -250,8 +270,8 @@ def get_tessellation(conn, project_dir, prefix, data_source, cfg,
                         data_source, prefix, filename)
 
         # Download to memory and verify
-        response = client.get_object(Bucket=bucket, Key=source_key)
-        data = response["Body"].read()
+        data, response = _download_to_memory(
+            client, bucket, source_key, f"{data_source} tile scheme")
         _verify_s3_download(data, response, f"{data_source} tile scheme")
 
         # Delete old file if it exists
@@ -305,7 +325,7 @@ def get_xml(conn, project_dir, prefix, data_source, cfg,
         source_key, _ = _list_s3_latest(
             client, bucket, prefix, "XML", data_source, retry=False)
         if source_key and _local_matches_s3(destination_name, client, bucket, source_key):
-            logger.info("%s: XML up to date", data_source)
+            logger.info("%s: CATALOG.XML up to date", data_source)
             return destination_name
 
     client = _get_s3_client()
@@ -316,13 +336,9 @@ def get_xml(conn, project_dir, prefix, data_source, cfg,
             f"[{_timestamp()}] {data_source}: No XML catalog found in "
             f"{prefix} after retry. The NBS may be updating. Please try again later.")
 
-    if len(all_objects) > 1:
-        logger.info("%s: More than one XML found in %s, using %s",
-                    data_source, prefix, os.path.basename(source_key))
-
     # Download to memory and verify
-    response = client.get_object(Bucket=bucket, Key=source_key)
-    data = response["Body"].read()
+    data, response = _download_to_memory(
+        client, bucket, source_key, f"{data_source} XML catalog")
     _verify_s3_download(data, response, f"{data_source} XML catalog")
 
     # Delete old file if it exists

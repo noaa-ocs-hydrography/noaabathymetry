@@ -373,7 +373,7 @@ class TestMosaicTilesLocalResolution:
         conn = connect_to_survey_registry(project_dir, cfg)
         conn.close()
         # Create the tile folder that main() expects
-        os.makedirs(os.path.join(project_dir, source_name), exist_ok=True)
+        os.makedirs(os.path.join(project_dir, f"{source_name}_Data"), exist_ok=True)
         return project_dir
 
     def test_hsd_gpkg_resolves_to_hsd_local_config(self, tmp_path):
@@ -471,7 +471,7 @@ class TestMosaicTilesLocalResolution:
         db_path = os.path.join(project_dir, "weird_registry.db")
         with open(db_path, "w") as f:
             f.write("")
-        os.makedirs(os.path.join(project_dir, "Weird"), exist_ok=True)
+        os.makedirs(os.path.join(project_dir, "Weird_Data"), exist_ok=True)
 
         with mock.patch.object(mosaic_tiles_mod, "connect") as mock_conn, \
              mock.patch.object(mosaic_tiles_mod, "missing_utms", return_value=[]), \

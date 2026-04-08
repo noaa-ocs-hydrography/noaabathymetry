@@ -259,7 +259,7 @@ def setup_local_from_download(project_dir_1, cfg, tmp_path):
     gpkg_fields = cfg["gpkg_fields"]
 
     # Locate the downloaded gpkg
-    tess_dir = os.path.join(project_dir_1, data_source, "Tessellation")
+    tess_dir = os.path.join(project_dir_1, f"{data_source}_Tessellation")
     gpkg_files = [f for f in os.listdir(tess_dir)
                   if f.endswith(".gpkg") and "Tile_Scheme" in f]
     assert len(gpkg_files) >= 1, f"No gpkg found in {tess_dir}"
