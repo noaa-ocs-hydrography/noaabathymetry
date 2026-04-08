@@ -160,24 +160,34 @@ def _compute_approximate_stats(path):
     ds = None
 
 
-def generate_hillshade(mosaic_path, hillshade_path):
+def generate_hillshade(mosaic_path, hillshade_path, hillshade_resolution=16):
     """Generate a hillshade COG from band 1 (Elevation) of a source raster.
 
-    Builds from a 16m downsampled view of the source for speed while
+    Builds from a downsampled view of the source for speed while
     preserving good terrain detail. Uses an in-memory VRT with
     resolution override so GDAL reads from the source's existing
     overviews instead of full resolution.
 
     Uses azimuth 315, altitude 45, vertical exaggeration 4x.
     Output is a Cloud Optimized GeoTIFF (COG) with embedded overviews.
+
+    Parameters
+    ----------
+    mosaic_path : str
+        Path to the source mosaic (VRT or GeoTIFF).
+    hillshade_path : str
+        Output path for the hillshade COG.
+    hillshade_resolution : int | float
+        Pixel size in meters for the hillshade.  Default 16.
     """
     if os.path.isfile(hillshade_path):
         os.remove(hillshade_path)
-    # Create an in-memory VRT at 16m resolution. GDAL reads from the
-    # source's overview levels instead of full resolution.
+    # Create an in-memory VRT at the target resolution. GDAL reads from
+    # the source's overview levels instead of full resolution.
     uid = uuid.uuid4().hex[:8]
     mem_vrt = f"/vsimem/_hillshade_input_{uid}.vrt"
-    gdal.Translate(mem_vrt, mosaic_path, format="VRT", xRes=16, yRes=16)
+    gdal.Translate(mem_vrt, mosaic_path, format="VRT",
+                   xRes=hillshade_resolution, yRes=hillshade_resolution)
     # DEMProcessing to a temp in-memory GeoTIFF, then convert to COG
     mem_tmp = f"/vsimem/_hillshade_tmp_{uid}.tif"
     opts = gdal.DEMProcessingOptions(

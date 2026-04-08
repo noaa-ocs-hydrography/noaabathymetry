@@ -821,6 +821,7 @@ def get_mosaic_fields(cfg):
     fields["utm_aux_xml_disk_file_size"] = "integer"
     fields["hillshade"] = "text"
     fields["hillshade_disk_file_size"] = "integer"
+    fields["hillshade_resolution"] = "real"
     # Build metadata (not file paths)
     fields["tile_count"] = "integer"
     fields["tile_count_plus_overviews"] = "integer"
@@ -884,7 +885,7 @@ def get_utm_file_columns(cfg):
     fields = get_mosaic_fields(cfg)
     exclude = {
         "utm", "params_key", "output_dir",
-        "hillshade", "hillshade_disk_file_size",
+        "hillshade", "hillshade_disk_file_size", "hillshade_resolution",
         "tile_count", "tile_count_plus_overviews",
         "mosaic_resolution", "overview_count", "overview_resolutions",
         "tiles_2m", "tiles_4m", "tiles_8m", "tiles_16m",

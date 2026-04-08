@@ -107,11 +107,11 @@ def extended_mosaic_tiles(project_dir, data_source=None, relative_to_vrt=True,
                           tile_resolution_filter=None,
                           hillshade=False, workers=None, reproject=False,
                           output_dir=None, debug=False,
-                          hillshade_dir=None):
+                          hillshade_dir=None, hillshade_resolution=16):
     """Build a per-UTM-zone mosaic from all source tiles.
 
     Extended version of :func:`nbs.noaabathymetry.mosaic_tiles` with
-    support for a custom hillshade output directory.
+    additional hillshade options.
 
     Parameters
     ----------
@@ -119,8 +119,11 @@ def extended_mosaic_tiles(project_dir, data_source=None, relative_to_vrt=True,
         Single directory name (relative to *project_dir*) for hillshade
         output.  Requires ``hillshade=True``.  When ``None`` (default),
         hillshades are written next to the mosaic files.
+    hillshade_resolution : int | float
+        Pixel size in meters for the hillshade.  Default 16.
     """
     return _mosaic_impl(project_dir, data_source, relative_to_vrt,
                         mosaic_resolution_target, tile_resolution_filter,
                         hillshade, workers, reproject, output_dir, debug,
-                        hillshade_dir=hillshade_dir)
+                        hillshade_dir=hillshade_dir,
+                        hillshade_resolution=hillshade_resolution)
