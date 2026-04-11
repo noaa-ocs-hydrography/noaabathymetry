@@ -1,0 +1,58 @@
+name: Bug Report
+description: Report something that isn't working correctly
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened? Include steps to reproduce, what you expected vs what actually occurred, and the full traceback if there is one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other relevant information.
+    validations:
+      required: false
+
+  - type: markdown
+    attributes:
+      value: "## Environment (Optional)"
+
+  - type: markdown
+    attributes:
+      value: |
+        **Version**
+
+        Run one of the following in your terminal:
+        `pip show noaabathymetry` or `nbs --version`
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: e.g. 0.8.1
+    validations:
+      required: false
+
+  - type: markdown
+    attributes:
+      value: |
+        **OS Version:**
+
+        Run the following in your terminal:
+        _Windows (PowerShell):_ `[System.Environment]::OSVersion.VersionString`
+        _macOS:_ `sw_vers`
+        _Linux:_ `cat /etc/os-release`
+
+  - type: input
+    id: os
+    attributes:
+      label: OS Version
+      placeholder: e.g. Ubuntu 22.04, macOS 15.4, Windows 11
+    validations:
+      required: false

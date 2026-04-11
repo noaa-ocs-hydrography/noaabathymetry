@@ -1,0 +1,12 @@
+name: General
+description: Share a general comment that doesn't fit the other categories
+title: "[General] "
+labels: [general]
+body:
+  - type: textarea
+    id: comment
+    attributes:
+      label: Comment
+      description: Share whatever is on your mind.
+    validations:
+      required: true
