@@ -23,6 +23,8 @@ Common use cases include:
 - **[User Guide](user-guide.md)** — the fetch-then-build workflow, what gets created on disk, and resolution filtering.
 - **[Data Sources](data-sources.md)** — each data source with its file format, bands, and GDAL requirements.
 - **[API Reference](api-reference.md)** — complete reference for the Python API and CLI commands.
+- **[Browser UI App](browser-ui-app.md)** — a standalone UI app built on this python package.
+- **[About NBS](about-nbs.md)** — background on NOAA's National Bathymetric Source.
 - **[Troubleshooting](troubleshooting.md)** — common errors and how to fix them.
 - **[Quickstart Helper](quickstart-helper.md)** — draw your area of interest on a map and generate usage examples.
 
