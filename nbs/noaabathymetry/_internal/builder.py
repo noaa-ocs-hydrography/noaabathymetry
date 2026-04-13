@@ -168,6 +168,9 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, mosaic_dir,
             if cfg["has_rat"]:
                 add_mosaic_rat(tiles, project_dir, utm_combined_vrt, cfg, utm=utm)
 
+            if hillshade_resolution is None:
+                hillshade_resolution = native_res
+
             result = {"utm": utm, "fields": fields,
                       "mosaic": os.path.join(project_dir, rel_combined), "ovr": None}
 
@@ -238,6 +241,9 @@ def _build_utm_zone(project_dir, cfg, data_source, utm, mosaic_dir,
                     res_counts[r] = res_counts.get(r, 0) + 1
             for res in (2, 4, 8, 16, 32, 64):
                 fields[f"tiles_{res}m"] = res_counts.get(res, 0)
+
+            if hillshade_resolution is None:
+                hillshade_resolution = native_res
 
             result = {"utm": utm, "fields": fields,
                       "mosaic": utm_vrt,
@@ -407,6 +413,9 @@ def _reproject_utm_zone(project_dir, cfg, data_source, utm, mosaic_dir,
                     res_counts[r] = res_counts.get(r, 0) + 1
             for res in (2, 4, 8, 16, 32, 64):
                 fields[f"tiles_{res}m"] = res_counts.get(res, 0)
+
+            if hillshade_resolution is None:
+                hillshade_resolution = target_res
 
             result = {"utm": utm, "fields": fields,
                       "mosaic": output_3857,
@@ -588,7 +597,7 @@ def _mosaic_impl(project_dir: str, data_source: str = None,
                  output_dir: str = None,
                  debug: bool = False,
                  hillshade_dir: str = None,
-                 hillshade_resolution: int = 16) -> MosaicResult:
+                 hillshade_resolution=None) -> MosaicResult:
     """Build a per-UTM-zone mosaic from all source tiles.
 
     Parameters
@@ -688,7 +697,7 @@ def _mosaic_impl(project_dir: str, data_source: str = None,
             f"Got: '{output_dir}'"
         )
 
-    if hillshade_resolution != 16 and not hillshade:
+    if hillshade_resolution is not None and not hillshade:
         raise ValueError(
             "hillshade_resolution requires hillshade=True.")
 
@@ -974,7 +983,7 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
             mosaic_col = "utm_combined_mosaic" if cfg["subdatasets"] else "utm_mosaic"
             hs_cursor = conn.cursor()
             hs_cursor.execute(
-                f"SELECT utm, {mosaic_col}, hillshade_resolution FROM mosaic_utm WHERE params_key = ? "
+                f"SELECT utm, {mosaic_col}, hillshade_resolution, mosaic_resolution FROM mosaic_utm WHERE params_key = ? "
                 f"AND ({mosaic_built_clause}) AND built_hillshade = 1",
                 (params_key,),
             )
@@ -986,9 +995,10 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                     continue
                 abs_mosaic = os.path.join(project_dir, mosaic_rel)
                 hs_path = _hillshade_path(abs_mosaic, project_dir, hillshade_dir)
+                expected_res = hillshade_resolution if hillshade_resolution is not None else row["mosaic_resolution"]
                 if not os.path.isfile(hs_path):
                     stale_hs.append(row["utm"])
-                elif row["hillshade_resolution"] != hillshade_resolution:
+                elif row["hillshade_resolution"] != expected_res:
                     stale_hs.append(row["utm"])
             if stale_hs:
                 logger.info("%d hillshade(s) missing or stale. Added to build list.",
@@ -1020,16 +1030,17 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                         continue
                     abs_mosaic = os.path.join(project_dir, mosaic_rel)
                     hs_path = _hillshade_path(abs_mosaic, project_dir, hillshade_dir)
+                    hs_res = hillshade_resolution if hillshade_resolution is not None else hz.get("mosaic_resolution")
                     try:
                         logger.info("[UTM%s] Generating hillshade...", utm)
                         os.makedirs(os.path.dirname(hs_path), exist_ok=True)
-                        generate_hillshade(abs_mosaic, hs_path, hillshade_resolution)
+                        generate_hillshade(abs_mosaic, hs_path, hs_res)
                         hs_rel = os.path.relpath(hs_path, project_dir)
                         hs_cursor.execute(
                             "UPDATE mosaic_utm SET hillshade = ?, hillshade_disk_file_size = ?, "
                             "hillshade_resolution = ?, "
                             "built_hillshade = 1 WHERE utm = ? AND params_key = ?",
-                            (hs_rel, os.path.getsize(hs_path), hillshade_resolution, utm, params_key),
+                            (hs_rel, os.path.getsize(hs_path), hs_res, utm, params_key),
                         )
                         conn.commit()
                         hillshade_count += 1

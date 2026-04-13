@@ -160,13 +160,12 @@ def _compute_approximate_stats(path):
     ds = None
 
 
-def generate_hillshade(mosaic_path, hillshade_path, hillshade_resolution=16):
+def generate_hillshade(mosaic_path, hillshade_path, hillshade_resolution=None):
     """Generate a hillshade COG from band 1 (Elevation) of a source raster.
 
-    Builds from a downsampled view of the source for speed while
-    preserving good terrain detail. Uses an in-memory VRT with
-    resolution override so GDAL reads from the source's existing
-    overviews instead of full resolution.
+    Uses an in-memory VRT with resolution override so GDAL reads from
+    the source's existing overviews when the target is coarser than
+    full resolution.
 
     Uses azimuth 315, altitude 45, vertical exaggeration 4x.
     Output is a Cloud Optimized GeoTIFF (COG) with embedded overviews.
@@ -177,9 +176,15 @@ def generate_hillshade(mosaic_path, hillshade_path, hillshade_resolution=16):
         Path to the source mosaic (VRT or GeoTIFF).
     hillshade_path : str
         Output path for the hillshade COG.
-    hillshade_resolution : int | float
-        Pixel size in meters for the hillshade.  Default 16.
+    hillshade_resolution : int | float | None
+        Pixel size in meters for the hillshade.  None (default) uses
+        the source raster's native resolution.
     """
+    if hillshade_resolution is None:
+        ds = gdal.Open(mosaic_path)
+        gt = ds.GetGeoTransform()
+        hillshade_resolution = abs(gt[1])
+        ds = None
     if os.path.isfile(hillshade_path):
         os.remove(hillshade_path)
     # Create an in-memory VRT at the target resolution. GDAL reads from
