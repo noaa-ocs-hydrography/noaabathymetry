@@ -7,6 +7,10 @@
 ---
 
 <p align="center">
+  Point this package at your area of interest and get the latest bathymetric data.
+</p>
+
+<p align="center">
     <a href="#background">Background</a> •
     <a href="#requirements">Requirements</a> •
     <a href="#installation">Installation</a> •
@@ -17,8 +21,6 @@
 </p>
 
 ## Overview
-
-Point this package at your area of interest and get the latest and best public bathymetric data from NOAA.
 
 For most use cases, the quickstart below is all you need.
 
