@@ -35,6 +35,13 @@ gdal.UseExceptions()
 gdal.SetConfigOption("COMPRESS_OVERVIEW", "DEFLATE")
 gdal.SetConfigOption("GDAL_TIFF_OVR_BLOCKSIZE", "512")
 gdal.SetConfigOption("GDAL_NUM_THREADS", "ALL_CPUS")
+# Default pool is 100 open datasets, which causes repeated file open/close
+# overhead when a VRT has hundreds of source tiles.  700 is not a scientifically
+# derived number, it's high enough to keep most UTM zones' tiles open
+# simultaneously, while staying well under the Linux default per-process
+# file descriptor limit of 1024 (leaving ~300 for DB connections,
+# output files, and other process needs).
+gdal.SetConfigOption("GDAL_MAX_DATASET_POOL_SIZE", "700")
 
 # Bump GDAL block cache to 15% of physical memory (if higher than default).
 # Reduces tile re-reads during large warp and overview operations.
@@ -193,21 +200,34 @@ def generate_hillshade(mosaic_path, hillshade_path, hillshade_resolution=None):
     mem_vrt = f"/vsimem/_hillshade_input_{uid}.vrt"
     gdal.Translate(mem_vrt, mosaic_path, format="VRT",
                    xRes=hillshade_resolution, yRes=hillshade_resolution)
-    # DEMProcessing to a temp in-memory GeoTIFF, then convert to COG
+    # DEMProcessing to /vsimem/ intermediate, then Translate to COG.
+    # Direct COG from DEMProcessing was slower in limited
+    # benchmark testing.  The intermediate uses DEFLATE because uncompressed can
+    # exceed RAM for large zones (GDAL refused uncompressed due to size
+    # ~191 GB for UTM19 at 4m).
+    #
+    # PREDICTOR without multithreaded compression using NUM_THREADS was
+    # slower in limited benchmark testing.
     mem_tmp = f"/vsimem/_hillshade_tmp_{uid}.tif"
-    opts = gdal.DEMProcessingOptions(
-        options="-az 315 -alt 45 -z 4 -compute_edges "
-                "-of GTiff -co COMPRESS=DEFLATE -co TILED=YES -co BIGTIFF=YES"
+    dem_opts = gdal.DEMProcessingOptions(
+        azimuth=315, altitude=45, zFactor=4,
+        computeEdges=True, multiDirectional=False,
+        format="GTiff",
+        creationOptions=["COMPRESS=DEFLATE", "TILED=YES", "BIGTIFF=YES"],
     )
-    gdal.DEMProcessing(mem_tmp, mem_vrt, "hillshade", options=opts)
+    gdal.DEMProcessing(mem_tmp, mem_vrt, "hillshade", options=dem_opts)
     gdal.Unlink(mem_vrt)
-    # Convert to COG — embeds overviews, tiling, and compression in one file
+    # Set to "ALL_CPUS" when running a single worker, or scaled down by
+    # configure_gdal_for_worker() when running multiple workers.
+    thread_str = gdal.GetConfigOption("GDAL_NUM_THREADS") or "ALL_CPUS"
     gdal.Translate(
         hillshade_path, mem_tmp, format="COG",
         creationOptions=[
             "COMPRESS=DEFLATE",
+            "PREDICTOR=2",
             "BIGTIFF=YES",
             "OVERVIEW_RESAMPLING=BILINEAR",
+            f"NUM_THREADS={thread_str}",
         ],
     )
     gdal.Unlink(mem_tmp)
@@ -259,6 +279,7 @@ def reproject_to_web_mercator(sources, output_path, overview_factors=None,
         warpOptions=[f"NUM_THREADS={thread_str}", "SOURCE_EXTRA=5"],
         creationOptions=[
             "COMPRESS=DEFLATE",
+            "PREDICTOR=3",
             "TILED=YES",
             "BLOCKXSIZE=512",
             "BLOCKYSIZE=512",

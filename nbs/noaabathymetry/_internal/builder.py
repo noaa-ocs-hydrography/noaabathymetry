@@ -832,6 +832,29 @@ def _run_build(project_dir, cfg, data_source, relative_to_vrt,
                        len(result.missing_reset))
         utms_to_build = select_unbuilt_utms(conn, cfg, params_key)
 
+        # Sort largest zones first so the heaviest work starts early.
+        # Uses total file size as the sort key, a better proxy for
+        # processing time than tile count (a zone with fewer but
+        # larger tiles takes longer to warp/mosaic).
+        size_col = f"{cfg['file_slots'][0]['name']}_disk_file_size"
+        zone_weight = {}
+        count_cursor = conn.cursor()
+        if tile_resolution_filter:
+            res_labels = [f"{r}m" for r in tile_resolution_filter]
+            ph = ",".join(["?"] * len(res_labels))
+            count_cursor.execute(
+                f"SELECT utm, COALESCE(SUM({size_col}), 0) as total_size "
+                f"FROM tiles WHERE resolution IN ({ph}) GROUP BY utm",
+                res_labels)
+        else:
+            count_cursor.execute(
+                f"SELECT utm, COALESCE(SUM({size_col}), 0) as total_size "
+                f"FROM tiles GROUP BY utm")
+        for row in count_cursor.fetchall():
+            zone_weight[row["utm"]] = row["total_size"]
+        utms_to_build.sort(
+            key=lambda u: zone_weight.get(u["utm"], 0), reverse=True)
+
         mosaic_dir = os.path.join(project_dir, mosaic_dir_name)
         os.makedirs(mosaic_dir, exist_ok=True)
 
