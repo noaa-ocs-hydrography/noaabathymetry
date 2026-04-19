@@ -1,10 +1,8 @@
-<p align="center">
+<h1 align="center">
   <a href="https://nauticalcharts.noaa.gov/learn/nbs.html"><img src="docs/images/NOAA-1.png" alt="NOAA" width="180"></a>
   <br>
-  <em>National Bathymetric Source</em>
-</p>
-
----
+  NOAA Bathymetry
+</h1>
 
 <p align="center">
   Point this package at your area of interest and get the latest bathymetric data.
@@ -132,9 +130,9 @@ result = fetch_tiles('/path/to/project', geometry='{"type":"Polygon","coordinate
 
 BlueTopo, Modeling, and various S-102 versioned data are available as data sources. You can work with these using the `data_source` argument (e.g. `data_source='modeling'`). When not specified, `data_source` defaults to BlueTopo.
 
-The primary difference between BlueTopo and Modeling data is the vertical datum. Modeling data is on a low water datum.
+BlueTopo is on a national vertical datum, while Modeling, BAG, and S-102 (v2.1, v2.2, v3.0) are on a low water datum.
 
-Please note that these S-102 data are for test and evaluation and should not be used for navigation.  For official S-102 please see the [data](https://noaa-s102-pds.s3.amazonaws.com/index.html) available from [Precision Marine Navigation](https://oceanservice.noaa.gov/navigation/precision-navigation/).
+Please note that these S-102 data are for test and evaluation and should not be used for navigation. For official S-102 please see the [data](https://noaa-s102-pds.s3.amazonaws.com/index.html) available from [Precision Marine Navigation](https://oceanservice.noaa.gov/navigation/precision-navigation/).
 
 ## Authors
 
